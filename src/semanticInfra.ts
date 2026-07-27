@@ -26,7 +26,8 @@ const INFRA_TEXT_PATTERNS: RegExp[] = [
   // Chain / mirror-node infrastructure (not app defects)
   /mirror[_ ]?node (?:unreachable|unavailable|timeout|timed out|failed)/i,
   /testnet(?:\/relay)? (?:unreachable|unavailable|timeout|timed out)/i,
-  /hashio|json-?rpc relay (?:unreachable|unavailable|timeout)/i,
+  // Require an outage signal — bare "hashio" matches normal RPC error text from app txs.
+  /(?:hashio|json-?rpc(?: relay)?) .{0,60}(?:unreachable|unavailable|timeout|timed out|ECONNREFUSED)/i,
   /insufficient[_ ]payer[_ ]balance/i,
   /INSUFFICIENT_PAYER_BALANCE/,
   /test signer account not found/i,

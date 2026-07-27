@@ -30,6 +30,12 @@
       "path": "/Users/sebastianraba/Work/hedera-skills/plugins/native-services-js/skills/hedera-token-service/SKILL.md",
       "tags": ["hts", "tokens", "nft", "fungible"],
       "description": "Hedera Token Service patterns for creating, managing, and transferring tokens."
+    },
+    {
+      "name": "hts-system-contract",
+      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/system-contracts/skills/hts-system-contract/SKILL.md",
+      "tags": ["hts", "solidity", "precompile", "evm", "system-contracts"],
+      "description": "HTS precompile (0x167) patterns: token creation, minting, burning, keys, fees, SafeHTS, and compliance flows in Solidity."
     }
   ]
 }

@@ -1,0 +1,231 @@
+{
+  "$schema": "./acceptance-contract.schema.json",
+  "name": "hts-precompile-demo-acceptance",
+  "template": "hts-precompile-demo",
+  "prd": "docs/prds/hts-precompile-demo.md",
+  "version": 1,
+  "description": "Acceptance contract for the HTS precompile Solidity demo (Hardhat + Next.js). Assumes harness chain deploy has run when Test Signer is present. Burner path is executed end-to-end for createToken/mintToken.",
+  "routes": ["/", "/contract"],
+  "evaluationRules": {
+    "posture": "adversarial",
+    "failOnUncertainty": "If an assertion cannot be positively verified from the running app, mark it FAILED, not passed. Absence of evidence is a failure.",
+    "credentials": "The app must load, render, and be browsable without any .env file, private keys, operator keys, or funded testnet account. Missing credentials must not excuse a broken read path.",
+    "walletGatedFlows": "When the harness provides a Test Signer in the validator prompt: assertions flagged executableWithTestSigner=true MUST be executed end-to-end via the burner wallet (inject burnerWallet.pk, connect Burner, complete flow, verify on-chain via mirror node). Other walletRequired assertions without that flag remain affordance-only. When no Test Signer is provided, treat all walletRequired assertions as affordance-only. A crash, blank screen, or unhandled error on the wallet path is always a failure.",
+    "contractDeployment": "Assertions referencing a deployed contract assume the harness deploy hook has already run successfully when a Test Signer is present. The validator must verify contract existence via the Hedera testnet mirror node before testing write interactions. If no contract address is available in the UI or deployedContracts metadata and mirror confirmation fails, mark deploy-dependent assertions FAILED.",
+    "htsCreateFailures": "HtsCreateFailed(9) is KEY_NOT_PROVIDED — typically treasury/autoRenewAccount set to msg.sender with an ECDSA burner alias. Do not reclassify code 9 as insufficient funding. Insufficient fee errors are different response codes; check skill references/response-codes.md when unsure. createToken must send non-zero msg.value for the HTS creation fee.",
+    "onChainVerification": "For executableWithTestSigner assertions, UI success toasts alone are insufficient. Confirm effects via the Hedera testnet mirror node REST API (https://testnet.mirrornode.hedera.com): contracts, contract results, tokens, and/or account balances as relevant. Poll up to ~30s for mirror lag. Cite mirror evidence in the verdict.",
+    "evidence": "Every verdict issue must cite what was observed (route visited, element found/absent, console output, contract address used, and mirror node responses for executed on-chain flows).",
+    "severityMeaning": {
+      "critical": "Route/app is broken or a core journey is impossible; run cannot pass.",
+      "major": "A required PRD capability is missing or non-functional on the read/affordance level.",
+      "minor": "Coherence, clarity, or documentation gap that degrades the demo but does not break a journey."
+    }
+  },
+  "assertions": [
+    {
+      "id": "C1",
+      "journey": "Browse the contract dashboard",
+      "route": "/",
+      "severity": "critical",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The home route renders without runtime/console errors and presents the HTS precompile demo concept.",
+      "howToVerify": "Navigate to /. Confirm the page loads, primary content about HTS precompile / Solidity token creation is visible, and the console shows no uncaught errors or crash banners."
+    },
+    {
+      "id": "C2",
+      "journey": "Browse the contract dashboard",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The home page identifies which Hedera network is targeted (testnet by default).",
+      "howToVerify": "On /, look for visible indication of Testnet (or the configured network)."
+    },
+    {
+      "id": "C3",
+      "journey": "Browse the contract dashboard",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The home page shows the deployed HTS-precompile contract address or a clear not-deployed / awaiting-deploy state.",
+      "howToVerify": "On /, locate a region that displays a 0x contract address or an explicit empty/not-deployed state. A perpetual spinner or silent blank area is a failure."
+    },
+    {
+      "id": "C4",
+      "journey": "Browse the contract dashboard",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The read path (dashboard) is usable without a connected wallet.",
+      "howToVerify": "Without connecting any wallet, confirm network info and contract address/not-deployed state are reachable and not blocked behind a wallet-connect wall."
+    },
+    {
+      "id": "C5",
+      "journey": "Contract interact page",
+      "route": "/contract",
+      "severity": "critical",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The /contract route renders without runtime/console errors.",
+      "howToVerify": "Navigate to /contract. Confirm the page loads and the console shows no uncaught errors or forbidden error strings."
+    },
+    {
+      "id": "C6",
+      "journey": "Contract info display",
+      "route": "/contract",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The contract page surfaces the deployed contract address (or not-deployed state) and indicates create/mint capabilities.",
+      "howToVerify": "On /contract, confirm a contract address or empty state is shown, and that create-token and mint controls or sections are described/present."
+    },
+    {
+      "id": "C7",
+      "journey": "Contract info display",
+      "route": "*",
+      "severity": "minor",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "When a contract address is known, the UI offers a HashScan (or equivalent explorer) link for the contract.",
+      "howToVerify": "If an address is displayed, look for a HashScan/testnet explorer link. If the demo is in a not-deployed state, skip and note that condition rather than inventing a pass."
+    },
+    {
+      "id": "C8",
+      "journey": "Hardhat workspace integrity",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The workspace retains Hardhat (packages/hardhat) and does not present Foundry as the active Solidity framework.",
+      "howToVerify": "Confirm packages/hardhat exists with hardhat.config.ts and Solidity sources. Confirm packages/foundry is absent. UI should not instruct users to use Foundry for this demo."
+    },
+    {
+      "id": "C9",
+      "journey": "Hardhat workspace integrity",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "README and/or AGENTS.md document Hardhat compile and non-interactive deploy using __RUNTIME_DEPLOYER_PRIVATE_KEY.",
+      "howToVerify": "Read README.md and AGENTS.md. Confirm yarn hardhat:compile (or equivalent) and a non-interactive hederaTestnet deploy path that uses __RUNTIME_DEPLOYER_PRIVATE_KEY are documented."
+    },
+    {
+      "id": "C10",
+      "journey": "Wallet connect",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "A wallet-connect affordance is available in the app shell and includes Burner Wallet for harness/demo use.",
+      "howToVerify": "On any route, open Connect Wallet. Confirm Burner Wallet (Development group) is available. Presence is enough for this affordance assertion."
+    },
+    {
+      "id": "C11",
+      "journey": "Create token affordance",
+      "route": "/contract",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "The contract page exposes a create-token form/control that accepts name, symbol, supply/decimals (or equivalent) and communicates an HBAR creation fee.",
+      "howToVerify": "On /contract, locate labeled controls for creating a token via the contract. Expect fields or clear defaults for name/symbol/supply and mention of HBAR fee / payable value."
+    },
+    {
+      "id": "C12",
+      "journey": "Create token affordance",
+      "route": "/contract",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "The create-token flow gracefully handles the no-wallet state instead of crashing.",
+      "howToVerify": "Interact with create-token without a wallet connected. Expect a connect prompt or clear guidance. An unhandled error or dead control is a failure."
+    },
+    {
+      "id": "C13",
+      "journey": "Mint affordance",
+      "route": "/contract",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "The contract page exposes a mint-token control (token address + amount or equivalent).",
+      "howToVerify": "On /contract, locate a labeled mint section/form. It must be present even if mint itself is wallet-gated."
+    },
+    {
+      "id": "C14",
+      "journey": "Token state affordance",
+      "route": "/contract",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The UI holds space for created token address/ID and post-mint feedback or balance/supply display.",
+      "howToVerify": "On /contract, confirm regions where a created token address and mint/supply/balance outcomes will appear (or an empty state for those regions)."
+    },
+    {
+      "id": "C15",
+      "journey": "Cross-cutting",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The full app boots and both routes are reachable with no .env, private keys, or funded account present.",
+      "howToVerify": "With no credentials configured, visit / and /contract. Both must render their intended UI (read paths live, write paths gated but graceful). Any route that hard-fails due to missing credentials is a failure."
+    },
+    {
+      "id": "C16",
+      "journey": "On-chain with test signer",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "Connecting the burner wallet with the harness test signer key succeeds and the app shell shows a connected account.",
+      "howToVerify": "Inject the test signer private key into localStorage (burnerWallet.pk), reload, open Connect Wallet, choose Burner Wallet from the Development group. Confirm the header/nav shows a connected account (EVM address or Hedera account ID). Retry briefly if account-id resolution lags on the mirror node."
+    },
+    {
+      "id": "C17",
+      "journey": "On-chain with test signer",
+      "route": "*",
+      "severity": "critical",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "The deployed HTS-precompile contract exists on Hedera testnet and is visible to the app.",
+      "howToVerify": "Read the contract address from the UI (or packages/nextjs/contracts/deployedContracts.ts for chain 296). Confirm GET https://testnet.mirrornode.hedera.com/api/v1/contracts/{address} returns the contract (poll up to ~30s). Confirm the UI shows that same address."
+    },
+    {
+      "id": "C18",
+      "journey": "On-chain with test signer",
+      "route": "/contract",
+      "severity": "critical",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "Calling createToken via the UI with the test signer completes; a new fungible token is visible on the mirror node and in the UI.",
+      "howToVerify": "With burner connected and contract deployed, submit createToken with a distinctive name/symbol. The UI must attach a non-zero msg.value covering the HTS creation fee (~15–25 HBAR on testnet) — do not leave fee at 0. Expect success feedback and a token address in the UI. If the call reverts with HtsCreateFailed(9) / KEY_NOT_PROVIDED, that is a contract config defect (treasury/autoRenew must be address(this), not msg.sender) — fail C18; do not reclassify it as insufficient funding alone. Verify via mirror node (GET /api/v1/tokens/{tokenIdOrAddress} or contract results). Poll up to ~30s for mirror lag."
+    },
+    {
+      "id": "C19",
+      "journey": "On-chain with test signer",
+      "route": "/contract",
+      "severity": "critical",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "Calling mintToken via the UI with the test signer completes; supply/mint effect is confirmed on mirror node.",
+      "howToVerify": "With burner connected and a token from C18, submit mintToken for a positive amount. Expect UI success feedback. Confirm via mirror node token supply or contract results that a mint occurred. Poll up to ~30s for mirror lag."
+    },
+    {
+      "id": "C20",
+      "journey": "On-chain with test signer",
+      "route": "/contract",
+      "severity": "major",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "After create/mint, the Next.js UI reflects the created token and post-mint outcome (address, supply, balance, or equivalent confirmation).",
+      "howToVerify": "After C18/C19, confirm the /contract UI shows the created token address and updated mint/supply/balance (or clear success state tied to that token). UI-only toast without any lasting token identity is insufficient."
+    }
+  ]
+}
