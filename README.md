@@ -39,8 +39,8 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 - Your own **PRD** markdown (not shipped in this repo — see [`docs/prds/README.md`](docs/prds/README.md))
 
 ```bash
-git clone git@github.com:buidler-labs/hbar-agentic-harness.git
-cd hbar-agentic-harness
+git clone git@github.com:hedera-dev/hedera-harness.git
+cd hedera-harness
 npm install
 ```
 
