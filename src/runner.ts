@@ -27,6 +27,7 @@ import type {
 } from "./types.js";
 import { auditOracleAccess } from "./oracleAudit.js";
 import { vendorHarnessContext } from "./contextVendor.js";
+import { resolveSkillPaths } from "./skillResolver.js";
 import { vendorSkills } from "./skillVendor.js";
 import { commitWorkspaceAttempt, commitWorkspaceBaseline, ensureWorkspaceGit, initWorkspaceGit } from "./workspaceGit.js";
 import { executeCommand } from "./command.js";
@@ -152,7 +153,8 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
     logPhase("Workspace seeded", seedResult.workspacePath);
   }
 
-  const vendoredSkills = await vendorSkills(seedResult.workspacePath, spec.skills ?? []);
+  const resolvedSkillPaths = await resolveSkillPaths(spec.skills ?? [], projectRoot);
+  const vendoredSkills = await vendorSkills(seedResult.workspacePath, resolvedSkillPaths);
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "skills_vendored",
     timestamp: new Date().toISOString(),

@@ -1,0 +1,35 @@
+{
+  "description": "Registry of skills the harness can vendor into workspaces. Reference skills by name in a template spec's `skills:` list. Add entries here for any SKILL.md the generator or validator agents may benefit from (point `path` at the file on your machine).",
+  "skills": [
+    {
+      "name": "project-scaffolding",
+      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/project-scaffolding/SKILL.md",
+      "tags": ["scaffolding", "claude-md", "project-setup"],
+      "description": "Scaffold CLAUDE.md and .claude/ project structure for AI-assisted workflows."
+    },
+    {
+      "name": "quality-gates",
+      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/quality-gates/SKILL.md",
+      "tags": ["lint", "ci", "hooks", "validation"],
+      "description": "Linting, post-edit checks, deploy checklists, and CI quality gates."
+    },
+    {
+      "name": "session-management",
+      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/session-management/SKILL.md",
+      "tags": ["sessions", "continuity", "work-log"],
+      "description": "Session continuity, work tracking, and report registry patterns."
+    },
+    {
+      "name": "hedera-consensus-service",
+      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/native-services-js/skills/hedera-consensus-service/SKILL.md",
+      "tags": ["hcs", "topics", "messages", "mirror-node"],
+      "description": "Hedera Consensus Service patterns for topic creation, message submission, and mirror reads."
+    },
+    {
+      "name": "hedera-token-service",
+      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/native-services-js/skills/hedera-token-service/SKILL.md",
+      "tags": ["hts", "tokens", "nft", "fungible"],
+      "description": "Hedera Token Service patterns for creating, managing, and transferring tokens."
+    }
+  ]
+}

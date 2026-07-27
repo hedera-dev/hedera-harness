@@ -86,12 +86,39 @@ To run a new Hedera template benchmark, supply:
 | **Static validator JSON** | Yes | Structural / text / secret assertions for this template |
 | **Command validator JSON** | Yes | Yarn (or other) commands that must succeed without live secrets |
 | **scaffold-hbar seed** | Yes | Update `seed.repo` / `seed.ref` for your machine |
-| **Skills paths** (`skills`) | Optional | Absolute paths to `SKILL.md` files to vendor into the workspace |
+| **Skills** (`skills`) | Optional | Skill **names** from [`skills-index.json`](skills-index.json) (preferred), or absolute/`./` paths to `SKILL.md` |
 | **Playwright smoke YAML** | Tier 2 | `server.command` / `server.url` + routes to hit |
 | **Acceptance contract** | Tier 3 | Numbered assertions; source of truth for semantic pass/fail |
 | **Validator agent block** | Tier 3 | Separate from the generator; usually stricter MCP/sandbox flags |
 
-Machine-specific paths (`seed.repo`, `skills`, sometimes absolute tool paths) must be edited before you run.
+Machine-specific paths (`seed.repo`, skill `path` values in `skills-index.json`, sometimes absolute tool paths) must be edited before you run.
+
+### Skills index
+
+Specs should list skills by **name**. The harness resolves those names through [`skills-index.json`](skills-index.json) at the repo root, then vendors the matching `SKILL.md` files into the run workspace under `.harness-skills/`.
+
+```yaml
+skills:
+  - hedera-consensus-service
+  - project-scaffolding
+```
+
+**Add a skill the agent could benefit from:**
+
+1. Open [`skills-index.json`](skills-index.json)
+2. Append an entry with a unique `name`, a `path` to the `SKILL.md` on your machine, and optional `tags` / `description`
+3. Reference that `name` in your template spec’s `skills:` list
+
+```json
+{
+  "name": "my-new-skill",
+  "path": "/absolute/path/to/my-new-skill/SKILL.md",
+  "tags": ["example"],
+  "description": "Short summary for humans browsing the index."
+}
+```
+
+Absolute paths and `./` / `../` relative paths still work in `skills:` for one-off overrides (they skip the index). If a name is missing from the index, the harness fails fast and lists the registered skills.
 
 ## Configure a spec
 
@@ -131,8 +158,8 @@ generator:
 #   command: agent
 #   args: [ -p, --trust, --force, --sandbox, disabled, --approve-mcps, ... ]
 
-# skills:
-#   - /path/to/some-skill/SKILL.md
+# skills:                           # names from skills-index.json
+#   - hedera-consensus-service
 
 validators:
   static: validators/my-template-static.json
@@ -201,6 +228,7 @@ npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<ru
 ```
 ├── src/              # Harness implementation
 ├── specs/            # YAML run configs (examples)
+├── skills-index.json # Name → SKILL.md registry for spec `skills:` lists
 ├── validators/       # JSON static + command validators
 ├── contracts/        # Acceptance contracts (Tier 3)
 ├── playwright/       # Playwright gate smoke configs (Tier 2)

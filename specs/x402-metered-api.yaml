@@ -53,11 +53,12 @@ validator:
     - --stream-partial-output
   timeoutMs: 600000
 
+# Skill names resolve via skills-index.json at the harness repo root.
 skills:
-  - /Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/project-scaffolding/SKILL.md
-  - /Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/quality-gates/SKILL.md
-  - /Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/session-management/SKILL.md
-  - /Users/sebastianraba/Work/hedera-skills/plugins/native-services-js/skills/hedera-consensus-service/SKILL.md
+  - project-scaffolding
+  - quality-gates
+  - session-management
+  - hedera-consensus-service
 
 constraints:
   packageManager: yarn@3.2.3
