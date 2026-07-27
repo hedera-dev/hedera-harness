@@ -225,6 +225,8 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
       evmAddress: chainSigner.evmAddress,
       network: chainSigner.network,
       reused: provisioned.reused,
+      ...(provisioned.toppedUpHbar !== undefined ? { toppedUpHbar: provisioned.toppedUpHbar } : {}),
+      ...(provisioned.replacedDeleted ? { replacedDeleted: true } : {}),
     });
     await appendHarnessNote(
       layout.notesLogPath,
@@ -234,11 +236,23 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
         `evmAddress=${chainSigner.evmAddress}`,
         `reused=${provisioned.reused}`,
         `fundingHbar=${spec.chainValidation.fundingHbar}`,
+        ...(provisioned.toppedUpHbar !== undefined
+          ? [`toppedUpHbar=${provisioned.toppedUpHbar}`]
+          : []),
+        ...(provisioned.replacedDeleted ? ["replacedDeleted=true"] : []),
       ].join("\n"),
     );
     logPhase(
-      provisioned.reused ? "Chain signer reused" : "Chain signer provisioned",
-      `${chainSigner.accountId} (${chainSigner.evmAddress})`,
+      provisioned.replacedDeleted
+        ? "Chain signer replaced (prior account deleted)"
+        : provisioned.reused
+          ? provisioned.toppedUpHbar !== undefined
+            ? "Chain signer reused + topped up"
+            : "Chain signer reused"
+          : "Chain signer provisioned",
+      provisioned.toppedUpHbar !== undefined
+        ? `${chainSigner.accountId} (+${provisioned.toppedUpHbar} HBAR → ${spec.chainValidation.fundingHbar})`
+        : `${chainSigner.accountId} (${chainSigner.evmAddress})`,
     );
   }
 
@@ -634,7 +648,7 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
   return report;
   } finally {
     if (chainSigner && spec.chainValidation?.enabled) {
-      const sweep = await sweepChainSigner(chainSigner, spec.chainValidation);
+      const sweep = await sweepChainSigner(chainSigner, spec.chainValidation, layout.runDirectory);
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "chain_signer_swept",
         timestamp: new Date().toISOString(),
@@ -708,8 +722,14 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
     const provisioned = await provisionChainSigner(spec.chainValidation, runDirectory);
     chainSigner = provisioned.signer;
     logPhase(
-      provisioned.reused ? "Chain signer reused" : "Chain signer provisioned",
-      `${chainSigner.accountId} (${chainSigner.evmAddress})`,
+      provisioned.reused
+        ? provisioned.toppedUpHbar !== undefined
+          ? "Chain signer reused + topped up"
+          : "Chain signer reused"
+        : "Chain signer provisioned",
+      provisioned.toppedUpHbar !== undefined
+        ? `${chainSigner.accountId} (+${provisioned.toppedUpHbar} HBAR → ${spec.chainValidation.fundingHbar})`
+        : `${chainSigner.accountId} (${chainSigner.evmAddress})`,
     );
   }
 

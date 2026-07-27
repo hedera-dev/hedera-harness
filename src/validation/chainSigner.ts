@@ -1,12 +1,14 @@
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  AccountBalanceQuery,
   AccountCreateTransaction,
   AccountDeleteTransaction,
   AccountId,
   Client,
   Hbar,
   PrivateKey,
+  TransferTransaction,
 } from "@hiero-ledger/sdk";
 import type { ChainSigner, ChainValidationConfig } from "../types.js";
 
@@ -19,11 +21,13 @@ interface PersistedChainSigner extends ChainSigner {
 /**
  * Provision (or reuse) an ephemeral funded ECDSA testnet account for a run.
  * Persists to `runs/<id>/chain-signer.json` so continue/repair attempts share it.
+ * When reusing, tops up HBAR if the balance is below `fundingHbar`.
+ * If the persisted account was swept/deleted, provisions a fresh one.
  */
 export async function provisionChainSigner(
   config: ChainValidationConfig,
   runDirectory: string,
-): Promise<{ signer: ChainSigner; reused: boolean }> {
+): Promise<{ signer: ChainSigner; reused: boolean; toppedUpHbar?: number; replacedDeleted?: boolean }> {
   if (!config.enabled) {
     throw new Error("provisionChainSigner called with chainValidation.enabled=false");
   }
@@ -37,9 +41,29 @@ export async function provisionChainSigner(
   const persistPath = chainSignerPath(runDirectory);
   const existing = await readPersistedSigner(persistPath);
   if (existing) {
-    return { signer: toPublicSigner(existing), reused: true };
+    const signer = toPublicSigner(existing);
+    const liveliness = await checkSignerLiveliness(signer, config);
+    if (liveliness === "alive") {
+      const toppedUpHbar = await topUpSignerIfNeeded(signer, config);
+      return { signer, reused: true, ...(toppedUpHbar !== undefined ? { toppedUpHbar } : {}) };
+    }
+
+    // Account was swept at end of a prior cycle, or otherwise gone — replace it.
+    await clearPersistedSigner(persistPath);
   }
 
+  const created = await createFundedSigner(config, persistPath);
+  return {
+    signer: created,
+    reused: false,
+    ...(existing ? { replacedDeleted: true } : {}),
+  };
+}
+
+async function createFundedSigner(
+  config: ChainValidationConfig,
+  persistPath: string,
+): Promise<ChainSigner> {
   const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
   const ephemeralKey = PrivateKey.generateECDSA();
   const evmAddress = ephemeralKey.publicKey.toEvmAddress();
@@ -74,7 +98,78 @@ export async function provisionChainSigner(
     };
 
     await writeFile(persistPath, `${JSON.stringify(signer, null, 2)}\n`, "utf8");
-    return { signer: toPublicSigner(signer), reused: false };
+    return toPublicSigner(signer);
+  } finally {
+    client.close();
+  }
+}
+
+/**
+ * Returns whether the persisted signer account still exists on testnet.
+ */
+async function checkSignerLiveliness(
+  signer: ChainSigner,
+  config: ChainValidationConfig,
+): Promise<"alive" | "deleted"> {
+  const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
+  const client = Client.forTestnet();
+  client.setOperator(AccountId.fromString(operatorId), operatorKey);
+
+  try {
+    await new AccountBalanceQuery()
+      .setAccountId(AccountId.fromString(signer.accountId))
+      .execute(client);
+    return "alive";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/ACCOUNT_DELETED|INVALID_ACCOUNT_ID|ACCOUNT_ID_DOES_NOT_EXIST/i.test(message)) {
+      return "deleted";
+    }
+    // Unexpected query failure — don't silently recreate; surface it.
+    throw wrapProvisionError(error, operatorId, config);
+  } finally {
+    client.close();
+  }
+}
+
+/**
+ * Transfer enough HBAR from the operator so the signer balance reaches `fundingHbar`.
+ * Returns the HBAR amount transferred, or undefined when no top-up was needed.
+ */
+async function topUpSignerIfNeeded(
+  signer: ChainSigner,
+  config: ChainValidationConfig,
+): Promise<number | undefined> {
+  const target = new Hbar(config.fundingHbar);
+  const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
+  const client = Client.forTestnet();
+  client.setOperator(AccountId.fromString(operatorId), operatorKey);
+
+  try {
+    const balance = await new AccountBalanceQuery()
+      .setAccountId(AccountId.fromString(signer.accountId))
+      .execute(client);
+
+    const currentTinybars = BigInt(balance.hbars.toTinybars().toString());
+    const targetTinybars = BigInt(target.toTinybars().toString());
+    if (currentTinybars >= targetTinybars) {
+      return undefined;
+    }
+
+    const deltaTinybars = targetTinybars - currentTinybars;
+    const delta = Hbar.fromTinybars(deltaTinybars.toString());
+    try {
+      await (
+        await new TransferTransaction()
+          .addHbarTransfer(AccountId.fromString(operatorId), delta.negated())
+          .addHbarTransfer(AccountId.fromString(signer.accountId), delta)
+          .execute(client)
+      ).getReceipt(client);
+    } catch (error) {
+      throw wrapProvisionError(error, operatorId, config);
+    }
+
+    return Number(deltaTinybars) / 100_000_000;
   } finally {
     client.close();
   }
@@ -82,11 +177,13 @@ export async function provisionChainSigner(
 
 /**
  * Best-effort sweep: delete the ephemeral account and transfer remaining HBAR
- * back to the operator. Never throws — reports success via return value.
+ * back to the operator. Clears `chain-signer.json` on success so `--continue`
+ * does not try to reuse a deleted account.
  */
 export async function sweepChainSigner(
   signer: ChainSigner,
   config: ChainValidationConfig,
+  runDirectory?: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!config.sweepBack) {
     return { success: true };
@@ -107,6 +204,9 @@ export async function sweepChainSigner(
         .freezeWith(client);
       const signed = await frozen.sign(ephemeralKey);
       await (await signed.execute(client)).getReceipt(client);
+      if (runDirectory) {
+        await clearPersistedSigner(chainSignerPath(runDirectory));
+      }
       return { success: true };
     } finally {
       client.close();
@@ -286,6 +386,14 @@ async function readPersistedSigner(persistPath: string): Promise<PersistedChainS
     return undefined;
   } catch {
     return undefined;
+  }
+}
+
+async function clearPersistedSigner(persistPath: string): Promise<void> {
+  try {
+    await unlink(persistPath);
+  } catch {
+    // Best-effort — missing file is fine.
   }
 }
 

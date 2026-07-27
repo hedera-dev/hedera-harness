@@ -474,7 +474,12 @@ function formatHardConstraints(spec: TemplateSpec): string[] {
 
 function formatSkillSummaries(skills: VendoredSkill[]): string {
   return skills
-    .map(skill => `### ${skill.name}\nSource: ${skill.relativePath}\n${skill.description}`)
+    .map(skill => {
+      const refs = skill.referencesPath
+        ? `\nReferences (read when needed): ${skill.referencesPath}/`
+        : "";
+      return `### ${skill.name}\nSource: ${skill.relativePath}${refs}\n${skill.description}`;
+    })
     .join("\n\n");
 }
 

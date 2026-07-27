@@ -1,0 +1,60 @@
+{
+  "$schema": "./static-validator.schema.json",
+  "name": "hts-precompile-demo-static",
+  "description": "Static invariants for the HTS precompile Solidity demo template (Hardhat kept, Foundry removed).",
+  "jsonAssertions": [
+    {
+      "file": "template.json",
+      "path": "name",
+      "equals": "hts-precompile-demo"
+    },
+    {
+      "file": "template.json",
+      "path": "create-scaffold-hbar.capabilities.frontend",
+      "equals": ["nextjs-app"]
+    },
+    {
+      "file": "template.json",
+      "path": "create-scaffold-hbar.capabilities.solidityFramework",
+      "equals": ["hardhat"]
+    },
+    {
+      "file": "package.json",
+      "path": "workspaces.packages",
+      "equals": ["packages/hardhat", "packages/nextjs"]
+    },
+    {
+      "file": "package.json",
+      "path": "packageManager",
+      "equals": "yarn@3.2.3"
+    }
+  ],
+  "fileAssertions": {
+    "required": [
+      "template.json",
+      "README.md",
+      "AGENTS.md",
+      "package.json",
+      "packages/nextjs/package.json",
+      "packages/hardhat/package.json",
+      "packages/hardhat/hardhat.config.ts",
+      "packages/hardhat/contracts/HtsTokenCreator.sol"
+    ],
+    "forbidden": [
+      ".env",
+      "packages/nextjs/.env",
+      "packages/hardhat/.env",
+      "packages/foundry"
+    ]
+  },
+  "textAssertions": [
+    {
+      "file": "README.md",
+      "contains": ["yarn install", "yarn hardhat:compile", "yarn next:dev"]
+    },
+    {
+      "file": "AGENTS.md",
+      "contains": ["hardhat", "deploy", "__RUNTIME_DEPLOYER_PRIVATE_KEY"]
+    }
+  ]
+}

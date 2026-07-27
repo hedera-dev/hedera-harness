@@ -1,13 +1,15 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const SKILLS_DIR = ".harness-skills";
+const REFERENCES_DIRNAME = "references";
 
 export interface VendoredSkill {
   name: string;
   relativePath: string;
   description: string;
   sourcePath: string;
+  referencesPath?: string;
 }
 
 export async function vendorSkills(
@@ -31,12 +33,21 @@ export async function vendorSkills(
     await mkdir(path.dirname(destinationPath), { recursive: true });
     await writeFile(destinationPath, content, "utf8");
 
-    vendored.push({
+    const skill: VendoredSkill = {
       name,
       relativePath,
       description,
       sourcePath,
-    });
+    };
+
+    const sourceReferencesDir = path.join(path.dirname(sourcePath), REFERENCES_DIRNAME);
+    const destReferencesDir = path.join(path.dirname(destinationPath), REFERENCES_DIRNAME);
+    if (await pathExists(sourceReferencesDir)) {
+      await cp(sourceReferencesDir, destReferencesDir, { recursive: true, force: true });
+      skill.referencesPath = path.posix.join(SKILLS_DIR, slug, REFERENCES_DIRNAME);
+    }
+
+    vendored.push(skill);
   }
 
   await writeFile(
@@ -48,6 +59,7 @@ export async function vendorSkills(
           name: skill.name,
           relativePath: skill.relativePath,
           sourcePath: skill.sourcePath,
+          ...(skill.referencesPath ? { referencesPath: skill.referencesPath } : {}),
         })),
       },
       null,
@@ -86,4 +98,13 @@ function extractSkillName(content: string): string | undefined {
 function extractSkillDescription(content: string): string {
   const match = content.match(/^description:\s*(.+)$/m);
   return match?.[1]?.trim() ?? "Use this skill when relevant to the template being built.";
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
