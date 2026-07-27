@@ -1,0 +1,35 @@
+{
+  "$schema": "./command-validator.schema.json",
+  "name": "x402-metered-api-yarn-validation",
+  "description": "Yarn-only deterministic validation for the x402 metered API template. Production build covers TypeScript checks.",
+  "requiresNoSecrets": true,
+  "forbiddenCommands": [
+    "npm install",
+    "npm run",
+    "pnpm install",
+    "pnpm run",
+    "yarn hardhat:*",
+    "yarn foundry:*",
+    "docker *"
+  ],
+  "commands": [
+    {
+      "name": "install",
+      "command": "yarn install",
+      "timeoutMs": 300000,
+      "purpose": "Install the single Next.js workspace exactly as a scaffold-hbar Yarn repo."
+    },
+    {
+      "name": "lint",
+      "command": "yarn lint",
+      "timeoutMs": 180000,
+      "purpose": "Run the frontend lint command exposed by the root package."
+    },
+    {
+      "name": "build",
+      "command": "yarn next:build",
+      "timeoutMs": 300000,
+      "purpose": "Verify the generated Next.js app builds for production without live secrets."
+    }
+  ]
+}

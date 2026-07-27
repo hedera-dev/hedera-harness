@@ -18,9 +18,8 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     seed: readSeed(parsed),
     generator: readGenerator(parsed),
     validator: readOptionalValidator(parsed),
-    skills: readOptionalStringArray(parsed, "skills")?.map(skill =>
-      path.isAbsolute(skill) ? skill : path.resolve(projectRoot, skill),
-    ),
+    // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
+    skills: readOptionalStringArray(parsed, "skills"),
     constraints: readConstraints(parsed),
     templateMetadata: readTemplateMetadata(parsed),
     validators: {

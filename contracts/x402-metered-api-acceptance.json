@@ -1,0 +1,199 @@
+{
+  "$schema": "./acceptance-contract.schema.json",
+  "name": "x402-metered-api-acceptance",
+  "template": "x402-metered-api",
+  "prd": "docs/prds/x402-metered-api.md",
+  "version": 2,
+  "description": "Acceptance contract for the x402 keyless metered API demo. Burner path is executed end-to-end when a Test Signer is provided; HashPack/WalletConnect is affordance + architecture only (not automated).",
+  "routes": ["/", "/admin"],
+  "evaluationRules": {
+    "posture": "adversarial",
+    "failOnUncertainty": "If an assertion cannot be positively verified from the running app, mark it FAILED, not passed. Absence of evidence is a failure.",
+    "credentials": "The app must load, render, and be browsable without any .env file, private keys, operator keys, or funded testnet account. Missing credentials must not excuse a broken read path.",
+    "walletGatedFlows": "When the harness provides a Test Signer in the validator prompt: assertions flagged executableWithTestSigner=true MUST be executed end-to-end via the burner wallet (inject burnerWallet.pk, connect Burner, complete flow, verify on-chain via mirror node). Other walletRequired assertions without that flag remain affordance-only. HashPack / Hedera WalletConnect must be present as a connect option and documented, but MUST NOT be required to complete a live HashPack signature in headless validation. When no Test Signer is provided, treat all walletRequired assertions as affordance-only.",
+    "onChainVerification": "For executableWithTestSigner assertions, confirm effects via the Hedera testnet mirror node REST API (https://testnet.mirrornode.hedera.com). Poll up to ~30s for mirror lag. Cite mirror evidence in the verdict.",
+    "hybridSigner": "Native Hedera actions (x402 partial-sign and HCS execute) must go through a dual-path signer: BurnerKeySigner when burnerWallet.pk / burner connector is active; WalletConnectHederaSigner when HashPack/Hedera WC is active. x402 must use sign-only (never wallet submit). EVM-only wallets without a burner key must surface a clear error, not a silent failure.",
+    "evidence": "Every verdict issue must cite what was observed (route visited, element found/absent, console output, API responses, mirror node responses for on-chain flows).",
+    "severityMeaning": {
+      "critical": "Route/app is broken or a core journey is impossible; run cannot pass.",
+      "major": "A required PRD capability is missing or non-functional on the read/affordance level.",
+      "minor": "Coherence, clarity, or documentation gap that degrades the demo but does not break a journey."
+    }
+  },
+  "assertions": [
+    {
+      "id": "C1",
+      "journey": "Browse the demo",
+      "route": "/",
+      "severity": "critical",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The home route renders without runtime/console errors and shows the metered API demo concept.",
+      "howToVerify": "Navigate to /. Confirm the page loads, primary content about x402/paid API is visible, and the console shows no uncaught errors or crash banners."
+    },
+    {
+      "id": "C2",
+      "journey": "Browse the demo",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The home page identifies the Hedera network (testnet) and shows which facilitator is in use.",
+      "howToVerify": "On /, look for visible indication of Testnet and mention of the x402 facilitator or payment scheme."
+    },
+    {
+      "id": "C3",
+      "journey": "Free endpoint",
+      "route": "/",
+      "severity": "critical",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "A free API endpoint is callable without payment or wallet and returns valid JSON data.",
+      "howToVerify": "From the UI, trigger the free endpoint call (button or auto-fetch). Confirm a JSON response is displayed or accessible. Alternatively, call /api/data/free (or equivalent) directly and confirm HTTP 200 with a JSON body."
+    },
+    {
+      "id": "C4",
+      "journey": "Paid endpoint gating",
+      "route": "/",
+      "severity": "critical",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The paid API endpoint returns HTTP 402 Payment Required with valid x402 PaymentRequirements when called without payment.",
+      "howToVerify": "Call the paid endpoint (e.g. /api/data/paid) without an X-PAYMENT header. Confirm the response is HTTP 402 and the body or headers contain PaymentRequirements with at least: scheme, network, amount, asset, payTo."
+    },
+    {
+      "id": "C5",
+      "journey": "Paid endpoint gating",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The home page UI clearly shows the price and payment requirement for the paid endpoint before any wallet action.",
+      "howToVerify": "On /, confirm the paid endpoint section visually displays the cost (e.g. HBAR amount) and indicates a payment is required to access it."
+    },
+    {
+      "id": "C6",
+      "journey": "Wallet connect",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "A wallet-connect affordance is available and offers both Burner (dev) and HashPack / Hedera WalletConnect paths.",
+      "howToVerify": "On /, open Connect Wallet (or equivalent). Confirm Burner Wallet (or Development burner) is available for harness/demo use, and a HashPack or Hedera WalletConnect option is available for real users. Presence in the modal/UI is enough; do not complete a HashPack signature."
+    },
+    {
+      "id": "C7",
+      "journey": "x402 payment flow (burner)",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "Connecting the burner wallet with the harness test signer key succeeds and the app shows a connected account in Burner mode.",
+      "howToVerify": "Inject the test signer private key into localStorage (burnerWallet.pk), reload, open Connect Wallet, choose Burner Wallet. Confirm the header shows a connected account and the UI indicates burner/dev signer mode when shown."
+    },
+    {
+      "id": "C8",
+      "journey": "x402 payment flow (burner)",
+      "route": "/",
+      "severity": "critical",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "With the burner wallet connected, triggering the paid endpoint completes the x402 payment flow and returns premium data (HTTP 200).",
+      "howToVerify": "With burner connected and funded, trigger the paid API call from the UI. The app should handle 402 → partial-sign via burner key → retry automatically. Confirm the UI shows success with the premium JSON data. Verify via mirror node that a transfer transaction from the test signer account exists (GET /api/v1/transactions?account.id=SIGNER&order=desc&limit=5). The transfer should send the advertised amount to the payTo account."
+    },
+    {
+      "id": "C9",
+      "journey": "x402 payment flow (burner)",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "After a successful paid call, the UI shows a HashScan link or settlement transaction ID so the user can verify on-chain.",
+      "howToVerify": "After C8 succeeds, confirm the UI surfaces a transaction ID or a link to HashScan (testnet) for the settlement."
+    },
+    {
+      "id": "C10",
+      "journey": "HCS receipt (burner)",
+      "route": "/",
+      "severity": "major",
+      "walletRequired": true,
+      "executableWithTestSigner": true,
+      "verifiableWithoutCredentials": false,
+      "statement": "After a successful payment, a receipt message appears in the HCS topic and is visible in the receipt feed on the home page.",
+      "howToVerify": "After C8 settles, wait up to 30s and check: (1) the receipt feed on / shows the new entry with payer/amount/endpoint info, and (2) mirror node GET /api/v1/topics/{topicId}/messages confirms a receipt message containing the settlement tx ID or payer account."
+    },
+    {
+      "id": "C11",
+      "journey": "Admin",
+      "route": "/admin",
+      "severity": "critical",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The /admin route renders without runtime/console errors.",
+      "howToVerify": "Navigate to /admin. Confirm the page loads and the console shows no uncaught errors."
+    },
+    {
+      "id": "C12",
+      "journey": "Admin",
+      "route": "/admin",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "The admin page shows facilitator configuration (URL, fee-payer) and the current payTo account and price.",
+      "howToVerify": "On /admin, confirm visible display of the facilitator URL (or its name), the payTo account ID, and the per-call price."
+    },
+    {
+      "id": "C13",
+      "journey": "Admin",
+      "route": "/admin",
+      "severity": "major",
+      "walletRequired": true,
+      "verifiableWithoutCredentials": true,
+      "statement": "The admin page exposes a control to create an HCS receipt topic.",
+      "howToVerify": "On /admin, locate a labeled control for creating an HCS topic for receipts."
+    },
+    {
+      "id": "C14",
+      "journey": "Hybrid signer architecture",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "README and/or AGENTS.md document the dual signer model: burner for harness/demos and HashPack via Hedera WalletConnect for real users, including that x402 uses sign-only and HCS uses sign-and-execute.",
+      "howToVerify": "Read README.md and AGENTS.md in the workspace. Confirm both signer paths are described and the x402 vs HCS wallet method distinction is stated (signTransaction / partial-sign vs signAndExecute)."
+    },
+    {
+      "id": "C15",
+      "journey": "Hybrid signer architecture",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "Source code implements a dual-path Hedera signer (burner private-key path and WalletConnect/HashPack path) rather than reading burnerWallet.pk for all native actions.",
+      "howToVerify": "Inspect the packages/nextjs source for a signer abstraction or clearly separated Burner vs WalletConnect signing helpers. Confirm paid/HCS flows do not exclusively depend on localStorage burnerWallet.pk when a HashPack session is the intended path. Presence of Hedera WalletConnect / HashPack integration code is required."
+    },
+    {
+      "id": "C16",
+      "journey": "Cross-cutting",
+      "route": "*",
+      "severity": "major",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The full app boots and all routes are reachable with no .env, private keys, or funded account present.",
+      "howToVerify": "With no credentials configured, visit / and /admin. All must render their intended UI. Any route that hard-fails due to missing credentials is a failure."
+    },
+    {
+      "id": "C17",
+      "journey": "Cross-cutting",
+      "route": "*",
+      "severity": "minor",
+      "walletRequired": false,
+      "verifiableWithoutCredentials": true,
+      "statement": "The demo surfaces no Solidity/contract-deploy or local-chain tooling flows.",
+      "howToVerify": "Across the routes, confirm there are no Hardhat, Foundry, or Docker deploy steps presented to the user."
+    }
+  ]
+}

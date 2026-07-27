@@ -53,9 +53,10 @@ validator:
     - --stream-partial-output
   timeoutMs: 600000
 
-# Optional — absolute paths to SKILL.md files to vendor into the workspace
+# Optional — skill names from skills-index.json (preferred), or absolute/./ relative paths
 # skills:
-#   - REPLACE_ME/path/to/skill/SKILL.md
+#   - hedera-consensus-service
+#   - project-scaffolding
 
 constraints:
   packageManager: yarn@3.2.3

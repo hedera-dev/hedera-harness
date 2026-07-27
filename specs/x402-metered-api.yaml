@@ -1,8 +1,8 @@
-name: hedera-demo-from-main
-description: Blind generation of a Hedera-native Proof Wall demo template from scaffold-hbar main.
+name: x402-metered-api
+description: Blind generation of an x402 keyless metered API demo template from scaffold-hbar main.
 
-prd: docs/prds/hedera-proof-wall-demo.md
-contract: contracts/proof-wall-acceptance.json
+prd: docs/prds/x402-metered-api.md
+contract: contracts/x402-metered-api-acceptance.json
 
 seed:
   repo: /Users/sebastianraba/Work/scaffold-hbar
@@ -53,14 +53,12 @@ validator:
     - --stream-partial-output
   timeoutMs: 600000
 
-
 # Skill names resolve via skills-index.json at the harness repo root.
 skills:
   - project-scaffolding
   - quality-gates
   - session-management
   - hedera-consensus-service
-  - hedera-token-service
 
 constraints:
   packageManager: yarn@3.2.3
@@ -79,14 +77,14 @@ constraints:
     - docker *
 
 templateMetadata:
-  name: proof-wall-demo
+  name: x402-metered-api
   frontend: nextjs-app
   solidityFramework: none
 
 validators:
-  static: validators/blind-hedera-demo-static.json
-  commands: validators/hedera-demo-yarn-validation.json
-  playwright: playwright/hedera-demo-smoke.yaml
+  static: validators/x402-metered-api-static.json
+  commands: validators/x402-metered-api-yarn.json
+  playwright: playwright/x402-metered-api-smoke.yaml
 
 requiredFiles:
   - template.json

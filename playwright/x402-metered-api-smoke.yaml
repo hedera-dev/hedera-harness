@@ -1,0 +1,43 @@
+name: x402-metered-api-smoke
+description: Wallet-free browser smoke checks for the x402 keyless metered API template.
+
+server:
+  command: yarn next:dev
+  url: http://localhost:3000
+  timeoutMs: 120000
+
+artifacts:
+  screenshots: true
+  traces: true
+  consoleErrors: true
+
+defaults:
+  timeoutMs: 60000
+  failOnConsoleError: true
+  requiresWallet: false
+  requiresSecrets: false
+
+routes:
+  - name: home
+    path: /
+    assertions:
+      visibleText:
+        - x402
+        - Metered API
+        - Free
+        - Paid
+        - Testnet
+
+  - name: admin
+    path: /admin
+    assertions:
+      visibleText:
+        - Admin
+        - Facilitator
+        - Topic
+
+forbidden:
+  visibleText:
+    - Internal Server Error
+    - Application error
+    - Unhandled Runtime Error
