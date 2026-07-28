@@ -28,6 +28,10 @@ generator:
     - enabled
     - --workspace
     - "{workspace}"
+    # Pin the model for your agent CLI (examples use Cursor `agent` + composer-2.5).
+    # Omit --model to use that CLI's default. Other CLIs need their own command/args/--model values.
+    - --model
+    - composer-2.5
     - --force
     - --output-format
     - stream-json
@@ -48,6 +52,8 @@ validator:
     - --approve-mcps
     - --workspace
     - "{workspace}"
+    - --model
+    - composer-2.5
     - --output-format
     - stream-json
     - --stream-partial-output

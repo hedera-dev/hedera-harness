@@ -192,6 +192,8 @@ generator:
     - enabled
     - --workspace
     - "{workspace}"
+    - --model            # pin model for your agent CLI; examples use Cursor agent + composer-2.5
+    - composer-2.5
     - --force
     - --output-format
     - stream-json
@@ -202,7 +204,7 @@ generator:
 #   enabled: true
 #   provider: command
 #   command: agent
-#   args: [ -p, --trust, --force, --sandbox, disabled, --approve-mcps, ... ]
+#   args: [ -p, --trust, --force, --sandbox, disabled, --approve-mcps, --model, composer-2.5, ... ]
 
 # skills:                           # names from skills-index.json
 #   - hedera-consensus-service

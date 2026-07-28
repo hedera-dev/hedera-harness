@@ -35,7 +35,7 @@ Example PRDs in this folder are **inspiration only**. Put private WIP under `doc
 
 - [ ] `name`, `prd` path
 - [ ] `seed.repo` / `seed.ref` → your scaffold-hbar clone or remote
-- [ ] `generator` block (Cursor `agent` + `--workspace "{workspace}"` + stream-json)
+- [ ] `generator` block (examples use Cursor `agent` + `--workspace "{workspace}"` + stream-json; pin `--model` for your agent CLI — examples use `composer-2.5`; omit to use the CLI default)
 - [ ] `validators.static` + `validators.commands`
 - [ ] `requiredFiles` / `forbiddenFiles` / optional `secretScan` / `constraints`
 - [ ] Optional `skills:` names from `skills-index.json` (defaults to [hedera-dev/hedera-skills](https://github.com/hedera-dev/hedera-skills) via remote fetch; absolute/`./` paths still work); add missing skills to the index if the agent would benefit
@@ -58,6 +58,8 @@ validator:
     - --approve-mcps
     - --workspace
     - "{workspace}"
+    - --model
+    - composer-2.5
     - --output-format
     - stream-json
     - --stream-partial-output
