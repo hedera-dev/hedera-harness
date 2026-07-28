@@ -48,7 +48,7 @@ export class WorkspaceWatcher {
     await appendFile(this.activityLogPath, `${new Date().toISOString()} ${summary}\n`, "utf8");
 
     if (this.changes <= 20 || this.changes % 25 === 0) {
-      console.log(`[hbar-harness:workspace] ${summary}`);
+      console.log(`[hedera-harness:workspace] ${summary}`);
     }
 
     await this.onChange?.(summary);

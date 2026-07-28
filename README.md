@@ -1,4 +1,4 @@
-# hbar-agentic-harness
+# hedera-harness
 
 TypeScript CLI that **generates and validates [scaffold-hbar](https://github.com/buidler-labs/scaffold-hbar) templates** from a product brief you supply.
 

@@ -3,9 +3,9 @@ import path from "node:path";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 
 const GIT_IDENTITY_ENV = {
-  GIT_AUTHOR_NAME: "hbar-harness",
+  GIT_AUTHOR_NAME: "hedera-harness",
   GIT_AUTHOR_EMAIL: "harness@local",
-  GIT_COMMITTER_NAME: "hbar-harness",
+  GIT_COMMITTER_NAME: "hedera-harness",
   GIT_COMMITTER_EMAIL: "harness@local",
 };
 

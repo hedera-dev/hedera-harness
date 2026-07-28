@@ -21,22 +21,22 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 }
 
 export function printHelp(): void {
-  console.log(`hbar-harness
+  console.log(`hedera-harness
 
 Usage:
-  hbar-harness run <spec> [--agent <name>] [--max-attempts <count>]
-  hbar-harness run <spec> --continue <run-dir> [--max-attempts <count>]
-  hbar-harness validate <spec> --workspace <path>
-  hbar-harness validate-semantic <spec> --workspace <path>
-  hbar-harness supervise <spec> [--agent <name>] [--max-attempts <count>] [--max-cycles <count>]
+  hedera-harness run <spec> [--agent <name>] [--max-attempts <count>]
+  hedera-harness run <spec> --continue <run-dir> [--max-attempts <count>]
+  hedera-harness validate <spec> --workspace <path>
+  hedera-harness validate-semantic <spec> --workspace <path>
+  hedera-harness supervise <spec> [--agent <name>] [--max-attempts <count>] [--max-cycles <count>]
 
 Examples:
-  hbar-harness run specs/hedera-demo-from-main.yaml
-  hbar-harness run specs/hedera-demo-from-main.yaml --max-attempts 3
-  hbar-harness run specs/my-template.yaml --continue runs/<run-id> --max-attempts 3
-  hbar-harness validate specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
-  hbar-harness validate-semantic specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
-  hbar-harness supervise specs/hedera-demo-from-main.yaml --max-cycles 20`);
+  hedera-harness run specs/hedera-demo-from-main.yaml
+  hedera-harness run specs/hedera-demo-from-main.yaml --max-attempts 3
+  hedera-harness run specs/my-template.yaml --continue runs/<run-id> --max-attempts 3
+  hedera-harness validate specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
+  hedera-harness validate-semantic specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
+  hedera-harness supervise specs/hedera-demo-from-main.yaml --max-cycles 20`);
 }
 
 export async function runCli(parsed: ParsedCli): Promise<void> {

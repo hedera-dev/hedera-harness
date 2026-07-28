@@ -68,7 +68,7 @@ export class AgentStreamLogger {
 
     this.progress.lastActivity = summary;
     await appendFile(this.activityLogPath, `${formatTimestamp()} ${summary}\n`, "utf8");
-    console.log(`[hbar-harness:agent] ${summary}`);
+    console.log(`[hedera-harness:agent] ${summary}`);
     await this.onProgress?.(this.getProgress());
   }
 }

@@ -1,10 +1,10 @@
 {
-  "name": "hbar-agentic-harness",
+  "name": "hedera-harness",
   "version": "0.1.0",
   "description": "Agentic harness for validating scaffold-hbar templates.",
   "type": "module",
   "bin": {
-    "hbar-harness": "./dist/index.js"
+    "hedera-harness": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

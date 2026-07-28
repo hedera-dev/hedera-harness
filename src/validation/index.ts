@@ -78,13 +78,13 @@ export async function runDeterministicValidation(
   let playwrightGate: PlaywrightGateResult | undefined;
   if (spec.validators.playwrightPath && !options.skipPlaywrightGate) {
     if (commandValidation.findings.length === 0) {
-      console.log("[hbar-harness] Running thin Playwright gate...");
+      console.log("[hedera-harness] Running thin Playwright gate...");
       const gate = await runPlaywrightGate(workspacePath, spec.validators.playwrightPath);
       playwrightGate = gate.result;
       findings.push(...gate.findings);
     } else {
       console.log(
-        "[hbar-harness] Skipping Playwright gate because yarn command validation failed.",
+        "[hedera-harness] Skipping Playwright gate because yarn command validation failed.",
       );
     }
   }
@@ -261,7 +261,7 @@ async function validateCommands(
       const currentFingerprint = await computeInstallFingerprint(workspacePath);
       const cachedFingerprint = await readCachedInstallFingerprint(installCachePath);
       if (cachedFingerprint && cachedFingerprint === currentFingerprint) {
-        console.log("[hbar-harness] Skipping yarn install (dependency fingerprint unchanged).");
+        console.log("[hedera-harness] Skipping yarn install (dependency fingerprint unchanged).");
         commandResults.push({
           command: commandConfig.command,
           args: [],

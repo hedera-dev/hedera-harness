@@ -59,7 +59,7 @@ export async function runPlaywrightGate(
 
       if (serverUrl !== config.server.url) {
         console.log(
-          `[hbar-harness] Playwright gate using detected dev server ${serverUrl} (config specified ${config.server.url})`,
+          `[hedera-harness] Playwright gate using detected dev server ${serverUrl} (config specified ${config.server.url})`,
         );
       }
 

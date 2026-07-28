@@ -78,7 +78,7 @@ export class CommandAgentProvider implements AgentProvider {
         idleTimedOut = reason === "idle";
         const limitMs = reason === "idle" ? idleTimeoutMs : timeoutMs;
         console.log(
-          `[hbar-harness] Agent ${reason === "idle" ? "idle-" : ""}timeout after ${Math.round(limitMs / 1000)}s — stopping agent`,
+          `[hedera-harness] Agent ${reason === "idle" ? "idle-" : ""}timeout after ${Math.round(limitMs / 1000)}s — stopping agent`,
         );
         void appendAgentLog(
           input.logPath,
@@ -126,7 +126,7 @@ export class CommandAgentProvider implements AgentProvider {
         stderrChunks.push(buffer);
         const text = buffer.toString("utf8");
         void appendAgentLog(input.logPath, `\n## stderr\n${text}`);
-        console.log(`[hbar-harness:agent:stderr] ${truncate(text, 300)}`);
+        console.log(`[hedera-harness:agent:stderr] ${truncate(text, 300)}`);
       });
 
       child.on("error", error => {
@@ -151,7 +151,7 @@ export class CommandAgentProvider implements AgentProvider {
           stderr: [
             Buffer.concat(stderrChunks).toString("utf8"),
             idleTimedOut
-              ? `\n[hbar-harness] Agent produced no output for ${idleTimeoutMs}ms; treating as failure.\n`
+              ? `\n[hedera-harness] Agent produced no output for ${idleTimeoutMs}ms; treating as failure.\n`
               : "",
           ].join(""),
           durationMs: Date.now() - startedAt,

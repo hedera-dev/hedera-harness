@@ -35,7 +35,7 @@ export async function createDevServerSession(
 
   if (url !== config.configuredUrl) {
     console.log(
-      `[hbar-harness] Dev server using detected URL ${url} (config specified ${config.configuredUrl})`,
+      `[hedera-harness] Dev server using detected URL ${url} (config specified ${config.configuredUrl})`,
     );
   }
 
@@ -121,8 +121,8 @@ export function startDevServer(
     if (trimmed) {
       const prefix =
         stream === "stderr"
-          ? `[hbar-harness:${logPrefix}:server:stderr]`
-          : `[hbar-harness:${logPrefix}:server]`;
+          ? `[hedera-harness:${logPrefix}:server:stderr]`
+          : `[hedera-harness:${logPrefix}:server]`;
       console.log(`${prefix} ${truncate(trimmed.replace(/\s+/g, " "), 240)}`);
     }
 
@@ -133,7 +133,7 @@ export function startDevServer(
 
     if (/Port \d+ is in use/i.test(text)) {
       console.log(
-        `[hbar-harness] ${logPrefix} detected a port conflict; health checks will follow the server's reported Local URL.`,
+        `[hedera-harness] ${logPrefix} detected a port conflict; health checks will follow the server's reported Local URL.`,
       );
     }
   };

@@ -353,7 +353,7 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
         workspaceActivityLogPath,
       }));
       console.log(
-        `[hbar-harness] agent still running (${Math.round((Date.now() - agentStartedAt) / 1000)}s) — ${latestProgress.lastActivity}`,
+        `[hedera-harness] agent still running (${Math.round((Date.now() - agentStartedAt) / 1000)}s) — ${latestProgress.lastActivity}`,
       );
     }, 15_000);
 
@@ -816,7 +816,7 @@ async function runAttemptValidation(input: {
     const serverConfig = await loadDevServerConfig(playwrightPath);
     devSession = await createDevServerSession(input.workspacePath, serverConfig, "runtime");
 
-    console.log("[hbar-harness] Running thin Playwright gate (shared dev server)...");
+    console.log("[hedera-harness] Running thin Playwright gate (shared dev server)...");
     const gate = await runPlaywrightGate(input.workspacePath, playwrightPath, devSession);
     validation.playwrightGate = gate.result;
     validation.findings.push(...gate.findings);
@@ -996,7 +996,7 @@ async function loadPriorSeedInfo(layout: {
 
 function logPhase(title: string, detail?: string): void {
   const suffix = detail ? ` — ${detail}` : "";
-  console.log(`[hbar-harness] ${title}${suffix}`);
+  console.log(`[hedera-harness] ${title}${suffix}`);
 }
 
 
