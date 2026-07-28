@@ -1,6 +1,6 @@
 # hedera-harness
 
-TypeScript CLI that **generates and validates [scaffold-hbar](https://github.com/buidler-labs/scaffold-hbar) templates** from a product brief you supply.
+TypeScript CLI that **generates and validates [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) templates** from a product brief you supply.
 
 The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.). The loop is always the same: seed → generate → validate → repair until pass or budget exhausted.
 
@@ -35,18 +35,20 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 - **git** (workspace seeding)
 - **yarn** (seeded workspaces are Yarn-based)
 - **Cursor CLI** (`agent` on your `PATH`, authenticated)
-- A **scaffold-hbar** clone or remote URL for `seed.repo`
+- A **scaffold-hbar** seed — public remote works; local clone optional
 - A **PRD** markdown for the product you want to generate (start from the skeleton — see Quickstart)
 
 ```bash
-git clone git@github.com:hedera-dev/hedera-harness.git
+git clone https://github.com/hedera-dev/hedera-harness.git
 cd hedera-harness
 npm install
 ```
 
+(SSH works too: `git@github.com:hedera-dev/hedera-harness.git`.)
+
 ## Quickstart — build your own idea
 
-The harness is meant for **your** Hedera demo. Copy the skeleton, write a PRD, then run:
+The harness is meant for **your** Hedera demo. Copy the skeleton, rewrite placeholders to match `$NAME`, write a PRD, then run:
 
 ```bash
 NAME=my-hedera-demo
@@ -57,10 +59,18 @@ cp skeletons/new-template/acceptance-contract.json contracts/${NAME}-acceptance.
 cp skeletons/new-template/static.json         validators/${NAME}-static.json
 cp skeletons/new-template/yarn.json           validators/${NAME}-yarn.json
 cp skeletons/new-template/playwright-smoke.yaml playwright/${NAME}-smoke.yaml
+
+# Align internal paths / names with $NAME (macOS; on Linux drop the '').
+sed -i '' "s/my-template/${NAME}/g" \
+  specs/${NAME}.yaml \
+  validators/${NAME}-static.json \
+  validators/${NAME}-yarn.json \
+  contracts/${NAME}-acceptance.json \
+  playwright/${NAME}-smoke.yaml
 ```
 
 1. Rewrite `docs/prds/${NAME}.md` for your product (goal, journeys, Hedera services, non-goals).
-2. Edit `specs/${NAME}.yaml`: set `seed.repo` to your scaffold-hbar clone or remote URL, and fix paths / placeholders.
+2. Edit `specs/${NAME}.yaml`: fill remaining `REPLACE_ME` stubs (description, routes). `seed.repo` already defaults to the public [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) remote — point it at a local clone only if you prefer.
 3. Fill validators (and optionally contract / Playwright) — checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
 4. Run:
 
@@ -113,13 +123,13 @@ To benchmark **your** Hedera template, supply:
 | **Spec YAML** | Yes | Paths, seed, generator, validators, constraints |
 | **Static validator JSON** | Yes | Structural / text / secret assertions for this template |
 | **Command validator JSON** | Yes | Yarn (or other) commands that must succeed without live secrets |
-| **scaffold-hbar seed** | Yes | Update `seed.repo` / `seed.ref` for your machine |
+| **scaffold-hbar seed** | Yes | Defaults to public `hedera-dev/scaffold-hbar`; override `seed.repo` for a local clone if you prefer |
 | **Skills** (`skills`) | Optional | Skill **names** from [`skills-index.json`](skills-index.json) (preferred), or absolute/`./` paths to `SKILL.md` |
 | **Playwright smoke YAML** | Tier 2 | `server.command` / `server.url` + routes to hit |
 | **Acceptance contract** | Tier 3 | Numbered assertions; source of truth for semantic pass/fail |
 | **Validator agent block** | Tier 3 | Separate from the generator; usually stricter MCP/sandbox flags |
 
-Machine-specific paths (`seed.repo`, sometimes absolute tool paths) must be edited before you run. Skills default to the public [hedera-dev/hedera-skills](https://github.com/hedera-dev/hedera-skills) repo — no local checkout required.
+Skills default to the public [hedera-dev/hedera-skills](https://github.com/hedera-dev/hedera-skills) repo — no local checkout required. The skeleton / examples also default `seed.repo` to public [hedera-dev/scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar).
 
 ### Skills index
 
@@ -176,7 +186,7 @@ prd: docs/prds/my-template.md
 # contract: contracts/my-template-acceptance.json   # Tier 3
 
 seed:
-  repo: /path/to/scaffold-hbar   # or https://github.com/buidler-labs/scaffold-hbar
+  repo: https://github.com/hedera-dev/scaffold-hbar.git   # or a local clone path
   ref: main
   preflight:
     commands:

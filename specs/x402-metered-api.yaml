@@ -5,7 +5,7 @@ prd: docs/prds/x402-metered-api.md
 contract: contracts/x402-metered-api-acceptance.json
 
 seed:
-  repo: /Users/sebastianraba/Work/scaffold-hbar
+  repo: https://github.com/hedera-dev/scaffold-hbar.git
   ref: main
   preflight:
     commands:

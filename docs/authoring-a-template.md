@@ -15,9 +15,17 @@ cp skeletons/new-template/acceptance-contract.json contracts/${NAME}-acceptance.
 cp skeletons/new-template/static.json         validators/${NAME}-static.json
 cp skeletons/new-template/yarn.json           validators/${NAME}-yarn.json
 cp skeletons/new-template/playwright-smoke.yaml playwright/${NAME}-smoke.yaml
+
+# Align internal paths / names with $NAME (macOS; on Linux drop the '').
+sed -i '' "s/my-template/${NAME}/g" \
+  specs/${NAME}.yaml \
+  validators/${NAME}-static.json \
+  validators/${NAME}-yarn.json \
+  contracts/${NAME}-acceptance.json \
+  playwright/${NAME}-smoke.yaml
 ```
 
-Then search/replace `my-template` / `My Template` / path placeholders in those files.
+Then fill remaining `REPLACE_ME` stubs (description, routes, PRD prose). `seed.repo` already defaults to the public scaffold-hbar remote.
 
 ## Checklist
 
@@ -34,7 +42,7 @@ Example PRDs in this folder are **inspiration only**. Put private WIP under `doc
 ### 2. Spec (`specs/….yaml`) — required
 
 - [ ] `name`, `prd` path
-- [ ] `seed.repo` / `seed.ref` → your scaffold-hbar clone or remote
+- [ ] `seed.repo` / `seed.ref` → public scaffold-hbar by default; override for a local clone if you prefer
 - [ ] `generator` block (examples use Cursor `agent` + `--workspace "{workspace}"` + stream-json; pin `--model` for your agent CLI — examples use `composer-2.5`; omit to use the CLI default)
 - [ ] `validators.static` + `validators.commands`
 - [ ] `requiredFiles` / `forbiddenFiles` / optional `secretScan` / `constraints`

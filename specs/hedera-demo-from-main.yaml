@@ -5,7 +5,7 @@ prd: docs/prds/hedera-proof-wall-demo.md
 contract: contracts/proof-wall-acceptance.json
 
 seed:
-  repo: /Users/sebastianraba/Work/scaffold-hbar
+  repo: https://github.com/hedera-dev/scaffold-hbar.git
   ref: main
   preflight:
     commands:

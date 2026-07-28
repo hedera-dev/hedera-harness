@@ -5,7 +5,7 @@ prd: docs/prds/hts-precompile-demo.md
 contract: contracts/hts-precompile-demo-acceptance.json
 
 seed:
-  repo: /Users/sebastianraba/Work/scaffold-hbar
+  repo: https://github.com/hedera-dev/scaffold-hbar.git
   ref: main
   preflight:
     commands:

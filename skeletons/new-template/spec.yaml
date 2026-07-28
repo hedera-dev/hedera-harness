@@ -1,5 +1,6 @@
 # Skeleton YAML for a new harness benchmark.
-# Copy to specs/<name>.yaml and replace every REPLACE_ME / my-template path.
+# Copy to specs/<name>.yaml, rewrite my-template → <name> (see Quickstart sed),
+# then fill remaining REPLACE_ME stubs.
 
 name: my-template
 description: REPLACE_ME — one-line description of this Hedera demo benchmark.
@@ -9,7 +10,8 @@ prd: docs/prds/my-template.md
 # contract: contracts/my-template-acceptance.json
 
 seed:
-  repo: REPLACE_ME/path/to/scaffold-hbar
+  # Public default — swap for a local clone path if you prefer.
+  repo: https://github.com/hedera-dev/scaffold-hbar.git
   ref: main
   preflight:
     commands:
