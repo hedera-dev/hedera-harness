@@ -38,7 +38,7 @@ PRDs are **gitignored** under `docs/prds/` (except that folder’s README). Keep
 - [ ] `generator` block (Cursor `agent` + `--workspace "{workspace}"` + stream-json)
 - [ ] `validators.static` + `validators.commands`
 - [ ] `requiredFiles` / `forbiddenFiles` / optional `secretScan` / `constraints`
-- [ ] Optional `skills:` names from `skills-index.json` (or absolute/`./` paths); add missing skills to the index if the agent would benefit
+- [ ] Optional `skills:` names from `skills-index.json` (defaults to [hedera-dev/hedera-skills](https://github.com/hedera-dev/hedera-skills) via remote fetch; absolute/`./` paths still work); add missing skills to the index if the agent would benefit
 - [ ] Optional Tier 2: `validators.playwright`
 - [ ] Optional Tier 3: `contract` + `validator` (see flags below)
 

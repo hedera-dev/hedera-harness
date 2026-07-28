@@ -5,6 +5,7 @@ dist/
 # Harness run artifacts (generated workspaces, logs, reports)
 runs/
 .seed-cache/
+.skill-cache/
 
 # Local PRDs (per-developer / per-benchmark; not shared via git)
 docs/prds/*

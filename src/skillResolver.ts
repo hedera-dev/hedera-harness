@@ -1,30 +1,47 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { ensureSkillRepoCheckout } from "./skillRepoCache.js";
 
 export const SKILLS_INDEX_FILENAME = "skills-index.json";
+export const DEFAULT_SKILLS_REPO = "https://github.com/hedera-dev/hedera-skills.git";
+export const DEFAULT_SKILLS_REF = "master";
 
 export interface SkillsIndexEntry {
   name: string;
+  /** Local filesystem path, or in-repo path when `repo` / index `defaults.repo` is set. */
   path: string;
+  /** Optional per-skill git remote (overrides `defaults.repo`). */
+  repo?: string;
+  /** Optional per-skill git ref (overrides `defaults.ref`). */
+  ref?: string;
   tags?: string[];
   description?: string;
 }
 
+export interface SkillsIndexDefaults {
+  repo?: string;
+  ref?: string;
+}
+
 interface SkillsIndexFile {
   description?: string;
+  defaults?: SkillsIndexDefaults;
   skills: SkillsIndexEntry[];
 }
 
 interface LoadedSkillsIndex {
   byName: Map<string, SkillsIndexEntry>;
+  defaults: SkillsIndexDefaults;
   indexPath: string;
 }
 
 /**
- * Resolve skill refs from a template spec to absolute SKILL.md paths.
+ * Resolve skill refs from a template spec to absolute SKILL.md paths on disk.
  *
  * - Absolute paths and `./` / `../` relative paths are used as-is (relative to projectRoot).
  * - Everything else is treated as a skill name and looked up in `skills-index.json`.
+ * - Index entries may point at local files or at paths inside a remote git repo
+ *   (`defaults.repo` / entry `repo` + `ref`). Remote skills are cached under `.skill-cache/`.
  */
 export async function resolveSkillPaths(
   skillRefs: string[],
@@ -36,6 +53,7 @@ export async function resolveSkillPaths(
 
   const needsIndex = skillRefs.some(ref => !isPathLike(ref));
   const index = needsIndex ? await loadSkillsIndex(projectRoot) : undefined;
+  const checkoutCache = new Map<string, string>();
 
   const resolved: string[] = [];
   for (const ref of skillRefs) {
@@ -74,9 +92,7 @@ export async function resolveSkillPaths(
       );
     }
 
-    const absolute = path.isAbsolute(entry.path)
-      ? entry.path
-      : path.resolve(projectRoot, entry.path);
+    const absolute = await resolveIndexEntryPath(entry, index, projectRoot, checkoutCache);
     await assertSkillFileExists(
       absolute,
       `skill ${JSON.stringify(trimmed)} (from ${index.indexPath})`,
@@ -94,6 +110,42 @@ export function skillsIndexPath(projectRoot: string): string {
 /** Absolute, or relative with an explicit ./ or ../ prefix. */
 export function isPathLike(ref: string): boolean {
   return path.isAbsolute(ref) || ref.startsWith("./") || ref.startsWith("../");
+}
+
+async function resolveIndexEntryPath(
+  entry: SkillsIndexEntry,
+  index: LoadedSkillsIndex,
+  projectRoot: string,
+  checkoutCache: Map<string, string>,
+): Promise<string> {
+  // Explicit local filesystem paths always win.
+  if (isPathLike(entry.path)) {
+    return path.isAbsolute(entry.path) ? entry.path : path.resolve(projectRoot, entry.path);
+  }
+
+  const repo = entry.repo?.trim() || index.defaults.repo?.trim();
+  if (!repo) {
+    // No remote configured — treat path as project-relative.
+    return path.resolve(projectRoot, entry.path);
+  }
+
+  const ref = entry.ref?.trim() || index.defaults.ref?.trim() || DEFAULT_SKILLS_REF;
+  const cacheKey = `${repo}@@${ref}`;
+  let checkoutPath = checkoutCache.get(cacheKey);
+  if (!checkoutPath) {
+    const checkout = await ensureSkillRepoCheckout({ projectRoot, repo, ref });
+    checkoutPath = checkout.checkoutPath;
+    checkoutCache.set(cacheKey, checkoutPath);
+  }
+
+  const inRepoPath = entry.path.replace(/^\.\/+/, "");
+  if (path.isAbsolute(inRepoPath) || inRepoPath.startsWith("..")) {
+    throw new Error(
+      `Skill ${JSON.stringify(entry.name)} path ${JSON.stringify(entry.path)} must be a path inside the skill repo (no absolute or .. segments).`,
+    );
+  }
+
+  return path.resolve(checkoutPath, inRepoPath);
 }
 
 async function loadSkillsIndex(projectRoot: string): Promise<LoadedSkillsIndex> {
@@ -123,10 +175,13 @@ async function loadSkillsIndex(projectRoot: string): Promise<LoadedSkillsIndex> 
     throw new Error(`Expected object root in ${indexPath}.`);
   }
 
-  const skillsRaw = (parsed as SkillsIndexFile).skills;
+  const root = parsed as SkillsIndexFile;
+  const skillsRaw = root.skills;
   if (!Array.isArray(skillsRaw)) {
     throw new Error(`Expected array "skills" in ${indexPath}.`);
   }
+
+  const defaults = readDefaults(root.defaults, indexPath);
 
   const byName = new Map<string, SkillsIndexEntry>();
   for (const [index, item] of skillsRaw.entries()) {
@@ -152,6 +207,12 @@ async function loadSkillsIndex(projectRoot: string): Promise<LoadedSkillsIndex> 
       name,
       path: skillPath,
     };
+    if (typeof record.repo === "string" && record.repo.trim()) {
+      entry.repo = record.repo.trim();
+    }
+    if (typeof record.ref === "string" && record.ref.trim()) {
+      entry.ref = record.ref.trim();
+    }
     if (Array.isArray(record.tags) && record.tags.every(tag => typeof tag === "string")) {
       entry.tags = record.tags as string[];
     }
@@ -161,7 +222,33 @@ async function loadSkillsIndex(projectRoot: string): Promise<LoadedSkillsIndex> 
     byName.set(name, entry);
   }
 
-  return { byName, indexPath };
+  return { byName, defaults, indexPath };
+}
+
+function readDefaults(
+  defaults: SkillsIndexDefaults | undefined,
+  indexPath: string,
+): SkillsIndexDefaults {
+  if (defaults === undefined) {
+    return {
+      repo: DEFAULT_SKILLS_REPO,
+      ref: DEFAULT_SKILLS_REF,
+    };
+  }
+  if (!defaults || typeof defaults !== "object" || Array.isArray(defaults)) {
+    throw new Error(`Expected object "defaults" in ${indexPath}.`);
+  }
+
+  const repo =
+    typeof defaults.repo === "string" && defaults.repo.trim()
+      ? defaults.repo.trim()
+      : DEFAULT_SKILLS_REPO;
+  const ref =
+    typeof defaults.ref === "string" && defaults.ref.trim()
+      ? defaults.ref.trim()
+      : DEFAULT_SKILLS_REF;
+
+  return { repo, ref };
 }
 
 async function assertSkillFileExists(absolutePath: string, label: string): Promise<void> {

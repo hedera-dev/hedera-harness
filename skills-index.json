@@ -1,39 +1,43 @@
 {
-  "description": "Registry of skills the harness can vendor into workspaces. Reference skills by name in a template spec's `skills:` list. Add entries here for any SKILL.md the generator or validator agents may benefit from (point `path` at the file on your machine).",
+  "description": "Registry of skills the harness can vendor into workspaces. Reference skills by name in a template spec's `skills:` list. By default, paths resolve inside the hedera-dev/hedera-skills git repo (see `defaults`). Override with absolute or ./ relative `path` values for local development, or set per-skill `repo` / `ref`.",
+  "defaults": {
+    "repo": "https://github.com/hedera-dev/hedera-skills.git",
+    "ref": "master"
+  },
   "skills": [
     {
       "name": "project-scaffolding",
-      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/project-scaffolding/SKILL.md",
+      "path": "plugins/dev-intelligence/skills/project-scaffolding/SKILL.md",
       "tags": ["scaffolding", "claude-md", "project-setup"],
       "description": "Scaffold CLAUDE.md and .claude/ project structure for AI-assisted workflows."
     },
     {
       "name": "quality-gates",
-      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/quality-gates/SKILL.md",
+      "path": "plugins/dev-intelligence/skills/quality-gates/SKILL.md",
       "tags": ["lint", "ci", "hooks", "validation"],
       "description": "Linting, post-edit checks, deploy checklists, and CI quality gates."
     },
     {
       "name": "session-management",
-      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/dev-intelligence/skills/session-management/SKILL.md",
+      "path": "plugins/dev-intelligence/skills/session-management/SKILL.md",
       "tags": ["sessions", "continuity", "work-log"],
       "description": "Session continuity, work tracking, and report registry patterns."
     },
     {
       "name": "hedera-consensus-service",
-      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/native-services-js/skills/hedera-consensus-service/SKILL.md",
+      "path": "plugins/native-services-js/skills/hedera-consensus-service/SKILL.md",
       "tags": ["hcs", "topics", "messages", "mirror-node"],
       "description": "Hedera Consensus Service patterns for topic creation, message submission, and mirror reads."
     },
     {
       "name": "hedera-token-service",
-      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/native-services-js/skills/hedera-token-service/SKILL.md",
+      "path": "plugins/native-services-js/skills/hedera-token-service/SKILL.md",
       "tags": ["hts", "tokens", "nft", "fungible"],
       "description": "Hedera Token Service patterns for creating, managing, and transferring tokens."
     },
     {
       "name": "hts-system-contract",
-      "path": "/Users/sebastianraba/Work/hedera-skills/plugins/system-contracts/skills/hts-system-contract/SKILL.md",
+      "path": "plugins/system-contracts/skills/hts-system-contract/SKILL.md",
       "tags": ["hts", "solidity", "precompile", "evm", "system-contracts"],
       "description": "HTS precompile (0x167) patterns: token creation, minting, burning, keys, fees, SafeHTS, and compliance flows in Solidity."
     }

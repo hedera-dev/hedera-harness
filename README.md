@@ -91,11 +91,20 @@ To run a new Hedera template benchmark, supply:
 | **Acceptance contract** | Tier 3 | Numbered assertions; source of truth for semantic pass/fail |
 | **Validator agent block** | Tier 3 | Separate from the generator; usually stricter MCP/sandbox flags |
 
-Machine-specific paths (`seed.repo`, skill `path` values in `skills-index.json`, sometimes absolute tool paths) must be edited before you run.
+Machine-specific paths (`seed.repo`, sometimes absolute tool paths) must be edited before you run. Skills default to the public [hedera-dev/hedera-skills](https://github.com/hedera-dev/hedera-skills) repo — no local checkout required.
 
 ### Skills index
 
-Specs should list skills by **name**. The harness resolves those names through [`skills-index.json`](skills-index.json) at the repo root, then vendors the matching `SKILL.md` files into the run workspace under `.harness-skills/`.
+Specs should list skills by **name**. The harness resolves those names through [`skills-index.json`](skills-index.json) at the repo root, fetches them from git when needed (cached under `.skill-cache/`), then vendors the matching `SKILL.md` (+ `references/`) into the run workspace under `.harness-skills/`.
+
+Checked-in example specs already include the common Hedera skills. Defaults point at:
+
+```json
+"defaults": {
+  "repo": "https://github.com/hedera-dev/hedera-skills.git",
+  "ref": "master"
+}
+```
 
 ```yaml
 skills:
@@ -106,19 +115,28 @@ skills:
 **Add a skill the agent could benefit from:**
 
 1. Open [`skills-index.json`](skills-index.json)
-2. Append an entry with a unique `name`, a `path` to the `SKILL.md` on your machine, and optional `tags` / `description`
+2. Append an entry with a unique `name`, an in-repo `path` under the defaults repo (or a local/`repo` override), and optional `tags` / `description`
 3. Reference that `name` in your template spec’s `skills:` list
 
 ```json
 {
-  "name": "my-new-skill",
-  "path": "/absolute/path/to/my-new-skill/SKILL.md",
-  "tags": ["example"],
-  "description": "Short summary for humans browsing the index."
+  "name": "hts-system-contract",
+  "path": "plugins/system-contracts/skills/hts-system-contract/SKILL.md",
+  "tags": ["hts", "solidity"],
+  "description": "HTS precompile patterns in Solidity."
 }
 ```
 
-Absolute paths and `./` / `../` relative paths still work in `skills:` for one-off overrides (they skip the index). If a name is missing from the index, the harness fails fast and lists the registered skills.
+**Local override** (skip the remote fetch for one skill while developing):
+
+```json
+{
+  "name": "my-wip-skill",
+  "path": "./vendor/my-wip-skill/SKILL.md"
+}
+```
+
+Absolute paths and `./` / `../` relative paths also work directly in a spec’s `skills:` list (they skip the index). If a name is missing from the index, the harness fails fast and lists the registered skills. First remote resolve needs network + `git`.
 
 ## Configure a spec
 
@@ -228,7 +246,7 @@ npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<ru
 ```
 ├── src/              # Harness implementation
 ├── specs/            # YAML run configs (examples)
-├── skills-index.json # Name → SKILL.md registry for spec `skills:` lists
+├── skills-index.json # Name → SKILL.md registry (remote hedera-skills by default)
 ├── validators/       # JSON static + command validators
 ├── contracts/        # Acceptance contracts (Tier 3)
 ├── playwright/       # Playwright gate smoke configs (Tier 2)
@@ -236,6 +254,7 @@ npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<ru
 ├── docs/
 │   ├── authoring-a-template.md
 │   └── prds/         # Local PRDs only (gitignored except README)
+├── .skill-cache/     # Cached skill repo checkouts (gitignored)
 └── runs/             # Run artifacts (gitignored)
 ```
 

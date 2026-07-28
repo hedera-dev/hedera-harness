@@ -53,7 +53,9 @@ validator:
     - --stream-partial-output
   timeoutMs: 600000
 
-# Optional — skill names from skills-index.json (preferred), or absolute/./ relative paths
+# Optional — skill names from skills-index.json (preferred). Defaults fetch from
+# https://github.com/hedera-dev/hedera-skills (see skills-index.json `defaults`).
+# Absolute / ./ relative paths still work for local overrides.
 # skills:
 #   - hedera-consensus-service
 #   - project-scaffolding
