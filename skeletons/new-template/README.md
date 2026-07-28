@@ -15,3 +15,5 @@ cp skeletons/new-template/playwright-smoke.yaml playwright/${NAME}-smoke.yaml
 ```
 
 Replace every `my-template` / `REPLACE_ME` / path stub before `run`.
+
+The copied spec defaults to **Tier 0–1 only** (`validators.static` + `validators.commands`). Uncomment Playwright (Tier 2) and `contract` + `validator` (Tier 3) in the spec once the basics pass — acceptance-contract and playwright stubs are still copied so you have them ready.

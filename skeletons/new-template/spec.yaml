@@ -5,7 +5,8 @@ name: my-template
 description: REPLACE_ME — one-line description of this Hedera demo benchmark.
 
 prd: docs/prds/my-template.md
-contract: contracts/my-template-acceptance.json
+# Tier 3 — uncomment `contract` + `validator` after Tier 0–1 (and ideally Tier 2) work.
+# contract: contracts/my-template-acceptance.json
 
 seed:
   repo: REPLACE_ME/path/to/scaffold-hbar
@@ -38,26 +39,26 @@ generator:
     - --stream-partial-output
   timeoutMs: 3600000
 
-# Tier 3 — required together with `contract` above for semantic validation
-validator:
-  enabled: true
-  provider: command
-  command: agent
-  args:
-    - -p
-    - --trust
-    - --force
-    - --sandbox
-    - disabled
-    - --approve-mcps
-    - --workspace
-    - "{workspace}"
-    - --model
-    - composer-2.5
-    - --output-format
-    - stream-json
-    - --stream-partial-output
-  timeoutMs: 600000
+# Tier 3 — semantic validation (needs `contract` above + Playwright MCP). Keep commented for first runs.
+# validator:
+#   enabled: true
+#   provider: command
+#   command: agent
+#   args:
+#     - -p
+#     - --trust
+#     - --force
+#     - --sandbox
+#     - disabled
+#     - --approve-mcps
+#     - --workspace
+#     - "{workspace}"
+#     - --model
+#     - composer-2.5
+#     - --output-format
+#     - stream-json
+#     - --stream-partial-output
+#   timeoutMs: 600000
 
 # Optional — skill names from skills-index.json (preferred). Defaults fetch from
 # https://github.com/hedera-dev/hedera-skills (see skills-index.json `defaults`).
@@ -87,7 +88,7 @@ templateMetadata:
 validators:
   static: validators/my-template-static.json
   commands: validators/my-template-yarn.json
-  playwright: playwright/my-template-smoke.yaml
+  # playwright: playwright/my-template-smoke.yaml   # Tier 2 — enable when ready
 
 requiredFiles:
   - template.json
