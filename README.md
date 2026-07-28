@@ -311,7 +311,7 @@ Cross-run logs (append-only):
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run typecheck` | Type-check without emitting |
 
-CLI commands: `run`, `validate`, `validate-semantic` (`supervise` is not implemented yet).
+CLI commands: `run`, `validate`, `validate-semantic`.
 
 ## Design notes
 

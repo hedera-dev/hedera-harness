@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "run" | "supervise" | "validate" | "validate-semantic";
+export type HarnessCommand = "run" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -17,9 +17,7 @@ export interface CommandExecutionResult {
 
 export interface CliOptions {
   specPath: string;
-  agent?: string;
   maxAttempts?: number;
-  maxCycles?: number;
   workspacePath?: string;
   /** Reuse an existing run directory's workspace (accumulating project). */
   continueRunDirectory?: string;

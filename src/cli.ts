@@ -1,13 +1,13 @@
 import { runHarness, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import type { CliOptions, HarnessCommand, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["run", "supervise", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>(["run", "validate", "validate-semantic"]);
 
 export function parseCliArgs(argv: string[]): ParsedCli {
   const [rawCommand, specPath, ...rest] = argv;
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
-    throw new Error(`Expected command "run", "validate", "validate-semantic", or "supervise".`);
+    throw new Error(`Expected command "run", "validate", or "validate-semantic".`);
   }
 
   if (!specPath || specPath.startsWith("-")) {
@@ -24,26 +24,20 @@ export function printHelp(): void {
   console.log(`hedera-harness
 
 Usage:
-  hedera-harness run <spec> [--agent <name>] [--max-attempts <count>]
+  hedera-harness run <spec> [--max-attempts <count>]
   hedera-harness run <spec> --continue <run-dir> [--max-attempts <count>]
   hedera-harness validate <spec> --workspace <path>
   hedera-harness validate-semantic <spec> --workspace <path>
-  hedera-harness supervise <spec> [--agent <name>] [--max-attempts <count>] [--max-cycles <count>]
 
 Examples:
   hedera-harness run specs/hedera-demo-from-main.yaml
   hedera-harness run specs/hedera-demo-from-main.yaml --max-attempts 3
   hedera-harness run specs/my-template.yaml --continue runs/<run-id> --max-attempts 3
   hedera-harness validate specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
-  hedera-harness validate-semantic specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
-  hedera-harness supervise specs/hedera-demo-from-main.yaml --max-cycles 20`);
+  hedera-harness validate-semantic specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace`);
 }
 
 export async function runCli(parsed: ParsedCli): Promise<void> {
-  if (parsed.command === "supervise") {
-    throw new Error("Supervisor mode is not implemented yet.");
-  }
-
   if (parsed.command === "validate") {
     const validation = await validateWorkspace(parsed.options);
     console.log(
@@ -132,14 +126,8 @@ function parseOptions(specPath: string, args: string[]): CliOptions {
     const arg = args[index];
 
     switch (arg) {
-      case "--agent":
-        options.agent = readValue(args, ++index, arg);
-        break;
       case "--max-attempts":
         options.maxAttempts = readPositiveInteger(args, ++index, arg);
-        break;
-      case "--max-cycles":
-        options.maxCycles = readPositiveInteger(args, ++index, arg);
         break;
       case "--workspace":
         options.workspacePath = readValue(args, ++index, arg);
