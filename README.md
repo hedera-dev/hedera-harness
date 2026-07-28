@@ -99,6 +99,8 @@ export HEDERA_OPERATOR_ID=0.0.xxxx
 export HEDERA_OPERATOR_KEY=0x...   # ECDSA private key hex
 ```
 
+See [`.env.example`](.env.example) for the full host env reference (including optional `HARNESS_AGENT_IDLE_TIMEOUT_MS`). The harness does not auto-load `.env` — export vars in the shell that runs the CLI.
+
 The harness creates a disposable child account (~`fundingHbar` HBAR), injects its key as `burnerWallet.pk` for the validator, and best-effort sweeps the balance back at run end. See [docs/authoring-a-template.md](docs/authoring-a-template.md) for the full `chainValidation` shape (including optional `deploy` for Solidity templates).
 
 ## What you must provide
