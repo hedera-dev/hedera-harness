@@ -36,13 +36,39 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 - **yarn** (seeded workspaces are Yarn-based)
 - **Cursor CLI** (`agent` on your `PATH`, authenticated)
 - A **scaffold-hbar** clone or remote URL for `seed.repo`
-- Your own **PRD** markdown (not shipped in this repo — see [`docs/prds/README.md`](docs/prds/README.md))
+- A **PRD** markdown for the product you want to generate (start from the skeleton — see Quickstart)
 
 ```bash
 git clone git@github.com:hedera-dev/hedera-harness.git
 cd hedera-harness
 npm install
 ```
+
+## Quickstart — build your own idea
+
+The harness is meant for **your** Hedera demo. Copy the skeleton, write a PRD, then run:
+
+```bash
+NAME=my-hedera-demo
+
+cp skeletons/new-template/prd.md              docs/prds/${NAME}.md
+cp skeletons/new-template/spec.yaml           specs/${NAME}.yaml
+cp skeletons/new-template/acceptance-contract.json contracts/${NAME}-acceptance.json
+cp skeletons/new-template/static.json         validators/${NAME}-static.json
+cp skeletons/new-template/yarn.json           validators/${NAME}-yarn.json
+cp skeletons/new-template/playwright-smoke.yaml playwright/${NAME}-smoke.yaml
+```
+
+1. Rewrite `docs/prds/${NAME}.md` for your product (goal, journeys, Hedera services, non-goals).
+2. Edit `specs/${NAME}.yaml`: set `seed.repo` to your scaffold-hbar clone or remote URL, and fix paths / placeholders.
+3. Fill validators (and optionally contract / Playwright) — checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
+4. Run:
+
+```bash
+npm run harness -- run specs/${NAME}.yaml --max-attempts 3
+```
+
+Optional inspiration: three **example** PRDs + specs ship in the repo (Proof Wall, HTS precompile, x402). Read them to see depth and shape; you do not need to run them. Details: [`docs/prds/README.md`](docs/prds/README.md).
 
 ### If you enable Tier 2 (`validators.playwright`)
 
@@ -77,11 +103,11 @@ The harness creates a disposable child account (~`fundingHbar` HBAR), injects it
 
 ## What you must provide
 
-To run a new Hedera template benchmark, supply:
+To benchmark **your** Hedera template, supply:
 
 | Input | Required? | Notes |
 |-------|-----------|--------|
-| **PRD** (`prd`) | Yes | Local markdown under `docs/prds/` (gitignored except the folder README) |
+| **PRD** (`prd`) | Yes | Markdown under `docs/prds/` — start from [`skeletons/new-template/prd.md`](skeletons/new-template/prd.md); see examples in [`docs/prds/`](docs/prds/) for inspiration |
 | **Spec YAML** | Yes | Paths, seed, generator, validators, constraints |
 | **Static validator JSON** | Yes | Structural / text / secret assertions for this template |
 | **Command validator JSON** | Yes | Yarn (or other) commands that must succeed without live secrets |
@@ -199,14 +225,11 @@ logging:
   notes: runs/harness-notes.md
 ```
 
-A checked-in example spec lives in [`specs/`](specs/) — use it as a reference for field shape, then point every path at **your** PRD, validators, and seed.
+A checked-in example spec lives in [`specs/`](specs/) — useful for field shape and as optional inspiration. For your own product, start from the skeleton (Quickstart above), not by forking an example.
 
 ### Adding a new template
 
-For a novel Hedera demo, copy the skeleton and follow the checklist:
-
-- Guide: [`docs/authoring-a-template.md`](docs/authoring-a-template.md)
-- Files: [`skeletons/new-template/`](skeletons/new-template/)
+Same as Quickstart: copy [`skeletons/new-template/`](skeletons/new-template/) and follow [`docs/authoring-a-template.md`](docs/authoring-a-template.md). Example PRDs under [`docs/prds/`](docs/prds/) show what a filled brief looks like.
 
 ## Run
 
@@ -253,7 +276,7 @@ npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<ru
 ├── skeletons/        # Copyable stubs for a new template benchmark
 ├── docs/
 │   ├── authoring-a-template.md
-│   └── prds/         # Local PRDs only (gitignored except README)
+│   └── prds/         # Your PRDs + example briefs (private WIP: prds/local/)
 ├── .skill-cache/     # Cached skill repo checkouts (gitignored)
 └── runs/             # Run artifacts (gitignored)
 ```

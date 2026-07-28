@@ -7,9 +7,8 @@ runs/
 .seed-cache/
 .skill-cache/
 
-# Local PRDs (per-developer / per-benchmark; not shared via git)
-docs/prds/*
-!docs/prds/README.md
+# Private / WIP PRDs (example PRDs under docs/prds/ are tracked)
+docs/prds/local/
 
 # TypeScript
 *.tsbuildinfo

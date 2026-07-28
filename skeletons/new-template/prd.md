@@ -1,6 +1,7 @@
 # My Template (PRD)
 
-> Copy to `docs/prds/<name>.md` and rewrite for your product. This file is a skeleton only.
+> Copy to `docs/prds/<name>.md` and rewrite for **your** product. This file is a skeleton only.
+> For inspiration (optional), see the example PRDs under `docs/prds/` (Proof Wall, HTS precompile, x402).
 
 ## Goal
 

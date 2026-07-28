@@ -1,8 +1,8 @@
 # Authoring a new template benchmark
 
-Use this checklist when adding a **novel** Hedera demo to the harness.
+Use this checklist when adding a **novel** Hedera demo to the harness — your own product idea, not a fork of the examples.
 
-Copy the skeletons, fill in placeholders, then smoke-test before a full `run`.
+Copy the skeletons, fill in placeholders, then smoke-test before a full `run`. Optional: skim the example PRDs under [`docs/prds/`](prds/) for depth and structure.
 
 ## Copy the skeleton
 
@@ -29,7 +29,7 @@ Then search/replace `my-template` / `My Template` / path placeholders in those f
 - [ ] Non-goals (e.g. no Hardhat, no live keys required to browse)
 - [ ] Deliverables expected in the workspace (`template.json`, README, routes, …)
 
-PRDs are **gitignored** under `docs/prds/` (except that folder’s README). Keep them local or share out-of-band.
+Example PRDs in this folder are **inspiration only**. Put private WIP under `docs/prds/local/` (gitignored) if you do not want it tracked.
 
 ### 2. Spec (`specs/….yaml`) — required
 
