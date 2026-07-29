@@ -16,6 +16,71 @@ The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validato
 
 **Pass condition:** every validation tier enabled in the spec must pass. Oracle audit never blocks a pass.
 
+### Run lifecycle
+
+Who talks to whom during a run (time flows top to bottom). Solid arrows are requests; dashed arrows are responses.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor CLI as CLI / User
+  participant H as Harness
+  participant G as Git sources
+  participant W as Workspace
+  participant Gen as Generator
+  participant V as Validators
+
+  CLI->>H: run(spec.yaml)
+
+  Note over H,W: Seed
+  H->>G: clone scaffold-hbar @ ref
+  G-->>H: checkout ready
+  H->>W: materialize + yarn preflight
+  W-->>H: workspace ready
+
+  Note over H,W: Vendor
+  H->>G: fetch hedera-skills
+  G-->>H: SKILL.md paths
+  H->>W: vendor skills + PRD / context
+
+  Note over H,Gen: Generate
+  H->>Gen: generate from PRD
+  Gen->>W: write template files
+  Gen-->>H: exit / stream done
+
+  Note over H,V: Validate
+  H->>H: oracle audit (informational)
+  H->>V: Tier 0-1 deterministic
+  V->>W: assert files / yarn / secrets
+  V-->>H: pass / fail
+  H->>V: Tier 2 Playwright (if enabled)
+  V->>W: boot app + hit routes
+  V-->>H: pass / fail
+  H->>V: Tier 3 semantic (+ 3.5 if on)
+  V->>W: grade acceptance contract
+  V-->>H: pass / fail / infra abort
+
+  H-->>CLI: report + runs/ artifacts
+```
+
+Same diagram as image assets (for websites / slides):
+
+![hedera-harness run sequence](./docs/harness-sequence.png)
+
+- Vector: [`docs/harness-sequence.svg`](./docs/harness-sequence.svg)
+- Raster: [`docs/harness-sequence.png`](./docs/harness-sequence.png)
+
+**Git sources** = `scaffold-hbar` (seed) + `hedera-skills` (remote skill fetch).
+
+**Branches** (not drawn above):
+
+- Validation **fail** + attempts left → repair prompt → Generator again
+- Validation **fail** + budget exhausted → Fail → `runs/`
+- Semantic **infra** failure (MCP / browser) → Abort (no repair) → `runs/`
+- Oracle audit never blocks a pass
+
+When Tier 2 and Tier 3 are both on, they share one dev server. Tier 3.5 injects an ephemeral funded ECDSA signer into the workspace before semantic grading.
+
 ## Validation tiers (opt-in via spec)
 
 | Tier | Spec fields | What it checks |
