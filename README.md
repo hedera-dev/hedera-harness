@@ -18,7 +18,42 @@ The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validato
 
 ### Run lifecycle
 
-Who talks to whom during a run (time flows top to bottom). Solid arrows are requests; dashed arrows are responses.
+Happy path (top → bottom). Skip validation tiers that are not enabled in the spec. The dashed edge is the repair loop.
+
+![hedera-harness run graph](./docs/harness-flow.png)
+
+- Vertical graph: [`docs/harness-flow.svg`](./docs/harness-flow.svg) · [`docs/harness-flow.png`](./docs/harness-flow.png)
+- Sequence (who talks to whom): [`docs/harness-sequence.svg`](./docs/harness-sequence.svg) · [`docs/harness-sequence.png`](./docs/harness-sequence.png)
+
+```mermaid
+flowchart TD
+  inputs[1 Inputs: Spec + PRD + validators] --> seed[2 Seed workspace]
+  seed --> vendor[3 Vendor skills and context]
+  vendor --> generate[4 Generate]
+  generate --> audit[5 Oracle audit - informational]
+  audit --> validate[6 Validate enabled tiers]
+  validate --> tier01[Tier 0-1 Deterministic]
+  tier01 --> tier2[Tier 2 Playwright - opt-in]
+  tier2 --> tier3[Tier 3 Semantic - opt-in]
+  tier3 --> tier35[Tier 3.5 On-chain - opt-in]
+  tier35 --> outcome[7 Outcome: Pass / Fail / Abort]
+  outcome --> artifacts[runs/ artifacts]
+  tier01 -.->|fail + attempts left| generate
+  tier2 -.->|fail + attempts left| generate
+  tier3 -.->|fail + attempts left| generate
+```
+
+**Branches**
+
+- Validation **fail** + attempts left → repair prompt → back to **Generate**
+- Validation **fail** + budget exhausted → **Fail** → `runs/`
+- Semantic **infra** failure (MCP / browser) → **Abort** (no repair) → `runs/`
+- Oracle audit never blocks a pass
+
+When Tier 2 and Tier 3 are both on, they share one dev server. Tier 3.5 injects an ephemeral funded ECDSA signer into the workspace before semantic grading.
+
+<details>
+<summary>Detailed sequence diagram (actors / messages)</summary>
 
 ```mermaid
 sequenceDiagram
@@ -63,23 +98,7 @@ sequenceDiagram
   H-->>CLI: report + runs/ artifacts
 ```
 
-Same diagram as image assets (for websites / slides):
-
-![hedera-harness run sequence](./docs/harness-sequence.png)
-
-- Vector: [`docs/harness-sequence.svg`](./docs/harness-sequence.svg)
-- Raster: [`docs/harness-sequence.png`](./docs/harness-sequence.png)
-
-**Git sources** = `scaffold-hbar` (seed) + `hedera-skills` (remote skill fetch).
-
-**Branches** (not drawn above):
-
-- Validation **fail** + attempts left → repair prompt → Generator again
-- Validation **fail** + budget exhausted → Fail → `runs/`
-- Semantic **infra** failure (MCP / browser) → Abort (no repair) → `runs/`
-- Oracle audit never blocks a pass
-
-When Tier 2 and Tier 3 are both on, they share one dev server. Tier 3.5 injects an ephemeral funded ECDSA signer into the workspace before semantic grading.
+</details>
 
 ## Validation tiers (opt-in via spec)
 

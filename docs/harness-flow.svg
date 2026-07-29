@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="920" viewBox="0 0 520 920" role="img" aria-labelledby="title desc">
+  <title id="title">hedera-harness vertical run graph</title>
+  <desc id="desc">Vertical happy-path graph: Inputs to Seed to Vendor to Generate to Validate tiers to Outcome, with a repair loop back to Generate.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4f46e5"/>
+    </marker>
+  </defs>
+
+  <rect width="520" height="920" rx="8" fill="#ffffff"/>
+  <rect x="12" y="12" width="496" height="896" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+
+  <text x="260" y="48" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">hedera-harness run graph</text>
+  <text x="260" y="68" text-anchor="middle" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Happy path top to bottom. Dashed edge = repair loop.</text>
+
+  <!-- helper: box width 280, centered at x=260 => left 120 -->
+
+  <!-- 1 Inputs -->
+  <rect x="120" y="90" width="280" height="48" rx="8" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="260" y="110" text-anchor="middle" fill="#1e1b4b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">1. Inputs</text>
+  <text x="260" y="126" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Spec + PRD + validators</text>
+  <line x1="260" y1="138" x2="260" y2="158" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 2 Seed -->
+  <rect x="120" y="158" width="280" height="48" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="260" y="178" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">2. Seed workspace</text>
+  <text x="260" y="194" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Clone scaffold-hbar + yarn preflight</text>
+  <line x1="260" y1="206" x2="260" y2="226" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 3 Vendor -->
+  <rect x="120" y="226" width="280" height="48" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="260" y="246" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">3. Vendor context</text>
+  <text x="260" y="262" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Skills + PRD into workspace</text>
+  <line x1="260" y1="274" x2="260" y2="294" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 4 Generate -->
+  <rect x="120" y="294" width="280" height="48" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="260" y="314" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">4. Generate</text>
+  <text x="260" y="330" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Agent builds template from PRD</text>
+  <line x1="260" y1="342" x2="260" y2="362" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 5 Audit -->
+  <rect x="120" y="362" width="280" height="44" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.25"/>
+  <text x="260" y="380" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="600">5. Oracle audit</text>
+  <text x="260" y="396" text-anchor="middle" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10">Informational only - never blocks pass</text>
+  <line x1="260" y1="406" x2="260" y2="426" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 6 Validate group -->
+  <rect x="90" y="426" width="340" height="250" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="260" y="448" text-anchor="middle" fill="#1e1b4b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">6. Validate (enabled tiers only)</text>
+
+  <rect x="120" y="462" width="280" height="40" rx="6" fill="#ffffff" stroke="#6366f1" stroke-width="1.25"/>
+  <text x="260" y="478" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">Tier 0-1 Deterministic</text>
+  <text x="260" y="494" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10">required - files / secrets / yarn</text>
+  <line x1="260" y1="502" x2="260" y2="518" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="120" y="518" width="280" height="40" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="1.25"/>
+  <text x="260" y="534" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">Tier 2 Playwright</text>
+  <text x="260" y="550" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10">opt-in - routes / console</text>
+  <line x1="260" y1="558" x2="260" y2="574" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="120" y="574" width="280" height="40" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="1.25"/>
+  <text x="260" y="590" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">Tier 3 Semantic</text>
+  <text x="260" y="606" text-anchor="middle" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10">opt-in - acceptance contract</text>
+  <line x1="260" y1="614" x2="260" y2="630" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="120" y="630" width="280" height="36" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="1.25"/>
+  <text x="260" y="652" text-anchor="middle" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">Tier 3.5 On-chain (with Tier 3)</text>
+
+  <line x1="260" y1="676" x2="260" y2="700" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 7 Outcome -->
+  <rect x="120" y="700" width="280" height="52" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="260" y="722" text-anchor="middle" fill="#065f46" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">7. Outcome</text>
+  <text x="260" y="740" text-anchor="middle" fill="#047857" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Pass / Fail / Abort  -&gt;  runs/</text>
+
+  <!-- Repair loop on the right -->
+  <path d="M 400 650 C 470 650, 470 318, 400 318" fill="none" stroke="#4f46e5" stroke-width="1.75" stroke-dasharray="6 4" marker-end="url(#arrowAccent)"/>
+  <text x="478" y="480" text-anchor="middle" fill="#4f46e5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10" font-weight="700">repair</text>
+  <text x="478" y="494" text-anchor="middle" fill="#6366f1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="9">if fail and</text>
+  <text x="478" y="506" text-anchor="middle" fill="#6366f1" font-family="ui-sans-serif, system-ui, sans-serif" font-size="9">attempts left</text>
+
+  <!-- Legend -->
+  <text x="40" y="790" fill="#0f172a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">How to read</text>
+  <text x="40" y="810" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">- Follow the center column for the happy path.</text>
+  <text x="40" y="828" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">- Skip any validation tier not enabled in the spec.</text>
+  <text x="40" y="846" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">- Validation fail + budget left loops back to Generate.</text>
+  <text x="40" y="864" fill="#475569" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">- Semantic infra failure aborts with no repair.</text>
+  <text x="40" y="890" fill="#94a3b8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10">Complementary to docs/harness-sequence.svg (who talks to whom).</text>
+</svg>
