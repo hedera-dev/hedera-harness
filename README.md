@@ -20,8 +20,6 @@ The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validato
 
 Happy path (top → bottom). Skip validation tiers that are not enabled in the spec. The dashed edge is the repair loop.
 
-![hedera-harness run graph](./docs/harness-flow.png)
-
 - Vertical graph: [`docs/harness-flow.svg`](./docs/harness-flow.svg) · [`docs/harness-flow.png`](./docs/harness-flow.png)
 - Sequence (who talks to whom): [`docs/harness-sequence.svg`](./docs/harness-sequence.svg) · [`docs/harness-sequence.png`](./docs/harness-sequence.png)
 
