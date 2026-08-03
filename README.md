@@ -130,7 +130,49 @@ npm install
 
 ## Quickstart — build your own idea
 
-The harness is meant for **your** Hedera demo. Copy the skeleton, rewrite placeholders to match `$NAME`, write a PRD, then run:
+The harness is meant for **your** Hedera demo. Prefer an AI coding agent with the **hedera-harness** plugin from [hedera-skills](https://github.com/hedera-dev/hedera-skills).
+
+### 1. Install the authoring skills
+
+```bash
+# Claude Code
+/plugin marketplace add hedera-dev/hedera-skills
+/plugin install hedera-harness
+
+# Or any skills-compatible agent
+npx skills add hedera-dev/hedera-skills
+```
+
+### 2. Create the spec
+
+In the agent, from this repo (or with the harness clone as cwd):
+
+```
+/create-harness-spec
+```
+
+The skill grills your idea one question at a time, then emits a gate 0–1 **spec** (PRD, spec file, validators). Optionally deepen to gates 2 / 3 / 3.5.
+
+### 3. Review before burning a run
+
+```
+/review-harness-spec
+```
+
+Two-axis audit: mechanical Wiring (`check-spec.sh`) + Oracle judgment (journey↔assertion traceability, severity budget, thin Playwright).
+
+### 4. Run
+
+```bash
+npm run harness -- run specs/<slug>.yaml --max-attempts 3
+```
+
+Optional inspiration: three **example** PRDs + specs ship in the repo (Proof Wall, HTS precompile, x402). Read them to see depth and shape; you do not need to run them. Details: [`docs/prds/README.md`](docs/prds/README.md). Full checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
+
+<details>
+<summary>Manual fallback (no agent skills)</summary>
+
+Copy the skeleton, rewrite placeholders to match `$NAME`, write a PRD, then run:
 
 ```bash
 NAME=my-hedera-demo
@@ -152,15 +194,11 @@ sed -i '' "s/my-template/${NAME}/g" \
 ```
 
 1. Rewrite `docs/prds/${NAME}.md` for your product (goal, journeys, Hedera services, non-goals).
-2. Edit `specs/${NAME}.yaml`: fill remaining `REPLACE_ME` stubs (description, routes). `seed.repo` already defaults to the public [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) remote — point it at a local clone only if you prefer.
+2. Edit `specs/${NAME}.yaml`: fill remaining `REPLACE_ME` stubs. `seed.repo` already defaults to the public [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) remote.
 3. Fill validators (and optionally contract / Playwright) — checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
-4. Run:
+4. `npm run harness -- run specs/${NAME}.yaml --max-attempts 3`
 
-```bash
-npm run harness -- run specs/${NAME}.yaml --max-attempts 3
-```
-
-Optional inspiration: three **example** PRDs + specs ship in the repo (Proof Wall, HTS precompile, x402). Read them to see depth and shape; you do not need to run them. Details: [`docs/prds/README.md`](docs/prds/README.md).
+</details>
 
 ### If you enable Tier 2 (`validators.playwright`)
 
@@ -201,7 +239,7 @@ To benchmark **your** Hedera template, supply:
 
 | Input | Required? | Notes |
 |-------|-----------|--------|
-| **PRD** (`prd`) | Yes | Markdown under `docs/prds/` — start from [`skeletons/new-template/prd.md`](skeletons/new-template/prd.md); see examples in [`docs/prds/`](docs/prds/) for inspiration |
+| **PRD** (`prd`) | Yes | Markdown under `docs/prds/` — start from [`skeletons/new-template/prd.md`](skeletons/new-template/prd.md); see examples in [`docs/prds/`](docs/prds/) for inspiration. Agent-assisted path: [hedera-skills `hedera-harness` plugin](https://github.com/hedera-dev/hedera-skills) (`/create-harness-spec` / `/review-harness-spec`) — see [authoring-a-template.md](docs/authoring-a-template.md#author-with-an-agent-skill) |
 | **Spec YAML** | Yes | Paths, seed, generator, validators, constraints |
 | **Static validator JSON** | Yes | Structural / text / secret assertions for this template |
 | **Command validator JSON** | Yes | Yarn (or other) commands that must succeed without live secrets |

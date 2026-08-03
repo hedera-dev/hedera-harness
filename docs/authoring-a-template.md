@@ -4,6 +4,18 @@ Use this checklist when adding a **novel** Hedera demo to the harness — your o
 
 Copy the skeletons, fill in placeholders, then smoke-test before a full `run`. Optional: skim the example PRDs under [`docs/prds/`](prds/) for depth and structure.
 
+## Author with an agent skill
+
+Prefer an AI coding agent that has the **hedera-harness** plugin from [hedera-skills](https://github.com/hedera-dev/hedera-skills):
+
+- **`/create-harness-spec`** — grills your idea one question at a time → emits a gate 0–1 **spec** (optional gates 2 / 3 / 3.5)
+- **`/review-harness-spec`** — two-axis audit (Wiring via `check-spec.sh` + Oracle judgment) before `run`
+- **`/harness-spec-anatomy`** — shared vocabulary (spec / slug / blind / oracle / gate / needle) used by both
+
+Install via the marketplace (`/plugin install hedera-harness`) or `npx skills add hedera-dev/hedera-skills`. These are **authoring** skills only — do **not** add them to a template **spec file**'s `skills:` list (that list is vendored into generator workspaces).
+
+**Maintainer note:** **spec** file formats (skeleton fields, loader keys such as `validators.static`, `templateMetadata`, `chainValidation`, `executableWithTestSigner`) are defined in this repo. When you change them, update the hedera-skills `hedera-harness` plugin — especially `harness-spec-anatomy` (references + `scripts/check-spec.sh`) and both action skills' `evals/evals.json` — in the same change set so the skills do not drift.
+
 ## Copy the skeleton
 
 ```bash
