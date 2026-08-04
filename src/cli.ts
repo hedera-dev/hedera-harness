@@ -97,36 +97,17 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
   }
 
   if (parsed.command === "extend") {
-    const report = await runExtend(parsed.options);
-    const summaryLines = [
-      `Harness extend finished`,
-      `spec=${report.specName}`,
-      `passed=${report.passed}`,
-      `oracleAudit=${report.blindIntegrity.passed ? "passed" : "failed"}`,
-      `attempts=${report.attempts}/${report.maxAttempts}`,
-      report.cycle ? `cycle=${report.cycle} attemptsThisCycle=${report.attemptsThisCycle}` : undefined,
-      `findings=${report.validation.findings.length}`,
-      `workspace=${report.workspacePath}`,
-      `report=${report.runDirectory}/reports/report.json`,
-      `session=${report.runDirectory}/session.json`,
-      "",
-      "Manual next steps (not run automatically):",
-      `  git push -u origin HEAD`,
-      `  gh pr create --base <recorded-base-branch>`,
-      "Inspect session.json for baseBranch / branch details.",
-    ];
+    const { report, outroLines } = await runExtend(parsed.options);
+    const lines = [...outroLines];
 
     if (report.passed && !report.blindIntegrity.passed) {
-      summaryLines.push(
+      lines.push(
+        "",
         `WARNING: validation passed but oracle audit detected peeking (${report.blindIntegrity.findings.length} finding(s))`,
       );
     }
 
-    if (!report.passed) {
-      summaryLines.push(...report.validation.findings.map(finding => `- ${finding.message}`));
-    }
-
-    console.log(summaryLines.filter((line): line is string => line !== undefined).join("\n"));
+    console.log(lines.join("\n"));
 
     if (!report.passed) {
       process.exitCode = 1;

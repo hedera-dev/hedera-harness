@@ -63,14 +63,14 @@ export interface AttemptLoopInput {
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
   /**
-   * Optional commit hook (extend uses a distinct strategy later).
+   * Optional commit hook (extend uses exclusion-safe checkpoints).
    * Defaults to isolated-workspace `commitWorkspaceAttempt`.
    */
   commitAttempt?: (
     workspacePath: string,
     attempt: number,
     passed: boolean,
-    findingCount: number,
+    findings: ValidationFinding[],
   ) => Promise<WorkspaceGitCommitResult>;
 }
 
@@ -91,7 +91,10 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
   } = input;
 
   const generator = new CommandAgentProvider(spec.generator);
-  const commitAttempt = input.commitAttempt ?? commitWorkspaceAttempt;
+  const commitAttempt =
+    input.commitAttempt ??
+    (async (workspacePath, attempt, passed, findings) =>
+      commitWorkspaceAttempt(workspacePath, attempt, passed, findings.length));
   const isExtend = layout.mode === LAYOUT_MODE_IN_PLACE_EXTEND;
 
   let attempts = input.startingAttempt - 1;
@@ -397,7 +400,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         seedResult.workspacePath,
         attempts,
         false,
-        validation.findings.length,
+        validation.findings,
       );
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "workspace_git_committed",
@@ -424,7 +427,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       seedResult.workspacePath,
       attempts,
       validation.passed,
-      validation.findings.length,
+      validation.findings,
     );
     await appendHarnessLog(layout.jsonlLogPath, {
       type: "workspace_git_committed",

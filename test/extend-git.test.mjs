@@ -85,10 +85,15 @@ test("commitExtendAttempt stages only consumer-relevant paths", async () => {
   await writeFile(path.join(root, ".harness-skills", "SKILL.md"), "# ignored\n");
   await writeFile(path.join(root, "app.ts"), "export {}\n");
 
-  const result = await gitMod.commitExtendAttempt(root, 1, false, 2);
+  const result = await gitMod.commitExtendAttempt(root, 1, false, [
+    { id: "f1", category: "agent", message: "one" },
+    { id: "f2", category: "agent", message: "two" },
+  ]);
   assert.equal(result.committed, true);
   assert.match(result.message, /extension attempt 1 failed/);
   const show = git(root, ["show", "--name-only", "--pretty=format:", "HEAD"]);
   assert.match(show, /app\.ts/);
   assert.doesNotMatch(show, /harness-skills/);
+  const body = git(root, ["log", "-1", "--format=%B"]);
+  assert.match(body, /Finding IDs: f1, f2/);
 });
