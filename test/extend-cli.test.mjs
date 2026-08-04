@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import { makeTestTempDir } from "./tmpDir.mjs";
 
 const cli = await import(pathToFileURL(path.resolve("dist/cli.js")).href);
 const prompts = await import(pathToFileURL(path.resolve("dist/promptBuilder.js")).href);
@@ -47,8 +48,8 @@ test("printHelp documents extend contract", () => {
 });
 
 test("loadTemplateSpec allow missing seed for extend mode", async () => {
-  const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
-  const root = await mkdtemp(path.join(process.cwd(), ".tmp-test", "extend-spec-"));
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const root = await makeTestTempDir("extend-spec-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
   await writeFile(path.join(root, ".harness", "prd.md"), "# extend\n");
   await writeFile(path.join(root, ".harness", "validators", "static.json"), "[]\n");
@@ -84,8 +85,8 @@ logging:
 });
 
 test("buildExtendPrompt preserves existing app and points at runtime paths", async () => {
-  const { mkdtemp, writeFile } = await import("node:fs/promises");
-  const dir = await mkdtemp(path.join(process.cwd(), ".tmp-test", "extend-prompt-"));
+  const { writeFile } = await import("node:fs/promises");
+  const dir = await makeTestTempDir("extend-prompt-");
   const prdPath = path.join(dir, "prd.md");
   await writeFile(prdPath, "Add a tip jar panel.\n");
 

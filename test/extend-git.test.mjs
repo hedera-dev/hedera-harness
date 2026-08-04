@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import { makeTestTempDir } from "./tmpDir.mjs";
 
 const gitMod = await import(pathToFileURL(path.resolve("dist/extendGit.js")).href);
 
@@ -16,7 +17,7 @@ function git(cwd, args) {
 }
 
 async function initRepo() {
-  const root = await mkdtemp(path.join(process.cwd(), ".tmp-test", "extend-git-"));
+  const root = await makeTestTempDir("extend-git-");
   git(root, ["init", "--template="]);
   git(root, ["config", "user.email", "harness-test@example.com"]);
   git(root, ["config", "user.name", "Harness Test"]);

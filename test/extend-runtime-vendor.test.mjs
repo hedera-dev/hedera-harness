@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, access } from "node:fs/promises";
+import { mkdir, writeFile, readFile, access } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import { makeTestTempDir } from "./tmpDir.mjs";
 
 const { vendorSkills } = await import(pathToFileURL(path.resolve("dist/skillVendor.js")).href);
 const { vendorHarnessContext, withPlaywrightMcpSnapshot } = await import(
@@ -13,7 +14,7 @@ const { EXTEND_CONTEXT_DIR, EXTEND_SKILLS_DIR } = await import(
 );
 
 test("extend vendoring writes skills/context under .harness/runtime and skips MCP mutation", async () => {
-  const root = await mkdtemp(path.join(process.cwd(), ".tmp-test", "extend-runtime-"));
+  const root = await makeTestTempDir("extend-runtime-");
   await mkdir(path.join(root, ".cursor"), { recursive: true });
   await writeFile(
     path.join(root, ".cursor", "mcp.json"),
@@ -54,7 +55,7 @@ test("extend vendoring writes skills/context under .harness/runtime and skips MC
 });
 
 test("withPlaywrightMcpSnapshot restores prior mcp.json", async () => {
-  const root = await mkdtemp(path.join(process.cwd(), ".tmp-test", "extend-mcp-"));
+  const root = await makeTestTempDir("extend-mcp-");
   await mkdir(path.join(root, ".cursor"), { recursive: true });
   const original = `${JSON.stringify({ mcpServers: { keep: { command: "true" } } }, null, 2)}\n`;
   await writeFile(path.join(root, ".cursor", "mcp.json"), original);

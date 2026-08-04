@@ -18,7 +18,7 @@
     "harness": "npm run build --silent && node dist/index.js",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run build --silent && node --test test/",
+    "test": "npm run build --silent && node --test test/*.test.mjs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
