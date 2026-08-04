@@ -7,6 +7,8 @@ test("refactored modules export the shared attempt loop and both runners", async
   const attemptLoop = await import(pathToFileURL(path.resolve("dist/attemptLoop.js")).href);
   const runner = await import(pathToFileURL(path.resolve("dist/runner.js")).href);
   const extendRunner = await import(pathToFileURL(path.resolve("dist/extendRunner.js")).href);
+  const extendSession = await import(pathToFileURL(path.resolve("dist/extendSession.js")).href);
+  const extendGit = await import(pathToFileURL(path.resolve("dist/extendGit.js")).href);
 
   assert.equal(typeof attemptLoop.runAttemptLoop, "function");
   assert.equal(typeof attemptLoop.runAttemptValidation, "function");
@@ -14,4 +16,7 @@ test("refactored modules export the shared attempt loop and both runners", async
   assert.equal(typeof runner.validateWorkspace, "function");
   assert.equal(typeof runner.validateSemanticWorkspace, "function");
   assert.equal(typeof extendRunner.runExtend, "function");
+  assert.equal(typeof extendSession.prepareExtendSession, "function");
+  assert.equal(typeof extendGit.createAndCheckoutExtendBranch, "function");
+  assert.equal(typeof extendGit.commitExtendAttempt, "function");
 });

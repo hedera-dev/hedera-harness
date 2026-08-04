@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { ChainValidationConfig, SecretScanConfig, TemplateSpec } from "./types.js";
+import type {
+  ChainValidationConfig,
+  ExtendConfig,
+  SecretScanConfig,
+  TemplateSpec,
+} from "./types.js";
 
 export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
   const absoluteSpecPath = path.resolve(specPath);
@@ -34,6 +39,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     forbiddenFiles: readStringArray(parsed, "forbiddenFiles"),
     secretScan: readSecretScan(parsed),
     chainValidation: readChainValidation(parsed),
+    extend: readExtendConfig(parsed),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? 3,
     logging: {
       jsonlPath: resolveProjectPath(projectRoot, readString(readObject(parsed, "logging"), "jsonl")),
@@ -256,6 +262,51 @@ function readSecretScan(parsed: Record<string, unknown>): SecretScanConfig | und
     patterns: Array.isArray(patterns)
       ? (patterns as Array<{ name: string; pattern: string; allowIn?: string[] }>)
       : [],
+  };
+}
+
+function readExtendConfig(parsed: Record<string, unknown>): ExtendConfig | undefined {
+  const extend = parsed.extend;
+  if (extend === undefined) return undefined;
+  if (!extend || typeof extend !== "object" || Array.isArray(extend)) {
+    throw new Error('Expected object "extend" in template spec.');
+  }
+
+  const record = extend as Record<string, unknown>;
+  const baselineRecord =
+    record.baseline && typeof record.baseline === "object" && !Array.isArray(record.baseline)
+      ? (record.baseline as Record<string, unknown>)
+      : undefined;
+
+  if (!baselineRecord) {
+    return {};
+  }
+
+  const commandsRaw = baselineRecord.commands;
+  if (commandsRaw === undefined) {
+    return { baseline: {} };
+  }
+  if (!Array.isArray(commandsRaw)) {
+    throw new Error('Expected array "extend.baseline.commands" in template spec.');
+  }
+
+  return {
+    baseline: {
+      commands: commandsRaw.map((item, index) => {
+        if (typeof item === "string") {
+          return { command: item };
+        }
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          throw new Error(`Expected string or object at extend.baseline.commands[${index}].`);
+        }
+        const cmd = item as Record<string, unknown>;
+        return {
+          name: readOptionalString(cmd, "name"),
+          command: readString(cmd, "command"),
+          timeoutMs: readOptionalNumber(cmd, "timeoutMs"),
+        };
+      }),
+    },
   };
 }
 

@@ -2,6 +2,7 @@
 node_modules/
 dist/
 *.tgz
+.tmp-test/
 
 # Harness run artifacts (generated workspaces, logs, reports)
 runs/
