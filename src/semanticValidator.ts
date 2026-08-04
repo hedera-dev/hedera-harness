@@ -27,6 +27,8 @@ export async function runSemanticValidation(input: {
   promptsDirectory: string;
   devServer?: DevServerSession;
   chainSigner?: ChainSigner;
+  /** Override vendored contract path (extend uses `.harness/runtime/context/...`). */
+  contractRelativePath?: string;
 }): Promise<SemanticValidationResult> {
   const startedAt = Date.now();
   const validatorConfig = input.spec.validator;
@@ -57,7 +59,9 @@ export async function runSemanticValidation(input: {
     );
   }
 
-  const contractPath = path.join(input.workspacePath, ".harness-context", "acceptance-contract.json");
+  const contractRelativePath =
+    input.contractRelativePath ?? path.posix.join(".harness-context", "acceptance-contract.json");
+  const contractPath = path.join(input.workspacePath, ...contractRelativePath.split("/"));
   const contract = await readFile(contractPath, "utf8");
   const serverConfig = await loadDevServerConfig(input.spec.validators.playwrightPath);
 

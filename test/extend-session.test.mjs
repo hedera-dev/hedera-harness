@@ -60,7 +60,9 @@ async function initExtendFixture() {
   if (!git(root, ["branch", "--show-current"])) {
     git(root, ["checkout", "-b", "master"]);
   }
-  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
+  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), {
+    requireSeed: false,
+  });
   return { root, loaded };
 }
 

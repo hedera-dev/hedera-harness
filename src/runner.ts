@@ -116,6 +116,10 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
     commitSha: string;
   };
 
+  if (!spec.seed) {
+    throw new Error('Isolated `run` requires a `seed` block in the template spec.');
+  }
+
   if (isContinue) {
     seedResult = await loadPriorSeedInfo(layout);
     logPhase("Reusing existing workspace", seedResult.workspacePath);

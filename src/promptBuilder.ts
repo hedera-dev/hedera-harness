@@ -6,6 +6,7 @@ import {
   type VendoredContext,
 } from "./contextVendor.js";
 import type { VendoredSkill } from "./skillVendor.js";
+import { EXTEND_CONTEXT_DIR, EXTEND_SKILLS_DIR } from "./runtimePaths.js";
 
 export type RepairScope = "semantic-scoped" | "runtime" | "broad";
 
@@ -88,6 +89,137 @@ export async function buildGeneratorPrompt(
 }
 
 /**
+ * In-place extend: inspect and preserve the existing app; implement the PRD extension.
+ */
+export async function buildExtendPrompt(
+  spec: TemplateSpec,
+  attempt: number,
+  vendoredSkills: VendoredSkill[] = [],
+  vendoredContext?: VendoredContext,
+): Promise<string> {
+  const prd = await readFile(spec.prdPath, "utf8");
+  const skillSummaries = formatSkillSummaries(vendoredSkills);
+  const prdPath = vendoredContext?.prdRelativePath ?? `${EXTEND_CONTEXT_DIR}/prd.md`;
+  const contractPath =
+    vendoredContext?.contractRelativePath ?? `${EXTEND_CONTEXT_DIR}/acceptance-contract.json`;
+  const skillsRoot =
+    vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || EXTEND_SKILLS_DIR;
+
+  return [
+    "You are the extension agent for an existing scaffold-hbar application.",
+    "Work directly in the current project directory (this is not a fresh seed).",
+    "",
+    `Attempt: ${attempt}`,
+    "",
+    "## Product Requirements (extension brief)",
+    prd.trim(),
+    "",
+    "## Extension Mission",
+    "Inspect the existing application first. Preserve working structure, conventions, and unrelated features.",
+    "Implement the requested extension described in the PRD — do NOT rebuild the app from scratch.",
+    "Prefer targeted edits and additive changes over rewrites.",
+    "Do not read or copy from harness run directories, seed clones, or repositories outside this workspace.",
+    "",
+    "## Workspace Context Files (ignored runtime; do not commit)",
+    `The PRD is vendored at \`${prdPath}\`.`,
+    spec.contractPath ? `The acceptance contract is vendored at \`${contractPath}\`.` : undefined,
+    `Skills (if any) are under \`${skillsRoot}/\`.`,
+    "",
+    ...formatHardConstraints(spec),
+    "",
+    "## Required Deliverables",
+    ...spec.requiredFiles.map(file => `- ${file}`),
+    "",
+    "## Skills To Leverage",
+    skillSummaries.length > 0
+      ? [`Use only the vendored skills under \`${skillsRoot}/\`.`, skillSummaries].join("\n\n")
+      : "- Use scaffold-hbar and Hedera best practices.",
+    "",
+    "## Logging Requirement",
+    "After making meaningful changes, append a short note to `GENERATION_NOTES.md` at the workspace root.",
+    "- Do not read or write files outside the current workspace.",
+    "- Do not delete or rewrite unrelated existing features.",
+    "",
+    "## Completion Standard",
+    "The extended app should pass the extension's deterministic validators and any enabled Playwright/semantic gates.",
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+}
+
+/**
+ * Continue an in-place extend session on the same harness branch.
+ */
+export async function buildExtendContinuePrompt(
+  spec: TemplateSpec,
+  cycle: number,
+  vendoredSkills: VendoredSkill[] = [],
+  vendoredContext?: VendoredContext,
+): Promise<string> {
+  const skillSummaries = formatSkillSummaries(vendoredSkills);
+  const prdPath = vendoredContext?.prdRelativePath ?? `${EXTEND_CONTEXT_DIR}/prd.md`;
+  const contractPath =
+    vendoredContext?.contractRelativePath ?? `${EXTEND_CONTEXT_DIR}/acceptance-contract.json`;
+  const skillsRoot =
+    vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || EXTEND_SKILLS_DIR;
+
+  return [
+    "You are continuing an in-place extension of an existing scaffold-hbar application.",
+    "This is a fresh-context agent run on the same harness extend branch.",
+    "",
+    `Continue cycle: ${cycle}`,
+    "",
+    "## Read First (Updated Inputs)",
+    "The harness re-vendored the latest extension brief into ignored runtime paths:",
+    `- \`${prdPath}\` — updated extension requirements`,
+    spec.contractPath ? `- \`${contractPath}\` — acceptance assertions` : undefined,
+    `- \`${skillsRoot}/\` — vendored skills (if any)`,
+    "- `GENERATION_NOTES.md` — prior notes",
+    "",
+    "## Mission",
+    "Improve the **existing** application to finish the extension.",
+    "Do NOT rebuild from scratch or wipe unrelated working features.",
+    "Prefer targeted edits that close gaps against the PRD/contract.",
+    "",
+    ...formatHardConstraints(spec),
+    "",
+    "## Required Deliverables",
+    ...spec.requiredFiles.map(file => `- ${file}`),
+    "",
+    "## Skills To Leverage",
+    skillSummaries.length > 0
+      ? [`Use only the vendored skills under \`${skillsRoot}/\`.`, skillSummaries].join("\n\n")
+      : "- Use scaffold-hbar and Hedera best practices.",
+    "",
+    "## Completion Standard",
+    "Pass deterministic validation and any enabled Playwright + semantic contract checks.",
+    "",
+    "Append a brief note to `GENERATION_NOTES.md` describing what you changed for this continue cycle.",
+    "- Do not read or write files outside the current workspace.",
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+}
+
+/**
+ * Repair prompt for in-place extend (preserves existing app; uses runtime context paths).
+ */
+export async function buildExtendRepairPrompt(
+  spec: TemplateSpec,
+  findings: ValidationFinding[],
+  attempt: number,
+  vendoredContext?: VendoredContext,
+): Promise<string> {
+  const prompt = await buildRepairPrompt(spec, findings, attempt, vendoredContext);
+  return [
+    "You are repairing an in-place extension of an existing application.",
+    "Preserve unrelated working features. Prefer the smallest fix that clears the findings.",
+    "",
+    prompt,
+  ].join("\n");
+}
+
+/**
  * First prompt of a --continue kick: improve the existing workspace against an updated PRD/contract.
  */
 export async function buildContinuePrompt(
@@ -165,6 +297,7 @@ export async function buildRepairPrompt(
   const actionable = findings.filter(finding => finding.category !== "semantic-infra");
   const scope = classifyRepairScope(actionable);
   const contractPath = vendoredContext?.contractRelativePath ?? VENDORED_CONTRACT_PATH;
+  const prdPath = vendoredContext?.prdRelativePath ?? VENDORED_PRD_PATH;
   const assertions = await loadContractAssertions(
     vendoredContext?.contractSourcePath ?? spec.contractPath,
   );
@@ -175,6 +308,7 @@ export async function buildRepairPrompt(
       findings: actionable,
       attempt,
       contractPath,
+      prdPath,
       assertions,
     });
   }
@@ -185,6 +319,7 @@ export async function buildRepairPrompt(
       findings: actionable,
       attempt,
       contractPath,
+      prdPath,
       assertions,
     });
   }
@@ -194,6 +329,7 @@ export async function buildRepairPrompt(
     findings: actionable,
     attempt,
     contractPath,
+    prdPath,
     assertions,
   });
 }
@@ -240,9 +376,10 @@ function buildSemanticScopedRepairPrompt(input: {
   findings: ValidationFinding[];
   attempt: number;
   contractPath: string;
+  prdPath: string;
   assertions: Map<string, ContractAssertion>;
 }): string {
-  const { spec, findings, attempt, contractPath, assertions } = input;
+  const { spec, findings, attempt, contractPath, prdPath, assertions } = input;
   const targets = formatSemanticTargets(findings, assertions);
 
   return [
@@ -256,7 +393,7 @@ function buildSemanticScopedRepairPrompt(input: {
     "Before changing anything, read:",
     `- \`${contractPath}\` — focus on the failed assertion ids listed below`,
     "- `GENERATION_NOTES.md` — prior notes (create if missing)",
-    `- Skim \`${VENDORED_PRD_PATH}\` only if you need product wording; do not redesign from the full PRD`,
+    `- Skim \`${prdPath}\` only if you need product wording; do not redesign from the full PRD`,
     "",
     "## Repair Mission",
     "Fix ONLY the failed acceptance-contract assertions below.",
@@ -286,9 +423,10 @@ function buildRuntimeRepairPrompt(input: {
   findings: ValidationFinding[];
   attempt: number;
   contractPath: string;
+  prdPath: string;
   assertions: Map<string, ContractAssertion>;
 }): string {
-  const { spec, findings, attempt, contractPath, assertions } = input;
+  const { spec, findings, attempt, contractPath, prdPath, assertions } = input;
   const metadata = spec.templateMetadata;
   const hasSemantic = findings.some(finding => finding.category === "semantic");
 
@@ -302,7 +440,7 @@ function buildRuntimeRepairPrompt(input: {
     "## Read First (Workspace Memory)",
     "Before changing anything, read:",
     "- `GENERATION_NOTES.md` — prior notes (create if missing)",
-    `- \`${VENDORED_PRD_PATH}\` — only as needed for intended behavior`,
+    `- \`${prdPath}\` — only as needed for intended behavior`,
     hasSemantic && spec.contractPath
       ? `- \`${contractPath}\` — only the failed assertion ids if listed below`
       : undefined,
@@ -342,9 +480,10 @@ function buildBroadRepairPrompt(input: {
   findings: ValidationFinding[];
   attempt: number;
   contractPath: string;
+  prdPath: string;
   assertions: Map<string, ContractAssertion>;
 }): string {
-  const { spec, findings, attempt, contractPath, assertions } = input;
+  const { spec, findings, attempt, contractPath, prdPath, assertions } = input;
   const metadata = spec.templateMetadata;
   const hasSemantic = findings.some(finding => finding.category === "semantic");
 
@@ -357,7 +496,7 @@ function buildBroadRepairPrompt(input: {
     "",
     "## Read First (Workspace Memory)",
     "Before changing anything, read these files in the current workspace:",
-    `- \`${VENDORED_PRD_PATH}\` — product requirements`,
+    `- \`${prdPath}\` — product requirements`,
     spec.contractPath ? `- \`${contractPath}\` — numbered acceptance assertions the validator will grade against` : undefined,
     "- `GENERATION_NOTES.md` — prior generator/repair notes (create it if missing)",
     "",

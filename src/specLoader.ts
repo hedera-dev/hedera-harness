@@ -4,15 +4,30 @@ import { parse as parseYaml } from "yaml";
 import type {
   ChainValidationConfig,
   ExtendConfig,
+  SeedConfig,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
 
-export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
+export interface LoadTemplateSpecOptions {
+  /**
+   * When true (default), `seed` is required — used by isolated `run`.
+   * When false, `seed` is optional — used by in-place `extend`.
+   */
+  requireSeed?: boolean;
+}
+
+export async function loadTemplateSpec(
+  specPath: string,
+  options: LoadTemplateSpecOptions = {},
+): Promise<LoadedTemplateSpec> {
+  const requireSeed = options.requireSeed !== false;
   const absoluteSpecPath = path.resolve(specPath);
   const raw = await readFile(absoluteSpecPath, "utf8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
   const specDirectory = path.dirname(absoluteSpecPath);
+  // Parent of the spec directory is the consumer/harness project root
+  // (works for both `specs/*.yaml` and `.harness/spec.yaml`).
   const projectRoot = path.resolve(specDirectory, "..");
 
   const spec: TemplateSpec = {
@@ -20,7 +35,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     description: readOptionalString(parsed, "description"),
     prdPath: resolveProjectPath(projectRoot, readString(parsed, "prd")),
     contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
-    seed: readSeed(parsed),
+    seed: requireSeed ? readSeed(parsed) : readOptionalSeed(parsed),
     generator: readGenerator(parsed),
     validator: readOptionalValidator(parsed),
     // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
@@ -90,7 +105,7 @@ function readOptionalValidatorPath(
   return resolveProjectPath(projectRoot, candidate);
 }
 
-function readSeed(parsed: Record<string, unknown>) {
+function readSeed(parsed: Record<string, unknown>): SeedConfig {
   const seed = readObject(parsed, "seed");
   return {
     repo: readString(seed, "repo"),
@@ -98,6 +113,13 @@ function readSeed(parsed: Record<string, unknown>) {
     preflight: readOptionalPreflight(seed),
     isolation: readOptionalIsolation(seed),
   };
+}
+
+function readOptionalSeed(parsed: Record<string, unknown>): SeedConfig | undefined {
+  if (parsed.seed === undefined) {
+    return undefined;
+  }
+  return readSeed(parsed);
 }
 
 function readGenerator(parsed: Record<string, unknown>) {

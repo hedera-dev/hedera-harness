@@ -23,6 +23,7 @@ import {
   resolveHeadShaOrThrow,
   updateExtendSession,
 } from "./extendSession.js";
+import { EXTEND_CONTEXT_DIR, EXTEND_SKILLS_DIR } from "./runtimePaths.js";
 
 export interface RunExtendOptions extends CliOptions {
   /** Test seam: skip host tool PATH checks. */
@@ -41,7 +42,7 @@ export async function runExtend(options: RunExtendOptions): Promise<RunReport> {
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   await access(workspacePath);
 
-  const loaded = await loadTemplateSpec(options.specPath);
+  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
   const { spec, projectRoot } = loaded;
   const maxAttempts = options.maxAttempts ?? spec.maxAttempts;
 
@@ -136,29 +137,42 @@ export async function runExtend(options: RunExtendOptions): Promise<RunReport> {
   logPhase("Using in-place workspace (no seed clone)", seedResult.workspacePath);
 
   const resolvedSkillPaths = await resolveSkillPaths(spec.skills ?? [], projectRoot);
-  const vendoredSkills = await vendorSkills(seedResult.workspacePath, resolvedSkillPaths);
+  const vendoredSkills = await vendorSkills(seedResult.workspacePath, resolvedSkillPaths, {
+    skillsDir: EXTEND_SKILLS_DIR,
+  });
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "skills_vendored",
     timestamp: new Date().toISOString(),
     count: vendoredSkills.length,
-    workspaceSkillsDir: path.join(seedResult.workspacePath, ".harness-skills"),
+    workspaceSkillsDir: path.join(seedResult.workspacePath, EXTEND_SKILLS_DIR),
   });
-  logPhase("Skills vendored into workspace", `.harness-skills (${vendoredSkills.length} files)`);
+  logPhase(
+    "Skills vendored into ignored runtime",
+    `${EXTEND_SKILLS_DIR} (${vendoredSkills.length} files)`,
+  );
 
-  const vendoredContext = await vendorHarnessContext(seedResult.workspacePath, {
-    prdPath: spec.prdPath,
-    contractPath: spec.contractPath,
-  });
+  // Context under .harness/runtime/; do not permanently mutate tracked .cursor/mcp.json.
+  const vendoredContext = await vendorHarnessContext(
+    seedResult.workspacePath,
+    {
+      prdPath: spec.prdPath,
+      contractPath: spec.contractPath,
+    },
+    {
+      contextDir: EXTEND_CONTEXT_DIR,
+      injectPlaywrightMcp: false,
+    },
+  );
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "context_vendored",
     timestamp: new Date().toISOString(),
     prdPath: vendoredContext.prdRelativePath,
     contractPath: vendoredContext.contractRelativePath,
-    workspaceContextDir: path.join(seedResult.workspacePath, ".harness-context"),
+    workspaceContextDir: path.join(seedResult.workspacePath, EXTEND_CONTEXT_DIR),
   });
   logPhase(
-    "Harness context vendored into workspace",
-    `.harness-context${vendoredContext.contractRelativePath ? " (prd + contract)" : " (prd)"}${vendoredContext.playwrightMcpPath ? " + playwright MCP" : ""}`,
+    "Harness context vendored into ignored runtime",
+    `${EXTEND_CONTEXT_DIR}${vendoredContext.contractRelativePath ? " (prd + contract)" : " (prd)"}`,
   );
 
   if (spec.chainValidation?.enabled) {

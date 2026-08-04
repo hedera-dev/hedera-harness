@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "run" | "validate" | "validate-semantic";
+export type HarnessCommand = "run" | "extend" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -187,7 +187,8 @@ export interface TemplateSpec {
   description?: string;
   prdPath: string;
   contractPath?: string;
-  seed: SeedConfig;
+  /** Required for isolated `run`; optional for in-place `extend`. */
+  seed?: SeedConfig;
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   skills?: string[];

@@ -1,22 +1,24 @@
+import { runExtend } from "./extendRunner.js";
 import { runHarness, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import type { CliOptions, HarnessCommand, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["run", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>(["run", "extend", "validate", "validate-semantic"]);
 
 export function parseCliArgs(argv: string[]): ParsedCli {
   const [rawCommand, specPath, ...rest] = argv;
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
-    throw new Error(`Expected command "run", "validate", or "validate-semantic".`);
+    throw new Error(`Expected command "run", "extend", "validate", or "validate-semantic".`);
   }
 
   if (!specPath || specPath.startsWith("-")) {
     throw new Error(`Expected a template spec path.`);
   }
 
+  const options = parseOptions(rawCommand, specPath, rest);
   return {
     command: rawCommand,
-    options: parseOptions(specPath, rest),
+    options,
   };
 }
 
@@ -26,6 +28,7 @@ export function printHelp(): void {
 Usage:
   hedera-harness run <spec> [--max-attempts <count>]
   hedera-harness run <spec> --continue <run-dir> [--max-attempts <count>]
+  hedera-harness extend <spec> [--max-attempts <count>]
   hedera-harness validate <spec> --workspace <path>
   hedera-harness validate-semantic <spec> --workspace <path>
 
@@ -33,8 +36,16 @@ Examples:
   hedera-harness run specs/hedera-demo-from-main.yaml
   hedera-harness run specs/hedera-demo-from-main.yaml --max-attempts 3
   hedera-harness run specs/my-template.yaml --continue runs/<run-id> --max-attempts 3
+  hedera-harness extend .harness/spec.yaml
+  hedera-harness extend .harness/spec.yaml --max-attempts 3
   hedera-harness validate specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
-  hedera-harness validate-semantic specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace`);
+  hedera-harness validate-semantic specs/hedera-demo-from-main.yaml --workspace runs/<run-id>/workspace
+
+Extend notes:
+  - Workspace is the current directory (cwd).
+  - On a normal clean branch, creates harness/extend-<slug>-<id> and starts a session.
+  - On a known harness extend branch with matching session metadata, continues automatically.
+  - Does not auto-stash, push, open a PR, merge, or delete branches.`);
 }
 
 export async function runCli(parsed: ParsedCli): Promise<void> {
@@ -85,6 +96,44 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     return;
   }
 
+  if (parsed.command === "extend") {
+    const report = await runExtend(parsed.options);
+    const summaryLines = [
+      `Harness extend finished`,
+      `spec=${report.specName}`,
+      `passed=${report.passed}`,
+      `oracleAudit=${report.blindIntegrity.passed ? "passed" : "failed"}`,
+      `attempts=${report.attempts}/${report.maxAttempts}`,
+      report.cycle ? `cycle=${report.cycle} attemptsThisCycle=${report.attemptsThisCycle}` : undefined,
+      `findings=${report.validation.findings.length}`,
+      `workspace=${report.workspacePath}`,
+      `report=${report.runDirectory}/reports/report.json`,
+      `session=${report.runDirectory}/session.json`,
+      "",
+      "Manual next steps (not run automatically):",
+      `  git push -u origin HEAD`,
+      `  gh pr create --base <recorded-base-branch>`,
+      "Inspect session.json for baseBranch / branch details.",
+    ];
+
+    if (report.passed && !report.blindIntegrity.passed) {
+      summaryLines.push(
+        `WARNING: validation passed but oracle audit detected peeking (${report.blindIntegrity.findings.length} finding(s))`,
+      );
+    }
+
+    if (!report.passed) {
+      summaryLines.push(...report.validation.findings.map(finding => `- ${finding.message}`));
+    }
+
+    console.log(summaryLines.filter((line): line is string => line !== undefined).join("\n"));
+
+    if (!report.passed) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   const report = await runHarness(parsed.options);
   const summaryLines = [
     `Harness run finished`,
@@ -119,7 +168,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
   }
 }
 
-function parseOptions(specPath: string, args: string[]): CliOptions {
+function parseOptions(command: HarnessCommand, specPath: string, args: string[]): CliOptions {
   const options: CliOptions = { specPath };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -130,9 +179,19 @@ function parseOptions(specPath: string, args: string[]): CliOptions {
         options.maxAttempts = readPositiveInteger(args, ++index, arg);
         break;
       case "--workspace":
+        if (command === "extend") {
+          // Allowed as an explicit cwd override for tests/tooling.
+          options.workspacePath = readValue(args, ++index, arg);
+          break;
+        }
         options.workspacePath = readValue(args, ++index, arg);
         break;
       case "--continue":
+        if (command === "extend") {
+          throw new Error(
+            "extend continues automatically on a known harness/extend-* branch; do not pass --continue.",
+          );
+        }
         options.continueRunDirectory = readValue(args, ++index, arg);
         break;
       case "--help":

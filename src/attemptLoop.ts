@@ -1,15 +1,23 @@
 import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
-import { buildContinuePrompt, buildGeneratorPrompt, buildRepairPrompt } from "./promptBuilder.js";
+import {
+  buildContinuePrompt,
+  buildExtendContinuePrompt,
+  buildExtendPrompt,
+  buildExtendRepairPrompt,
+  buildGeneratorPrompt,
+  buildRepairPrompt,
+} from "./promptBuilder.js";
 import {
   appendHarnessLog,
   appendHarnessNote,
+  LAYOUT_MODE_IN_PLACE_EXTEND,
   type RunLayout,
   writeJsonFile,
   writePromptFile,
   writeStatusFile,
 } from "./runArtifacts.js";
-import type { VendoredContext } from "./contextVendor.js";
+import { withPlaywrightMcpSnapshot, type VendoredContext } from "./contextVendor.js";
 import type { VendoredSkill } from "./skillVendor.js";
 import type { AgentProgress } from "./agentStreamLogger.js";
 import type {
@@ -84,6 +92,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
 
   const generator = new CommandAgentProvider(spec.generator);
   const commitAttempt = input.commitAttempt ?? commitWorkspaceAttempt;
+  const isExtend = layout.mode === LAYOUT_MODE_IN_PLACE_EXTEND;
 
   let attempts = input.startingAttempt - 1;
   let attemptsThisCycle = 0;
@@ -98,9 +107,13 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     ],
     commandResults: [],
   };
-  let latestPrompt = isContinue
-    ? await buildContinuePrompt(spec, cycle!, vendoredSkills)
-    : await buildGeneratorPrompt(spec, 1, vendoredSkills);
+  let latestPrompt = isExtend
+    ? isContinue
+      ? await buildExtendContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
+      : await buildExtendPrompt(spec, 1, vendoredSkills, vendoredContext)
+    : isContinue
+      ? await buildContinuePrompt(spec, cycle!, vendoredSkills)
+      : await buildGeneratorPrompt(spec, 1, vendoredSkills);
   let blindIntegrity: BlindIntegrityResult = {
     passed: true,
     findings: [],
@@ -246,7 +259,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
 
     blindIntegrity = await auditOracleAccess({
       workspacePath: seedResult.workspacePath,
-      seedRepo: spec.seed.repo,
+      seedRepo: spec.seed?.repo,
       harnessProjectRoot: projectRoot,
       runDirectory: layout.runDirectory,
       activityLogPath: agentActivityLogPath,
@@ -287,6 +300,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         agentFinding,
         jsonlLogPath: layout.jsonlLogPath,
         chainSigner,
+        contractRelativePath: vendoredContext.contractRelativePath,
+        playwrightMcpMode: isExtend ? "snapshot-restore" : "workspace",
       });
     } else {
       validation = await runAttemptValidation({
@@ -299,6 +314,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         promptsDirectory: layout.promptsDirectory,
         jsonlLogPath: layout.jsonlLogPath,
         chainSigner,
+        contractRelativePath: vendoredContext.contractRelativePath,
+        playwrightMcpMode: isExtend ? "snapshot-restore" : "workspace",
       });
     }
 
@@ -428,7 +445,9 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     }
 
     if (attemptsThisCycle < maxAttempts) {
-      latestPrompt = await buildRepairPrompt(spec, validation.findings, attempts + 1, vendoredContext);
+      latestPrompt = isExtend
+        ? await buildExtendRepairPrompt(spec, validation.findings, attempts + 1, vendoredContext)
+        : await buildRepairPrompt(spec, validation.findings, attempts + 1, vendoredContext);
     }
   }
 
@@ -511,6 +530,8 @@ export async function runAttemptValidation(input: {
   jsonlLogPath?: string;
   agentFinding?: ValidationFinding;
   chainSigner?: ChainSigner;
+  contractRelativePath?: string;
+  playwrightMcpMode?: "workspace" | "snapshot-restore";
 }): Promise<ValidationResult> {
   const installCachePath = path.join(
     input.cacheDirectory ?? path.join(input.runDirectory, "cache"),
@@ -559,81 +580,93 @@ export async function runAttemptValidation(input: {
     }
   }
 
-  const playwrightPath = input.spec.validators.playwrightPath!;
-  let devSession = null;
-  try {
-    const serverConfig = await loadDevServerConfig(playwrightPath);
-    devSession = await createDevServerSession(input.workspacePath, serverConfig, "runtime");
+  const runPlaywrightAndSemantic = async (): Promise<ValidationResult> => {
+    const playwrightPath = input.spec.validators.playwrightPath!;
+    let devSession = null;
+    let nextValidation = validation;
+    try {
+      const serverConfig = await loadDevServerConfig(playwrightPath);
+      devSession = await createDevServerSession(input.workspacePath, serverConfig, "runtime");
 
-    console.log("[hedera-harness] Running thin Playwright gate (shared dev server)...");
-    const gate = await runPlaywrightGate(input.workspacePath, playwrightPath, devSession);
-    validation.playwrightGate = gate.result;
-    validation.findings.push(...gate.findings);
-    validation.passed = validation.findings.filter(finding => finding.category !== "agent").length === 0;
+      console.log("[hedera-harness] Running thin Playwright gate (shared dev server)...");
+      const gate = await runPlaywrightGate(input.workspacePath, playwrightPath, devSession);
+      nextValidation.playwrightGate = gate.result;
+      nextValidation.findings.push(...gate.findings);
+      nextValidation.passed =
+        nextValidation.findings.filter(finding => finding.category !== "agent").length === 0;
 
-    if (!validation.passed || !input.logsDirectory || !input.promptsDirectory) {
-      return validation;
-    }
+      if (!nextValidation.passed || !input.logsDirectory || !input.promptsDirectory) {
+        return nextValidation;
+      }
 
-    const validatorPromptPath = path.join(input.promptsDirectory, `validator-attempt-${input.attempts}.txt`);
-    if (input.jsonlLogPath) {
-      await appendHarnessLog(input.jsonlLogPath, {
-        type: "validator_started",
-        timestamp: new Date().toISOString(),
+      const validatorPromptPath = path.join(
+        input.promptsDirectory,
+        `validator-attempt-${input.attempts}.txt`,
+      );
+      if (input.jsonlLogPath) {
+        await appendHarnessLog(input.jsonlLogPath, {
+          type: "validator_started",
+          timestamp: new Date().toISOString(),
+          attempt: input.attempts,
+          promptPath: validatorPromptPath,
+          serverUrl: devSession.url,
+        });
+      }
+      logPhase(`Validator attempt ${input.attempts} started`, devSession.url);
+
+      const semanticValidation = await runSemanticValidation({
+        workspacePath: input.workspacePath,
+        spec: input.spec,
         attempt: input.attempts,
-        promptPath: validatorPromptPath,
-        serverUrl: devSession.url,
+        logsDirectory: input.logsDirectory,
+        promptsDirectory: input.promptsDirectory,
+        devServer: devSession,
+        chainSigner: input.chainSigner,
+        contractRelativePath: input.contractRelativePath,
       });
+
+      const semanticLogPath = path.join(
+        input.logsDirectory,
+        `semantic-validation-attempt-${input.attempts}.json`,
+      );
+      await writeJsonFile(semanticLogPath, semanticValidation);
+
+      if (input.jsonlLogPath) {
+        await appendHarnessLog(input.jsonlLogPath, {
+          type: "validator_finished",
+          timestamp: new Date().toISOString(),
+          attempt: input.attempts,
+          passed: semanticValidation.passed,
+          findingCount: semanticValidation.findings.length,
+          durationMs: semanticValidation.durationMs,
+          infrastructureFailure: semanticValidation.infrastructureFailure,
+          infrastructureFailureReason: semanticValidation.infrastructureFailureReason,
+        });
+      }
+
+      if (!semanticValidation.passed) {
+        nextValidation = {
+          ...nextValidation,
+          passed: false,
+          findings: [...nextValidation.findings, ...semanticValidation.findings],
+          semanticValidation,
+        };
+      } else {
+        nextValidation = {
+          ...nextValidation,
+          semanticValidation,
+        };
+      }
+      return nextValidation;
+    } finally {
+      await devSession?.stop();
     }
-    logPhase(`Validator attempt ${input.attempts} started`, devSession.url);
+  };
 
-    const semanticValidation = await runSemanticValidation({
-      workspacePath: input.workspacePath,
-      spec: input.spec,
-      attempt: input.attempts,
-      logsDirectory: input.logsDirectory,
-      promptsDirectory: input.promptsDirectory,
-      devServer: devSession,
-      chainSigner: input.chainSigner,
-    });
-
-    const semanticLogPath = path.join(
-      input.logsDirectory,
-      `semantic-validation-attempt-${input.attempts}.json`,
-    );
-    await writeJsonFile(semanticLogPath, semanticValidation);
-
-    if (input.jsonlLogPath) {
-      await appendHarnessLog(input.jsonlLogPath, {
-        type: "validator_finished",
-        timestamp: new Date().toISOString(),
-        attempt: input.attempts,
-        passed: semanticValidation.passed,
-        findingCount: semanticValidation.findings.length,
-        durationMs: semanticValidation.durationMs,
-        infrastructureFailure: semanticValidation.infrastructureFailure,
-        infrastructureFailureReason: semanticValidation.infrastructureFailureReason,
-      });
-    }
-
-    if (!semanticValidation.passed) {
-      validation = {
-        ...validation,
-        passed: false,
-        findings: [...validation.findings, ...semanticValidation.findings],
-        semanticValidation,
-      };
-    } else {
-      validation = {
-        ...validation,
-        semanticValidation,
-      };
-    }
-  } finally {
-    await devSession?.stop();
+  if (input.playwrightMcpMode === "snapshot-restore") {
+    return withPlaywrightMcpSnapshot(input.workspacePath, runPlaywrightAndSemantic);
   }
-
-  return validation;
+  return runPlaywrightAndSemantic();
 }
 
 export function logPhase(title: string, detail?: string): void {
