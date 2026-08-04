@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, "feat/**"]
+  pull_request:
+
+jobs:
+  build-test-pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: npm pack --dry-run
+        run: npm pack --dry-run
+
+      - name: Enable Corepack (Yarn 3)
+        run: corepack enable
+
+      - name: Tarball smoke (Yarn 3 node-modules)
+        run: npm run smoke:pack

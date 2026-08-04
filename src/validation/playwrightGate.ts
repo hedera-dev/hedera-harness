@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { chromium, type Browser, type Page, type Response } from "playwright";
+import type { Browser, Page, Response } from "playwright";
 import { parse as parseYaml } from "yaml";
+import { importPlaywright } from "../optionalDeps.js";
 import type { PlaywrightGateResult, PlaywrightGateRouteResult, ValidationFinding } from "../types.js";
 import {
   startDevServer,
@@ -66,6 +67,7 @@ export async function runPlaywrightGate(
       await waitForServer(serverUrl, serverTimeoutMs);
     }
 
+    const { chromium } = await importPlaywright();
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();

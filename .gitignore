@@ -1,6 +1,7 @@
 # Dependencies & build output
 node_modules/
 dist/
+*.tgz
 
 # Harness run artifacts (generated workspaces, logs, reports)
 runs/

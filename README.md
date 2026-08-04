@@ -120,6 +120,17 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 - A **scaffold-hbar** seed — public remote works; local clone optional
 - A **PRD** markdown for the product you want to generate (start from the skeleton — see Quickstart)
 
+**Install as a CLI dependency** (recommended for consumer projects / templates):
+
+```bash
+npm install -D hedera-harness@1.1.0
+npx hedera-harness --help
+```
+
+Gate 0–1 (deterministic validators) needs only the harness package plus `yaml` — Playwright and the Hedera JS SDK are **optional peer dependencies** and are not installed by default.
+
+**Develop from a clone:**
+
 ```bash
 git clone https://github.com/hedera-dev/hedera-harness.git
 cd hedera-harness
@@ -202,11 +213,14 @@ sed -i '' "s/my-template/${NAME}/g" \
 
 ### If you enable Tier 2 (`validators.playwright`)
 
-- Chromium for the harness Playwright dependency:
+Install the optional Playwright peer and browser binary (not pulled in by a default `hedera-harness` install):
 
 ```bash
+npm install -D playwright
 npx playwright install chromium
 ```
+
+Without these, the Playwright gate fails with an explicit install error instead of a cryptic module-resolution stack.
 
 ### If you enable Tier 3 (`contract` + `validator`)
 
@@ -220,6 +234,14 @@ npx playwright install chromium
 Semantic infrastructure failures (MCP rejected, no browser) abort the repair loop instead of asking the generator to “fix” the app.
 
 ### If you enable Tier 3.5 (`chainValidation`)
+
+Install the optional Hedera SDK peer (not pulled in by a default `hedera-harness` install):
+
+```bash
+npm install -D @hiero-ledger/sdk
+```
+
+Also required:
 
 - A **funded Hedera testnet account created with an ECDSA key** (not ED25519 — ECDSA is required for the EVM address alias used by the burner wallet)
 - Export operator credentials in the shell that runs the harness (never write them into a workspace):
@@ -440,8 +462,12 @@ Cross-run logs (append-only):
 | `npm run harness -- <cmd>` | Build and run the CLI |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run typecheck` | Type-check without emitting |
+| `npm test` | Build, then run Node test runner suites |
+| `npm run smoke:pack` | Pack a release tarball and smoke-install it with Yarn 3 |
 
 CLI commands: `run`, `validate`, `validate-semantic`.
+
+Published package version **1.1.0** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`). Named skills resolve from a project-local `skills-index.json` when present, otherwise from the package-bundled index.
 
 ## Design notes
 
