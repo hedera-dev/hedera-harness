@@ -60,7 +60,7 @@ generator:
 #     - --output-format
 #     - stream-json
 #     - --stream-partial-output
-#   timeoutMs: 600000
+#   timeoutMs: 3600000
 
 # Optional — skill names from skills-index.json (preferred). Defaults fetch from
 # https://github.com/hedera-dev/hedera-skills (see skills-index.json `defaults`).

@@ -214,7 +214,10 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
   }
 
   if (spec.chainValidation?.enabled) {
-    const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory);
+    const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory, {
+      projectRoot: process.cwd(),
+      packageManager: spec.constraints?.packageManager,
+    });
     chainSigner = provisioned.signer;
     await appendHarnessLog(layout.jsonlLogPath, {
       type: "chain_signer_provisioned",
@@ -343,7 +346,10 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   let chainSigner: ChainSigner | undefined;
   if (spec.chainValidation?.enabled) {
     const runDirectory = await resolveRunDirectoryForWorkspace(workspacePath);
-    const provisioned = await provisionChainSigner(spec.chainValidation, runDirectory);
+    const provisioned = await provisionChainSigner(spec.chainValidation, runDirectory, {
+      projectRoot: process.cwd(),
+      packageManager: spec.constraints?.packageManager,
+    });
     chainSigner = provisioned.signer;
     logPhase(
       provisioned.reused

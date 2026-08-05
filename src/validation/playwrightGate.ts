@@ -67,7 +67,7 @@ export async function runPlaywrightGate(
       await waitForServer(serverUrl, serverTimeoutMs);
     }
 
-    const { chromium } = await importPlaywright();
+    const { chromium } = await importPlaywright({ projectRoot: workspacePath });
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();

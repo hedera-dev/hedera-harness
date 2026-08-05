@@ -199,7 +199,10 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
     );
 
     if (spec.chainValidation?.enabled) {
-      const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory);
+      const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory, {
+        projectRoot: layout.workspacePath,
+        packageManager: spec.constraints?.packageManager,
+      });
       chainSigner = provisioned.signer;
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "chain_signer_provisioned",
