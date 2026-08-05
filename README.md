@@ -222,6 +222,8 @@ npx playwright install chromium
 
 Without these, the Playwright gate fails with an explicit install error instead of a cryptic module-resolution stack.
 
+After navigation, the gate waits for `load` and **polls** `body` text until it looks hydrated (default 60s / 20+ characters). Override via smoke YAML `defaults.hydrationTimeoutMs` and `defaults.minBodyTextLength` for slow client shells.
+
 ### If you enable Tier 3 (`contract` + `validator`)
 
 - An **acceptance contract** JSON (numbered assertions the semantic agent grades)

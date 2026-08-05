@@ -13,6 +13,9 @@ server:
 
 defaults:
   timeoutMs: 60000
+  # Poll for hydrated body text after navigation (Next.js client shells).
+  hydrationTimeoutMs: 60000
+  minBodyTextLength: 20
   failOnConsoleError: true
 
 routes:

@@ -20,6 +20,10 @@ interface PlaywrightGateConfig {
   };
   defaults?: {
     timeoutMs?: number;
+    /** How long to poll for hydrated body text after navigation (default 60s). */
+    hydrationTimeoutMs?: number;
+    /** Minimum trimmed body.innerText length to count as rendered (default 20). */
+    minBodyTextLength?: number;
     failOnConsoleError?: boolean;
   };
   routes: Array<{
@@ -31,6 +35,10 @@ interface PlaywrightGateConfig {
   };
 }
 
+const DEFAULT_HYDRATION_TIMEOUT_MS = 60_000;
+const DEFAULT_MIN_BODY_TEXT_LENGTH = 20;
+const HYDRATION_POLL_MS = 250;
+
 export async function runPlaywrightGate(
   workspacePath: string,
   configPath: string,
@@ -40,6 +48,8 @@ export async function runPlaywrightGate(
   const config = await loadPlaywrightGateConfig(configPath);
   const serverTimeoutMs = config.server.timeoutMs ?? 120_000;
   const routeTimeoutMs = config.defaults?.timeoutMs ?? 30_000;
+  const hydrationTimeoutMs = config.defaults?.hydrationTimeoutMs ?? DEFAULT_HYDRATION_TIMEOUT_MS;
+  const minBodyTextLength = config.defaults?.minBodyTextLength ?? DEFAULT_MIN_BODY_TEXT_LENGTH;
   const failOnConsoleError = config.defaults?.failOnConsoleError ?? true;
   const forbiddenText = config.forbidden?.visibleText ?? [];
 
@@ -88,6 +98,7 @@ export async function runPlaywrightGate(
       let rendered = false;
       let statusCode: number | null = null;
 
+      let lastBodyText = "";
       try {
         response = await page.goto(routeUrl, {
           waitUntil: "domcontentloaded",
@@ -95,8 +106,16 @@ export async function runPlaywrightGate(
         });
         statusCode = response?.status() ?? null;
 
-        const bodyText = (await page.locator("body").innerText({ timeout: 5_000 })).trim();
-        rendered = bodyText.length >= 20;
+        // Next.js / client apps often return a sparse shell at DOMContentLoaded.
+        // Wait for load, then poll until body text looks hydrated (or timeout).
+        await page.waitForLoadState("load", { timeout: Math.min(routeTimeoutMs, 15_000) }).catch(() => undefined);
+        const hydration = await waitForMeaningfulBodyText(page, {
+          timeoutMs: hydrationTimeoutMs,
+          minLength: minBodyTextLength,
+          pollMs: HYDRATION_POLL_MS,
+        });
+        rendered = hydration.rendered;
+        lastBodyText = hydration.bodyText;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         findings.push({
@@ -127,7 +146,8 @@ export async function runPlaywrightGate(
         findings.push({
           id: `playwright:route:${route.name}:render`,
           category: "playwright",
-          message: `Playwright gate route ${route.path} did not render meaningful page content`,
+          message: `Playwright gate route ${route.path} did not render meaningful page content within ${hydrationTimeoutMs}ms`,
+          details: `Last body text length=${lastBodyText.length} (need >= ${minBodyTextLength}): ${truncate(lastBodyText, 200) || "(empty)"}`,
         });
       }
 
@@ -213,6 +233,41 @@ function joinUrl(baseUrl: string, routePath: string): string {
 async function pageContainsText(page: Page, text: string): Promise<boolean> {
   const count = await page.getByText(text, { exact: false }).count();
   return count > 0;
+}
+
+/** Exported for unit tests — trimmed body text counts as hydrated when long enough. */
+export function isMeaningfulBodyText(text: string, minLength = DEFAULT_MIN_BODY_TEXT_LENGTH): boolean {
+  return text.trim().length >= minLength;
+}
+
+/**
+ * Poll body.innerText until it looks hydrated or timeout.
+ * Handles client-rendered shells that are empty/short at DOMContentLoaded.
+ */
+export async function waitForMeaningfulBodyText(
+  page: Pick<Page, "locator">,
+  options: { timeoutMs: number; minLength?: number; pollMs?: number },
+): Promise<{ rendered: boolean; bodyText: string }> {
+  const minLength = options.minLength ?? DEFAULT_MIN_BODY_TEXT_LENGTH;
+  const pollMs = options.pollMs ?? HYDRATION_POLL_MS;
+  const deadline = Date.now() + Math.max(0, options.timeoutMs);
+  let bodyText = "";
+
+  while (true) {
+    try {
+      bodyText = (await page.locator("body").innerText({ timeout: Math.min(2_000, pollMs + 1_500) })).trim();
+      if (isMeaningfulBodyText(bodyText, minLength)) {
+        return { rendered: true, bodyText };
+      }
+    } catch {
+      // Keep polling through transient detach / empty document states.
+    }
+
+    if (Date.now() >= deadline) {
+      return { rendered: false, bodyText };
+    }
+    await sleep(pollMs);
+  }
 }
 
 function sleep(ms: number): Promise<void> {

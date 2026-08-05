@@ -297,7 +297,8 @@ export async function validateWorkspace(options: CliOptions) {
     throw new Error('Expected --workspace <path> for validate command.');
   }
 
-  const loaded = await loadTemplateSpec(options.specPath);
+  // Extend recipes omit `seed`; validate only needs deterministic gates on a workspace.
+  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
   return runDeterministicValidation(options.workspacePath, loaded.spec);
 }
 
@@ -314,7 +315,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   const workspacePath = path.resolve(options.workspacePath);
   await access(workspacePath);
 
-  const loaded = await loadTemplateSpec(options.specPath);
+  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
   const { spec } = loaded;
 
   if (!isValidatorEnabled(spec)) {
