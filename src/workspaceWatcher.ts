@@ -2,7 +2,17 @@ import { appendFile, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 
-const IGNORED_SEGMENTS = new Set(["node_modules", ".next", ".git", "dist", "artifacts", "cache"]);
+const IGNORED_SEGMENTS = new Set([
+  "node_modules",
+  ".next",
+  ".git",
+  "dist",
+  "artifacts",
+  "cache",
+  ".harness-skills",
+  ".harness-context",
+  ".skill-cache",
+]);
 
 export class WorkspaceWatcher {
   private watcher: FSWatcher | null = null;
@@ -38,8 +48,7 @@ export class WorkspaceWatcher {
   }
 
   private async recordChange(filename: string): Promise<void> {
-    const segments = filename.split(path.sep);
-    if (segments.some(segment => IGNORED_SEGMENTS.has(segment))) {
+    if (shouldIgnoreWorkspaceActivity(filename)) {
       return;
     }
 
@@ -53,4 +62,17 @@ export class WorkspaceWatcher {
 
     await this.onChange?.(summary);
   }
+}
+
+export function shouldIgnoreWorkspaceActivity(filename: string): boolean {
+  const normalized = filename.replace(/\\/g, "/");
+  if (
+    normalized === ".harness" ||
+    normalized.startsWith(".harness/") ||
+    normalized.includes("/.harness/")
+  ) {
+    return true;
+  }
+  const segments = normalized.split("/");
+  return segments.some(segment => IGNORED_SEGMENTS.has(segment));
 }

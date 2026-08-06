@@ -1,8 +1,8 @@
 # hedera-harness
 
-TypeScript CLI that **generates and validates [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) templates** from a product brief you supply.
+TypeScript CLI that **generates and validates [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) templates** from a product brief you supply — either greenfield (`run`) or in-place on an already-scaffolded app (`extend`).
 
-The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.). The loop is always the same: seed → generate → validate → repair until pass or budget exhausted.
+The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.). For `run`, the loop is: seed → generate → validate → repair until pass or budget exhausted. For `extend`, there is no seed — the project cwd is the workspace.
 
 ## What it does
 
@@ -120,6 +120,17 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 - A **scaffold-hbar** seed — public remote works; local clone optional
 - A **PRD** markdown for the product you want to generate (start from the skeleton — see Quickstart)
 
+**Install as a CLI dependency** (recommended for consumer projects / templates):
+
+```bash
+npm install -D hedera-harness@1.1.1
+npx hedera-harness --help
+```
+
+Gate 0–1 (deterministic validators) needs only the harness package plus `yaml` — Playwright and the Hedera JS SDK are **optional peer dependencies** and are not installed by default.
+
+**Develop from a clone:**
+
 ```bash
 git clone https://github.com/hedera-dev/hedera-harness.git
 cd hedera-harness
@@ -161,11 +172,22 @@ The skill grills your idea one question at a time, then emits a gate 0–1 **spe
 
 Two-axis audit: mechanical Wiring (`check-spec.sh`) + Oracle judgment (journey↔assertion traceability, severity budget, thin Playwright).
 
-### 4. Run
+### 4. Run (or extend)
+
+**Greenfield** (harness clone):
 
 ```bash
 npm run harness -- run specs/<slug>.yaml --max-attempts 3
 ```
+
+**In-place** (already-scaffolded Scaffold HBAR app with `.harness/`):
+
+```bash
+yarn harness:extend
+# or: hedera-harness extend .harness/spec.yaml --max-attempts 3
+```
+
+See [Extend (in-place)](#extend-in-place) below.
 
 Optional inspiration: three **example** PRDs + specs ship in the repo (Proof Wall, HTS precompile, x402). Read them to see depth and shape; you do not need to run them. Details: [`docs/prds/README.md`](docs/prds/README.md). Full checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
 
@@ -202,11 +224,16 @@ sed -i '' "s/my-template/${NAME}/g" \
 
 ### If you enable Tier 2 (`validators.playwright`)
 
-- Chromium for the harness Playwright dependency:
+Install the optional Playwright peer and browser binary (not pulled in by a default `hedera-harness` install):
 
 ```bash
+npm install -D playwright
 npx playwright install chromium
 ```
+
+Without these, the Playwright gate fails with an explicit install error instead of a cryptic module-resolution stack.
+
+After navigation, the gate waits for `load` and **polls** `body` text until it looks hydrated (default 60s / 20+ characters). Override via smoke YAML `defaults.hydrationTimeoutMs` and `defaults.minBodyTextLength` for slow client shells.
 
 ### If you enable Tier 3 (`contract` + `validator`)
 
@@ -220,6 +247,14 @@ npx playwright install chromium
 Semantic infrastructure failures (MCP rejected, no browser) abort the repair loop instead of asking the generator to “fix” the app.
 
 ### If you enable Tier 3.5 (`chainValidation`)
+
+Install the optional Hedera SDK peer (not pulled in by a default `hedera-harness` install):
+
+```bash
+npm install -D @hiero-ledger/sdk
+```
+
+Also required:
 
 - A **funded Hedera testnet account created with an ECDSA key** (not ED25519 — ECDSA is required for the EVM address alias used by the burner wallet)
 - Export operator credentials in the shell that runs the harness (never write them into a workspace):
@@ -296,9 +331,59 @@ skills:
 
 Absolute paths and `./` / `../` relative paths also work directly in a spec’s `skills:` list (they skip the index). If a name is missing from the index, the harness fails fast and lists the registered skills. First remote resolve needs network + `git`.
 
+## Extend (in-place)
+
+Use `extend` when you already have a Scaffold HBAR app and want an agent to
+implement a delta (new route, feature, payment gate) **without** re-seeding.
+
+Typical consumer path (template ships `.harness/` + `yarn harness:extend`):
+
+```bash
+npx create-scaffold-hbar@latest   # pick a template that includes .harness/
+cd my-app
+yarn install
+yarn harness:extend
+```
+
+Layout under the project root:
+
+```
+.harness/
+├── spec.yaml              # no seed; paths relative to project root
+├── prd.md
+├── validators/
+│   ├── static.json
+│   └── yarn.json
+├── playwright/            # optional (Tier 2)
+├── contracts/             # optional (Tier 3)
+└── runs/                  # artifacts (gitignored)
+```
+
+Required in the **spec file**:
+
+- Omit `seed` — workspace is the project cwd
+- `extend.baseline` — commands that prove host-app health before the extension
+  (must include a command literally named `install`)
+- Validators / PRD / optional contract paths under `.harness/…`
+- `templateMetadata.name` may keep the **host** template identity and differ
+  from the extension `name` slug
+
+```bash
+hedera-harness extend .harness/spec.yaml --max-attempts 3
+hedera-harness validate .harness/spec.yaml --workspace .
+hedera-harness validate-semantic .harness/spec.yaml --workspace .
+```
+
+Artifacts land under `.harness/runs/`. Gate enablement (0–1 / 2 / 3 / 3.5) is
+the same as `run`; only layout and CLI entrypoint differ.
+
+Authoring skills (`/create-harness-spec`, `/review-harness-spec`) detect
+`.harness/` and emit / audit the extend layout. See the [hedera-skills
+hedera-harness plugin](https://github.com/hedera-dev/hedera-skills).
+
 ## Configure a spec
 
-Example layout (paths are yours to fill in):
+Example **run** layout (paths are yours to fill in):
 
 ```yaml
 name: my-hedera-template
@@ -402,7 +487,7 @@ npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<ru
 
 ```
 ├── src/              # Harness implementation
-├── specs/            # YAML run configs (examples)
+├── specs/            # YAML run configs (examples) — greenfield `run`
 ├── skills-index.json # Name → SKILL.md registry (remote hedera-skills by default)
 ├── validators/       # JSON static + command validators
 ├── contracts/        # Acceptance contracts (Tier 3)
@@ -414,6 +499,9 @@ npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<ru
 ├── .skill-cache/     # Cached skill repo checkouts (gitignored)
 └── runs/             # Run artifacts (gitignored)
 ```
+
+Consumer **extend** layout lives in the scaffolded app (see
+[Extend (in-place)](#extend-in-place)), not in this clone.
 
 ## Run artifacts
 
@@ -440,8 +528,12 @@ Cross-run logs (append-only):
 | `npm run harness -- <cmd>` | Build and run the CLI |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run typecheck` | Type-check without emitting |
+| `npm test` | Build, then run Node test runner suites |
+| `npm run smoke:pack` | Pack a release tarball and smoke-install it with Yarn 3 |
 
-CLI commands: `run`, `validate`, `validate-semantic`.
+CLI commands: `run`, `extend`, `validate`, `validate-semantic`.
+
+Published package version **1.1.1** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`). Named skills resolve from a project-local `skills-index.json` when present, otherwise from the package-bundled index.
 
 ## Design notes
 

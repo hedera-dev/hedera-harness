@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "run" | "validate" | "validate-semantic";
+export type HarnessCommand = "run" | "extend" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -166,12 +166,29 @@ export interface ChainSigner {
   network: "testnet";
 }
 
+export interface ExtendBaselineCommandConfig {
+  name?: string;
+  command: string;
+  timeoutMs?: number;
+}
+
+export interface ExtendBaselineConfig {
+  /** Non-target health checks run once after branch creation (before generation). */
+  commands?: ExtendBaselineCommandConfig[];
+}
+
+/** In-place `extend` options (ignored by isolated `run`). */
+export interface ExtendConfig {
+  baseline?: ExtendBaselineConfig;
+}
+
 export interface TemplateSpec {
   name: string;
   description?: string;
   prdPath: string;
   contractPath?: string;
-  seed: SeedConfig;
+  /** Required for isolated `run`; optional for in-place `extend`. */
+  seed?: SeedConfig;
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   skills?: string[];
@@ -186,6 +203,8 @@ export interface TemplateSpec {
   forbiddenFiles: string[];
   secretScan?: SecretScanConfig;
   chainValidation?: ChainValidationConfig;
+  /** Optional in-place extension configuration. */
+  extend?: ExtendConfig;
   maxAttempts: number;
   logging: {
     jsonlPath: string;

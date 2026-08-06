@@ -1,13 +1,33 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { ChainValidationConfig, SecretScanConfig, TemplateSpec } from "./types.js";
+import type {
+  ChainValidationConfig,
+  ExtendConfig,
+  SeedConfig,
+  SecretScanConfig,
+  TemplateSpec,
+} from "./types.js";
 
-export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
+export interface LoadTemplateSpecOptions {
+  /**
+   * When true (default), `seed` is required — used by isolated `run`.
+   * When false, `seed` is optional — used by in-place `extend`.
+   */
+  requireSeed?: boolean;
+}
+
+export async function loadTemplateSpec(
+  specPath: string,
+  options: LoadTemplateSpecOptions = {},
+): Promise<LoadedTemplateSpec> {
+  const requireSeed = options.requireSeed !== false;
   const absoluteSpecPath = path.resolve(specPath);
   const raw = await readFile(absoluteSpecPath, "utf8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
   const specDirectory = path.dirname(absoluteSpecPath);
+  // Parent of the spec directory is the consumer/harness project root
+  // (works for both `specs/*.yaml` and `.harness/spec.yaml`).
   const projectRoot = path.resolve(specDirectory, "..");
 
   const spec: TemplateSpec = {
@@ -15,7 +35,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     description: readOptionalString(parsed, "description"),
     prdPath: resolveProjectPath(projectRoot, readString(parsed, "prd")),
     contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
-    seed: readSeed(parsed),
+    seed: requireSeed ? readSeed(parsed) : readOptionalSeed(parsed),
     generator: readGenerator(parsed),
     validator: readOptionalValidator(parsed),
     // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
@@ -34,12 +54,21 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     forbiddenFiles: readStringArray(parsed, "forbiddenFiles"),
     secretScan: readSecretScan(parsed),
     chainValidation: readChainValidation(parsed),
+    extend: readExtendConfig(parsed),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? 3,
     logging: {
       jsonlPath: resolveProjectPath(projectRoot, readString(readObject(parsed, "logging"), "jsonl")),
       notesPath: resolveProjectPath(projectRoot, readString(readObject(parsed, "logging"), "notes")),
     },
   };
+
+  // Extend layout (no seed) requires baseline install. Isolated specs may omit
+  // `extend` entirely; validate/validate-semantic also use requireSeed:false.
+  if (!requireSeed && !spec.seed) {
+    assertExtendBaselineHasInstall(spec);
+  } else {
+    assertBaselineInstallNameWhenPresent(spec);
+  }
 
   return {
     spec,
@@ -84,7 +113,7 @@ function readOptionalValidatorPath(
   return resolveProjectPath(projectRoot, candidate);
 }
 
-function readSeed(parsed: Record<string, unknown>) {
+function readSeed(parsed: Record<string, unknown>): SeedConfig {
   const seed = readObject(parsed, "seed");
   return {
     repo: readString(seed, "repo"),
@@ -92,6 +121,13 @@ function readSeed(parsed: Record<string, unknown>) {
     preflight: readOptionalPreflight(seed),
     isolation: readOptionalIsolation(seed),
   };
+}
+
+function readOptionalSeed(parsed: Record<string, unknown>): SeedConfig | undefined {
+  if (parsed.seed === undefined) {
+    return undefined;
+  }
+  return readSeed(parsed);
 }
 
 function readGenerator(parsed: Record<string, unknown>) {
@@ -257,6 +293,79 @@ function readSecretScan(parsed: Record<string, unknown>): SecretScanConfig | und
       ? (patterns as Array<{ name: string; pattern: string; allowIn?: string[] }>)
       : [],
   };
+}
+
+function readExtendConfig(parsed: Record<string, unknown>): ExtendConfig | undefined {
+  const extend = parsed.extend;
+  if (extend === undefined) return undefined;
+  if (!extend || typeof extend !== "object" || Array.isArray(extend)) {
+    throw new Error('Expected object "extend" in template spec.');
+  }
+
+  const record = extend as Record<string, unknown>;
+  const baselineRecord =
+    record.baseline && typeof record.baseline === "object" && !Array.isArray(record.baseline)
+      ? (record.baseline as Record<string, unknown>)
+      : undefined;
+
+  if (!baselineRecord) {
+    return {};
+  }
+
+  const commandsRaw = baselineRecord.commands;
+  if (commandsRaw === undefined) {
+    return { baseline: {} };
+  }
+  if (!Array.isArray(commandsRaw)) {
+    throw new Error('Expected array "extend.baseline.commands" in template spec.');
+  }
+
+  return {
+    baseline: {
+      commands: commandsRaw.map((item, index) => {
+        if (typeof item === "string") {
+          return { command: item };
+        }
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          throw new Error(`Expected string or object at extend.baseline.commands[${index}].`);
+        }
+        const cmd = item as Record<string, unknown>;
+        return {
+          name: readOptionalString(cmd, "name"),
+          command: readString(cmd, "command"),
+          timeoutMs: readOptionalNumber(cmd, "timeoutMs"),
+        };
+      }),
+    },
+  };
+}
+
+/** Isolated `run` may omit extend; if baseline commands are listed, one must be named install. */
+function assertBaselineInstallNameWhenPresent(spec: TemplateSpec): void {
+  const commands = spec.extend?.baseline?.commands;
+  if (!commands) return;
+  assertCommandsIncludeInstall(commands);
+}
+
+/** In-place `extend` requires extend.baseline.commands with a literal install name. */
+function assertExtendBaselineHasInstall(spec: TemplateSpec): void {
+  const commands = spec.extend?.baseline?.commands;
+  if (!commands || commands.length === 0) {
+    throw new Error(
+      'extend mode requires extend.baseline.commands including a command literally named "install".',
+    );
+  }
+  assertCommandsIncludeInstall(commands);
+}
+
+function assertCommandsIncludeInstall(
+  commands: Array<{ name?: string; command: string }>,
+): void {
+  if (!commands.some(command => command.name === "install")) {
+    throw new Error(
+      'extend.baseline must include a command literally named "install" (used for host-health / fingerprinting).',
+    );
+  }
 }
 
 function readChainValidation(parsed: Record<string, unknown>): ChainValidationConfig | undefined {

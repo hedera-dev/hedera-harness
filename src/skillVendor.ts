@@ -1,7 +1,8 @@
-import { access, cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeRelativeDir, pathExists } from "./fsUtils.js";
+import { ISOLATED_SKILLS_DIR } from "./runtimePaths.js";
 
-const SKILLS_DIR = ".harness-skills";
 const REFERENCES_DIRNAME = "references";
 
 export interface VendoredSkill {
@@ -12,11 +13,18 @@ export interface VendoredSkill {
   referencesPath?: string;
 }
 
+export interface VendorSkillsOptions {
+  /** Relative directory under the workspace (default: `.harness-skills`). */
+  skillsDir?: string;
+}
+
 export async function vendorSkills(
   workspacePath: string,
   sourceSkillPaths: string[],
+  options: VendorSkillsOptions = {},
 ): Promise<VendoredSkill[]> {
-  const skillsRoot = path.join(workspacePath, SKILLS_DIR);
+  const skillsDir = normalizeRelativeDir(options.skillsDir ?? ISOLATED_SKILLS_DIR);
+  const skillsRoot = path.join(workspacePath, skillsDir);
   await mkdir(skillsRoot, { recursive: true });
 
   const vendored: VendoredSkill[] = [];
@@ -27,8 +35,8 @@ export async function vendorSkills(
     const name = extractSkillName(content) ?? path.basename(path.dirname(sourcePath));
     const description = extractSkillDescription(content);
     const slug = uniqueSlug(slugify(name), usedSlugs);
-    const relativePath = path.posix.join(SKILLS_DIR, slug, "SKILL.md");
-    const destinationPath = path.join(workspacePath, relativePath);
+    const relativePath = path.posix.join(skillsDir, slug, "SKILL.md");
+    const destinationPath = path.join(workspacePath, ...relativePath.split("/"));
 
     await mkdir(path.dirname(destinationPath), { recursive: true });
     await writeFile(destinationPath, content, "utf8");
@@ -44,7 +52,7 @@ export async function vendorSkills(
     const destReferencesDir = path.join(path.dirname(destinationPath), REFERENCES_DIRNAME);
     if (await pathExists(sourceReferencesDir)) {
       await cp(sourceReferencesDir, destReferencesDir, { recursive: true, force: true });
-      skill.referencesPath = path.posix.join(SKILLS_DIR, slug, REFERENCES_DIRNAME);
+      skill.referencesPath = path.posix.join(skillsDir, slug, REFERENCES_DIRNAME);
     }
 
     vendored.push(skill);
@@ -98,13 +106,4 @@ function extractSkillName(content: string): string | undefined {
 function extractSkillDescription(content: string): string {
   const match = content.match(/^description:\s*(.+)$/m);
   return match?.[1]?.trim() ?? "Use this skill when relevant to the template being built.";
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
 }

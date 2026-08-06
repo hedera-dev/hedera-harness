@@ -1,10 +1,16 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ensureSkillRepoCheckout } from "./skillRepoCache.js";
 
 export const SKILLS_INDEX_FILENAME = "skills-index.json";
 export const DEFAULT_SKILLS_REPO = "https://github.com/hedera-dev/hedera-skills.git";
 export const DEFAULT_SKILLS_REF = "master";
+
+/** Package-bundled index next to installed `dist/` (npm consumers without a local clone). */
+export function bundledSkillsIndexPath(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", SKILLS_INDEX_FILENAME);
+}
 
 export interface SkillsIndexEntry {
   name: string;
@@ -148,19 +154,43 @@ async function resolveIndexEntryPath(
   return path.resolve(checkoutPath, inRepoPath);
 }
 
+/**
+ * Prefer a project-local `skills-index.json`, then fall back to the package-bundled copy
+ * so npm-installed `hedera-harness` works without cloning this repo.
+ */
+export async function resolveSkillsIndexPath(projectRoot: string): Promise<string> {
+  const localPath = skillsIndexPath(projectRoot);
+  try {
+    await access(localPath);
+    return localPath;
+  } catch {
+    // fall through to package-bundled index
+  }
+
+  const bundledPath = bundledSkillsIndexPath();
+  try {
+    await access(bundledPath);
+    return bundledPath;
+  } catch {
+    throw new Error(
+      [
+        `Skill name lookup requires ${localPath} (or the package-bundled ${SKILLS_INDEX_FILENAME}).`,
+        "Neither file was found.",
+        "Create skills-index.json in the consumer project, reinstall hedera-harness, or use absolute/relative paths in the spec's skills list.",
+      ].join(" "),
+    );
+  }
+}
+
 async function loadSkillsIndex(projectRoot: string): Promise<LoadedSkillsIndex> {
-  const indexPath = skillsIndexPath(projectRoot);
+  const indexPath = await resolveSkillsIndexPath(projectRoot);
 
   let raw: string;
   try {
     raw = await readFile(indexPath, "utf8");
-  } catch {
-    throw new Error(
-      [
-        `Skill name lookup requires ${indexPath}, but that file was not found.`,
-        "Create skills-index.json at the harness repo root (see README), or use absolute/relative paths in the spec's skills list.",
-      ].join(" "),
-    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to read skills index at ${indexPath}: ${message}`);
   }
 
   let parsed: unknown;

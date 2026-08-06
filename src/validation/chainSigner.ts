@@ -1,16 +1,10 @@
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  AccountBalanceQuery,
-  AccountCreateTransaction,
-  AccountDeleteTransaction,
-  AccountId,
-  Client,
-  Hbar,
-  PrivateKey,
-  TransferTransaction,
-} from "@hiero-ledger/sdk";
+import { importHieroSdk, type OptionalDepInstallOptions } from "../optionalDeps.js";
 import type { ChainSigner, ChainValidationConfig } from "../types.js";
+
+type HieroSdk = typeof import("@hiero-ledger/sdk");
+type PrivateKey = ReturnType<HieroSdk["PrivateKey"]["fromString"]>;
 
 export const CHAIN_SIGNER_FILENAME = "chain-signer.json";
 
@@ -27,6 +21,7 @@ interface PersistedChainSigner extends ChainSigner {
 export async function provisionChainSigner(
   config: ChainValidationConfig,
   runDirectory: string,
+  installOptions: OptionalDepInstallOptions = {},
 ): Promise<{ signer: ChainSigner; reused: boolean; toppedUpHbar?: number; replacedDeleted?: boolean }> {
   if (!config.enabled) {
     throw new Error("provisionChainSigner called with chainValidation.enabled=false");
@@ -37,6 +32,9 @@ export async function provisionChainSigner(
       `chainValidation.network must be "testnet" (got ${JSON.stringify(config.network)}). Mainnet is not allowed.`,
     );
   }
+
+  // Fail with a gate-specific install message before any network calls.
+  await importHieroSdk(installOptions);
 
   const persistPath = chainSignerPath(runDirectory);
   const existing = await readPersistedSigner(persistPath);
@@ -64,20 +62,21 @@ async function createFundedSigner(
   config: ChainValidationConfig,
   persistPath: string,
 ): Promise<ChainSigner> {
-  const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
-  const ephemeralKey = PrivateKey.generateECDSA();
+  const sdk = await importHieroSdk();
+  const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
+  const ephemeralKey = sdk.PrivateKey.generateECDSA();
   const evmAddress = ephemeralKey.publicKey.toEvmAddress();
 
-  const client = Client.forTestnet();
-  client.setOperator(AccountId.fromString(operatorId), operatorKey);
+  const client = sdk.Client.forTestnet();
+  client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
   try {
     let receipt;
     try {
       receipt = await (
-        await new AccountCreateTransaction()
+        await new sdk.AccountCreateTransaction()
           .setECDSAKeyWithAlias(ephemeralKey)
-          .setInitialBalance(new Hbar(config.fundingHbar))
+          .setInitialBalance(new sdk.Hbar(config.fundingHbar))
           .execute(client)
       ).getReceipt(client);
     } catch (error) {
@@ -111,13 +110,14 @@ async function checkSignerLiveliness(
   signer: ChainSigner,
   config: ChainValidationConfig,
 ): Promise<"alive" | "deleted"> {
-  const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
-  const client = Client.forTestnet();
-  client.setOperator(AccountId.fromString(operatorId), operatorKey);
+  const sdk = await importHieroSdk();
+  const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
+  const client = sdk.Client.forTestnet();
+  client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
   try {
-    await new AccountBalanceQuery()
-      .setAccountId(AccountId.fromString(signer.accountId))
+    await new sdk.AccountBalanceQuery()
+      .setAccountId(sdk.AccountId.fromString(signer.accountId))
       .execute(client);
     return "alive";
   } catch (error) {
@@ -140,14 +140,15 @@ async function topUpSignerIfNeeded(
   signer: ChainSigner,
   config: ChainValidationConfig,
 ): Promise<number | undefined> {
-  const target = new Hbar(config.fundingHbar);
-  const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
-  const client = Client.forTestnet();
-  client.setOperator(AccountId.fromString(operatorId), operatorKey);
+  const sdk = await importHieroSdk();
+  const target = new sdk.Hbar(config.fundingHbar);
+  const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
+  const client = sdk.Client.forTestnet();
+  client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
   try {
-    const balance = await new AccountBalanceQuery()
-      .setAccountId(AccountId.fromString(signer.accountId))
+    const balance = await new sdk.AccountBalanceQuery()
+      .setAccountId(sdk.AccountId.fromString(signer.accountId))
       .execute(client);
 
     const currentTinybars = BigInt(balance.hbars.toTinybars().toString());
@@ -157,12 +158,12 @@ async function topUpSignerIfNeeded(
     }
 
     const deltaTinybars = targetTinybars - currentTinybars;
-    const delta = Hbar.fromTinybars(deltaTinybars.toString());
+    const delta = sdk.Hbar.fromTinybars(deltaTinybars.toString());
     try {
       await (
-        await new TransferTransaction()
-          .addHbarTransfer(AccountId.fromString(operatorId), delta.negated())
-          .addHbarTransfer(AccountId.fromString(signer.accountId), delta)
+        await new sdk.TransferTransaction()
+          .addHbarTransfer(sdk.AccountId.fromString(operatorId), delta.negated())
+          .addHbarTransfer(sdk.AccountId.fromString(signer.accountId), delta)
           .execute(client)
       ).getReceipt(client);
     } catch (error) {
@@ -190,17 +191,18 @@ export async function sweepChainSigner(
   }
 
   try {
-    const { accountId: operatorId, privateKey: operatorKey } = readOperatorCredentials(config);
-    const ephemeralKey = PrivateKey.fromStringECDSA(strip0x(signer.privateKeyHex));
+    const sdk = await importHieroSdk();
+    const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
+    const ephemeralKey = sdk.PrivateKey.fromStringECDSA(strip0x(signer.privateKeyHex));
 
     // Operator pays fees; ephemeral key must sign the delete of its own account.
-    const client = Client.forTestnet();
-    client.setOperator(AccountId.fromString(operatorId), operatorKey);
+    const client = sdk.Client.forTestnet();
+    client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
     try {
-      const frozen = await new AccountDeleteTransaction()
-        .setAccountId(AccountId.fromString(signer.accountId))
-        .setTransferAccountId(AccountId.fromString(operatorId))
+      const frozen = await new sdk.AccountDeleteTransaction()
+        .setAccountId(sdk.AccountId.fromString(signer.accountId))
+        .setTransferAccountId(sdk.AccountId.fromString(operatorId))
         .freezeWith(client);
       const signed = await frozen.sign(ephemeralKey);
       await (await signed.execute(client)).getReceipt(client);
@@ -219,11 +221,12 @@ export async function sweepChainSigner(
 
 /**
  * Fail fast if operator env vars are missing (call before seeding / generator).
+ * Does not load `@hiero-ledger/sdk` — key parse happens at provision time.
  */
 export function assertChainValidationOperatorEnv(config: ChainValidationConfig): void {
   if (!config.enabled) return;
-  // Throws with a clear message when env vars are absent.
-  readOperatorCredentials(config);
+  // Throws with a clear message when env vars are absent or malformed.
+  readOperatorEnv(config);
 }
 
 export function chainSignerPath(runDirectory: string): string {
@@ -247,9 +250,9 @@ export function buildDeployEnv(
 
 const HEDERA_ACCOUNT_ID_RE = /^\d+\.\d+\.\d+$/;
 
-function readOperatorCredentials(config: ChainValidationConfig): {
+function readOperatorEnv(config: ChainValidationConfig): {
   accountId: string;
-  privateKey: PrivateKey;
+  privateKeyRaw: string;
 } {
   const accountId = process.env[config.operator.accountIdEnv]?.trim();
   const privateKeyRaw = process.env[config.operator.privateKeyEnv]?.trim();
@@ -276,9 +279,18 @@ function readOperatorCredentials(config: ChainValidationConfig): {
     );
   }
 
+  return { accountId, privateKeyRaw };
+}
+
+async function readOperatorCredentials(config: ChainValidationConfig): Promise<{
+  accountId: string;
+  privateKey: PrivateKey;
+}> {
+  const { accountId, privateKeyRaw } = readOperatorEnv(config);
+  const sdk = await importHieroSdk();
   return {
     accountId,
-    privateKey: parseOperatorPrivateKey(privateKeyRaw, config.operator.privateKeyEnv),
+    privateKey: parseOperatorPrivateKey(sdk, privateKeyRaw, config.operator.privateKeyEnv),
   };
 }
 
@@ -286,26 +298,26 @@ function readOperatorCredentials(config: ChainValidationConfig): {
  * Accept common portal/SDK export formats: raw ECDSA hex, DER hex, or auto-detect.
  * Tip: ECDSA secp256k1 private keys are 32 bytes (64 hex chars), optionally 0x-prefixed.
  */
-function parseOperatorPrivateKey(raw: string, envVarName: string): PrivateKey {
+function parseOperatorPrivateKey(sdk: HieroSdk, raw: string, envVarName: string): PrivateKey {
   const trimmed = raw.trim();
   const hex = strip0x(trimmed);
   const errors: string[] = [];
 
   // Prefer ECDSA (required for EVM alias / burner wallet).
   try {
-    return PrivateKey.fromStringECDSA(hex);
+    return sdk.PrivateKey.fromStringECDSA(hex);
   } catch (error) {
     errors.push(`ECDSA: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
-    return PrivateKey.fromStringDer(hex);
+    return sdk.PrivateKey.fromStringDer(hex);
   } catch (error) {
     errors.push(`DER: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
-    return PrivateKey.fromString(trimmed);
+    return sdk.PrivateKey.fromString(trimmed);
   } catch (error) {
     errors.push(`auto: ${error instanceof Error ? error.message : String(error)}`);
   }

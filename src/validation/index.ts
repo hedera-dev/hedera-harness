@@ -1,6 +1,7 @@
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { executeCommand } from "../command.js";
+import { pathExists } from "../fsUtils.js";
 import type {
   CommandExecutionResult,
   PlaywrightGateResult,
@@ -360,15 +361,6 @@ function valuesEqual(actual: unknown, expected: unknown): boolean {
   }
 
   return false;
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function truncateOutput(output: string, maxLength = 1200): string {

@@ -51,7 +51,7 @@ validator:
     - --output-format
     - stream-json
     - --stream-partial-output
-  timeoutMs: 600000
+  timeoutMs: 3600000
 
 
 # Skill names resolve via skills-index.json at the harness repo root.

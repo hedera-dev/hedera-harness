@@ -21,6 +21,8 @@ export interface DevServerConfig {
 export interface DevServerSession {
   readonly url: string;
   readonly serverCommand: string;
+  /** False once the child process has exited. */
+  isAlive(): boolean;
   stop(): Promise<void>;
 }
 
@@ -42,6 +44,9 @@ export async function createDevServerSession(
   return {
     url,
     serverCommand: config.command,
+    isAlive() {
+      return handle.process.exitCode === null && !handle.process.killed;
+    },
     async stop() {
       await stopDevServer(handle);
     },

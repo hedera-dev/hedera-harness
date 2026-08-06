@@ -1,7 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeRelativeDir } from "./fsUtils.js";
+import { ISOLATED_CONTEXT_DIR } from "./runtimePaths.js";
 
-export const HARNESS_CONTEXT_DIR = ".harness-context";
+export { pathExists } from "./fsUtils.js";
+
+export const HARNESS_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
 export const VENDORED_PRD_PATH = `${HARNESS_CONTEXT_DIR}/prd.md`;
 export const VENDORED_CONTRACT_PATH = `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`;
 
@@ -19,25 +23,44 @@ export interface VendoredContext {
   playwrightMcpPath?: string;
 }
 
+export interface VendorContextOptions {
+  /** Relative directory under the workspace (default: `.harness-context`). */
+  contextDir?: string;
+  /**
+   * When false, skip mutating `.cursor/mcp.json` (extend uses snapshot/restore around validation).
+   * Default: true.
+   */
+  injectPlaywrightMcp?: boolean;
+}
+
 export async function vendorHarnessContext(
   workspacePath: string,
   input: { prdPath: string; contractPath?: string },
+  options: VendorContextOptions = {},
 ): Promise<VendoredContext> {
-  const contextRoot = path.join(workspacePath, HARNESS_CONTEXT_DIR);
+  const contextDir = normalizeRelativeDir(options.contextDir ?? HARNESS_CONTEXT_DIR);
+  const contextRoot = path.join(workspacePath, ...contextDir.split("/"));
   await mkdir(contextRoot, { recursive: true });
 
   const prdContent = await readFile(input.prdPath, "utf8");
-  const prdRelativePath = VENDORED_PRD_PATH;
-  await writeFile(path.join(workspacePath, prdRelativePath), prdContent, "utf8");
+  const prdRelativePath = path.posix.join(contextDir, "prd.md");
+  await writeFile(path.join(workspacePath, ...prdRelativePath.split("/")), prdContent, "utf8");
 
   let contractRelativePath: string | undefined;
   if (input.contractPath) {
     const contractContent = await readFile(input.contractPath, "utf8");
-    contractRelativePath = VENDORED_CONTRACT_PATH;
-    await writeFile(path.join(workspacePath, contractRelativePath), contractContent, "utf8");
+    contractRelativePath = path.posix.join(contextDir, "acceptance-contract.json");
+    await writeFile(
+      path.join(workspacePath, ...contractRelativePath.split("/")),
+      contractContent,
+      "utf8",
+    );
   }
 
-  const playwrightMcpPath = await ensurePlaywrightMcp(workspacePath);
+  const injectPlaywrightMcp = options.injectPlaywrightMcp !== false;
+  const playwrightMcpPath = injectPlaywrightMcp
+    ? await ensurePlaywrightMcp(workspacePath)
+    : undefined;
 
   await writeFile(
     path.join(contextRoot, "manifest.json"),
@@ -54,9 +77,11 @@ export async function vendorHarnessContext(
               sourcePath: input.contractPath,
             }
           : undefined,
-        playwrightMcp: {
-          relativePath: playwrightMcpPath,
-        },
+        playwrightMcp: playwrightMcpPath
+          ? {
+              relativePath: playwrightMcpPath,
+            }
+          : undefined,
       },
       null,
       2,
@@ -107,4 +132,41 @@ export async function ensurePlaywrightMcp(workspacePath: string): Promise<string
   );
 
   return relativePath;
+}
+
+/**
+ * Temporarily inject Playwright MCP into `.cursor/mcp.json`, then restore the
+ * prior file (or remove the file if it did not exist). Used by in-place extend
+ * so the final branch does not contain harness-injected MCP changes.
+ */
+export async function withPlaywrightMcpSnapshot<T>(
+  workspacePath: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const mcpPath = path.join(workspacePath, ".cursor", "mcp.json");
+  let previous: string | undefined;
+  let existed = false;
+  try {
+    previous = await readFile(mcpPath, "utf8");
+    existed = true;
+  } catch {
+    previous = undefined;
+    existed = false;
+  }
+
+  try {
+    await ensurePlaywrightMcp(workspacePath);
+    return await fn();
+  } finally {
+    if (existed && previous !== undefined) {
+      await mkdir(path.dirname(mcpPath), { recursive: true });
+      await writeFile(mcpPath, previous, "utf8");
+    } else {
+      try {
+        await unlink(mcpPath);
+      } catch {
+        // absent is fine
+      }
+    }
+  }
 }
