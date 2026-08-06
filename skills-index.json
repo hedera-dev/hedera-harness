@@ -40,6 +40,36 @@
       "path": "plugins/system-contracts/skills/hts-system-contract/SKILL.md",
       "tags": ["hts", "solidity", "precompile", "evm", "system-contracts"],
       "description": "HTS precompile (0x167) patterns: token creation, minting, burning, keys, fees, SafeHTS, and compliance flows in Solidity."
+    },
+    {
+      "name": "hss-system-contract",
+      "path": "plugins/system-contracts/skills/hss-system-contract/SKILL.md",
+      "tags": ["hss", "schedule", "solidity", "precompile", "evm", "system-contracts"],
+      "description": "HSS system contract (0x16b) patterns: scheduleCall, capacity checks, deleteSchedule, and recurring vault reschedule loops in Solidity."
+    },
+    {
+      "name": "hedera-oracle-adapters",
+      "path": "plugins/system-contracts/skills/hedera-oracle-adapters/SKILL.md",
+      "tags": ["oracles", "chainlink", "supra", "pyth", "price-feeds"],
+      "description": "Provider-agnostic Hedera price oracle adapters (Chainlink, Supra, Pyth) behind IPriceOracle with 18-decimal normalization."
+    },
+    {
+      "name": "axelar-gmp",
+      "path": "plugins/cross-chain/skills/axelar-gmp/SKILL.md",
+      "tags": ["cross-chain", "axelar", "gmp", "interop"],
+      "description": "Axelar GMP on Hedera: callContract, gas payment, AxelarExecutable receivers, and bridge-sender wiring to EVM destinations."
+    },
+    {
+      "name": "layerzero-messaging",
+      "path": "plugins/cross-chain/skills/layerzero-messaging/SKILL.md",
+      "tags": ["cross-chain", "layerzero", "bridge", "interop"],
+      "description": "LayerZero V2 OFT/OApp on Hedera: Endpoint peers, ULN/DVN/executor wiring, quoteSend/send, and HTS-backed connector OFTs."
+    },
+    {
+      "name": "x402-payments",
+      "path": "plugins/native-services-js/skills/x402-payments/SKILL.md",
+      "tags": ["x402", "payments", "pay-per-use", "hbar"],
+      "description": "x402 pay-per-use on Hedera: FileRegistry metadata, self-hosted facilitator verify/settle, and HashPack HTTP 402 payment retries."
     }
   ]
 }
