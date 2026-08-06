@@ -1,5 +1,6 @@
-import { access, cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeRelativeDir, pathExists } from "./fsUtils.js";
 import { ISOLATED_SKILLS_DIR } from "./runtimePaths.js";
 
 const REFERENCES_DIRNAME = "references";
@@ -78,10 +79,6 @@ export async function vendorSkills(
   return vendored;
 }
 
-function normalizeRelativeDir(value: string): string {
-  return value.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
-}
-
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -109,13 +106,4 @@ function extractSkillName(content: string): string | undefined {
 function extractSkillDescription(content: string): string {
   const match = content.match(/^description:\s*(.+)$/m);
   return match?.[1]?.trim() ?? "Use this skill when relevant to the template being built.";
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
 }

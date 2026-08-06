@@ -62,6 +62,14 @@ export async function loadTemplateSpec(
     },
   };
 
+  // Extend layout (no seed) requires baseline install. Isolated specs may omit
+  // `extend` entirely; validate/validate-semantic also use requireSeed:false.
+  if (!requireSeed && !spec.seed) {
+    assertExtendBaselineHasInstall(spec);
+  } else {
+    assertBaselineInstallNameWhenPresent(spec);
+  }
+
   return {
     spec,
     specPath: absoluteSpecPath,
@@ -330,6 +338,34 @@ function readExtendConfig(parsed: Record<string, unknown>): ExtendConfig | undef
       }),
     },
   };
+}
+
+/** Isolated `run` may omit extend; if baseline commands are listed, one must be named install. */
+function assertBaselineInstallNameWhenPresent(spec: TemplateSpec): void {
+  const commands = spec.extend?.baseline?.commands;
+  if (!commands) return;
+  assertCommandsIncludeInstall(commands);
+}
+
+/** In-place `extend` requires extend.baseline.commands with a literal install name. */
+function assertExtendBaselineHasInstall(spec: TemplateSpec): void {
+  const commands = spec.extend?.baseline?.commands;
+  if (!commands || commands.length === 0) {
+    throw new Error(
+      'extend mode requires extend.baseline.commands including a command literally named "install".',
+    );
+  }
+  assertCommandsIncludeInstall(commands);
+}
+
+function assertCommandsIncludeInstall(
+  commands: Array<{ name?: string; command: string }>,
+): void {
+  if (!commands.some(command => command.name === "install")) {
+    throw new Error(
+      'extend.baseline must include a command literally named "install" (used for host-health / fingerprinting).',
+    );
+  }
 }
 
 function readChainValidation(parsed: Record<string, unknown>): ChainValidationConfig | undefined {

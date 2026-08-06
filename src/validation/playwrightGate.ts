@@ -109,10 +109,20 @@ export async function runPlaywrightGate(
         // Next.js / client apps often return a sparse shell at DOMContentLoaded.
         // Wait for load, then poll until body text looks hydrated (or timeout).
         await page.waitForLoadState("load", { timeout: Math.min(routeTimeoutMs, 15_000) }).catch(() => undefined);
+        const isServerAlive = () => {
+          if (serverHandle) {
+            return serverHandle.process.exitCode === null && !serverHandle.process.killed;
+          }
+          if (existingDevServer) {
+            return existingDevServer.isAlive();
+          }
+          return true;
+        };
         const hydration = await waitForMeaningfulBodyText(page, {
           timeoutMs: hydrationTimeoutMs,
           minLength: minBodyTextLength,
           pollMs: HYDRATION_POLL_MS,
+          isServerAlive,
         });
         rendered = hydration.rendered;
         lastBodyText = hydration.bodyText;
@@ -243,10 +253,16 @@ export function isMeaningfulBodyText(text: string, minLength = DEFAULT_MIN_BODY_
 /**
  * Poll body.innerText until it looks hydrated or timeout.
  * Handles client-rendered shells that are empty/short at DOMContentLoaded.
+ * Fails fast when `isServerAlive` reports the dev server has exited.
  */
 export async function waitForMeaningfulBodyText(
   page: Pick<Page, "locator">,
-  options: { timeoutMs: number; minLength?: number; pollMs?: number },
+  options: {
+    timeoutMs: number;
+    minLength?: number;
+    pollMs?: number;
+    isServerAlive?: () => boolean;
+  },
 ): Promise<{ rendered: boolean; bodyText: string }> {
   const minLength = options.minLength ?? DEFAULT_MIN_BODY_TEXT_LENGTH;
   const pollMs = options.pollMs ?? HYDRATION_POLL_MS;
@@ -254,12 +270,21 @@ export async function waitForMeaningfulBodyText(
   let bodyText = "";
 
   while (true) {
+    if (options.isServerAlive && !options.isServerAlive()) {
+      throw new Error(
+        `Dev server exited while waiting for page hydration (last body text length=${bodyText.length}).`,
+      );
+    }
+
     try {
       bodyText = (await page.locator("body").innerText({ timeout: Math.min(2_000, pollMs + 1_500) })).trim();
       if (isMeaningfulBodyText(bodyText, minLength)) {
         return { rendered: true, bodyText };
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Dev server exited")) {
+        throw error;
+      }
       // Keep polling through transient detach / empty document states.
     }
 

@@ -61,6 +61,12 @@ prd: .harness/prd.md
 generator:
   provider: command
   command: agent
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: yarn install
+        timeoutMs: 300000
 validators:
   static: .harness/validators/static.json
   commands: .harness/validators/commands.json
@@ -77,10 +83,47 @@ logging:
   });
   assert.equal(loaded.spec.seed, undefined);
   assert.equal(loaded.spec.name, "no-seed-extend");
+  assert.equal(loaded.spec.extend?.baseline?.commands?.[0]?.name, "install");
 
   await assert.rejects(
     () => loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), { requireSeed: true }),
     /seed/i,
+  );
+});
+
+test("loadTemplateSpec rejects extend mode without baseline install command", async () => {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const root = await makeTestTempDir("extend-baseline-");
+  await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
+  await writeFile(path.join(root, ".harness", "prd.md"), "# extend\n");
+  await writeFile(path.join(root, ".harness", "validators", "static.json"), "[]\n");
+  await writeFile(path.join(root, ".harness", "validators", "commands.json"), "[]\n");
+  await writeFile(
+    path.join(root, ".harness", "spec.yaml"),
+    `name: missing-install
+prd: .harness/prd.md
+generator:
+  provider: command
+  command: agent
+extend:
+  baseline:
+    commands:
+      - name: lint
+        command: yarn lint
+validators:
+  static: .harness/validators/static.json
+  commands: .harness/validators/commands.json
+requiredFiles: []
+forbiddenFiles: []
+logging:
+  jsonl: .harness/runs/harness.log.jsonl
+  notes: .harness/runs/harness-notes.md
+`,
+  );
+
+  await assert.rejects(
+    () => loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), { requireSeed: false }),
+    /named "install"/,
   );
 });
 

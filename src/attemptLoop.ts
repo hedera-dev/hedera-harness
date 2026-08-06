@@ -48,6 +48,25 @@ export interface AttemptLoopSeedInfo {
   commitSha: string;
 }
 
+/** Shared per-run / per-extend session metadata passed through the attempt loop. */
+export interface SessionContext {
+  layout: RunLayout;
+  spec: TemplateSpec;
+  specPath: string;
+  projectRoot: string;
+  seedResult: AttemptLoopSeedInfo;
+  vendoredSkills: VendoredSkill[];
+  vendoredContext: VendoredContext;
+  chainSigner?: ChainSigner;
+}
+
+/** Mode-specific prompt + MCP wiring (isolated `run` vs in-place `extend`). */
+export interface AttemptPromptStrategy {
+  playwrightMcpMode: "workspace" | "snapshot-restore";
+  buildInitialPrompt(isContinue: boolean, cycle: number | undefined): Promise<string>;
+  buildRepairPrompt(findings: ValidationFinding[], nextAttempt: number): Promise<string>;
+}
+
 export interface AttemptLoopInput {
   layout: RunLayout;
   spec: TemplateSpec;
@@ -72,6 +91,70 @@ export interface AttemptLoopInput {
     passed: boolean,
     findings: ValidationFinding[],
   ) => Promise<WorkspaceGitCommitResult>;
+  /** Override prompt strategy (defaults from layout mode). */
+  promptStrategy?: AttemptPromptStrategy;
+}
+
+export function createIsolatedPromptStrategy(
+  session: Pick<SessionContext, "spec" | "vendoredSkills" | "vendoredContext">,
+): AttemptPromptStrategy {
+  const { spec, vendoredSkills, vendoredContext } = session;
+  return {
+    playwrightMcpMode: "workspace",
+    async buildInitialPrompt(isContinue, cycle) {
+      return isContinue
+        ? buildContinuePrompt(spec, cycle!, vendoredSkills)
+        : buildGeneratorPrompt(spec, 1, vendoredSkills);
+    },
+    async buildRepairPrompt(findings, nextAttempt) {
+      return buildRepairPrompt(spec, findings, nextAttempt, vendoredContext);
+    },
+  };
+}
+
+export function createExtendPromptStrategy(
+  session: Pick<SessionContext, "spec" | "vendoredSkills" | "vendoredContext">,
+): AttemptPromptStrategy {
+  const { spec, vendoredSkills, vendoredContext } = session;
+  return {
+    playwrightMcpMode: "snapshot-restore",
+    async buildInitialPrompt(isContinue, cycle) {
+      return isContinue
+        ? buildExtendContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
+        : buildExtendPrompt(spec, 1, vendoredSkills, vendoredContext);
+    },
+    async buildRepairPrompt(findings, nextAttempt) {
+      return buildExtendRepairPrompt(spec, findings, nextAttempt, vendoredContext);
+    },
+  };
+}
+
+function resolvePromptStrategy(input: AttemptLoopInput): AttemptPromptStrategy {
+  if (input.promptStrategy) return input.promptStrategy;
+  const session = {
+    spec: input.spec,
+    vendoredSkills: input.vendoredSkills,
+    vendoredContext: input.vendoredContext,
+  };
+  return input.layout.mode === LAYOUT_MODE_IN_PLACE_EXTEND
+    ? createExtendPromptStrategy(session)
+    : createIsolatedPromptStrategy(session);
+}
+
+/** Isolated greenfield `run` attempt loop. */
+export async function runIsolatedAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
+  return runAttemptLoop({
+    ...input,
+    promptStrategy: input.promptStrategy ?? createIsolatedPromptStrategy(input),
+  });
+}
+
+/** In-place `extend` attempt loop. */
+export async function runExtendAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
+  return runAttemptLoop({
+    ...input,
+    promptStrategy: input.promptStrategy ?? createExtendPromptStrategy(input),
+  });
 }
 
 export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
@@ -85,7 +168,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     cycle,
     startedAt,
     seedResult,
-    vendoredSkills,
     vendoredContext,
     chainSigner,
   } = input;
@@ -95,7 +177,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     input.commitAttempt ??
     (async (workspacePath, attempt, passed, findings) =>
       commitWorkspaceAttempt(workspacePath, attempt, passed, findings.length));
-  const isExtend = layout.mode === LAYOUT_MODE_IN_PLACE_EXTEND;
+  const promptStrategy = resolvePromptStrategy(input);
 
   let attempts = input.startingAttempt - 1;
   let attemptsThisCycle = 0;
@@ -110,13 +192,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     ],
     commandResults: [],
   };
-  let latestPrompt = isExtend
-    ? isContinue
-      ? await buildExtendContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
-      : await buildExtendPrompt(spec, 1, vendoredSkills, vendoredContext)
-    : isContinue
-      ? await buildContinuePrompt(spec, cycle!, vendoredSkills)
-      : await buildGeneratorPrompt(spec, 1, vendoredSkills);
+  let latestPrompt = await promptStrategy.buildInitialPrompt(isContinue, cycle);
   let blindIntegrity: BlindIntegrityResult = {
     passed: true,
     findings: [],
@@ -304,7 +380,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         jsonlLogPath: layout.jsonlLogPath,
         chainSigner,
         contractRelativePath: vendoredContext.contractRelativePath,
-        playwrightMcpMode: isExtend ? "snapshot-restore" : "workspace",
+        playwrightMcpMode: promptStrategy.playwrightMcpMode,
       });
     } else {
       validation = await runAttemptValidation({
@@ -318,7 +394,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         jsonlLogPath: layout.jsonlLogPath,
         chainSigner,
         contractRelativePath: vendoredContext.contractRelativePath,
-        playwrightMcpMode: isExtend ? "snapshot-restore" : "workspace",
+        playwrightMcpMode: promptStrategy.playwrightMcpMode,
       });
     }
 
@@ -448,9 +524,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     }
 
     if (attemptsThisCycle < maxAttempts) {
-      latestPrompt = isExtend
-        ? await buildExtendRepairPrompt(spec, validation.findings, attempts + 1, vendoredContext)
-        : await buildRepairPrompt(spec, validation.findings, attempts + 1, vendoredContext);
+      latestPrompt = await promptStrategy.buildRepairPrompt(validation.findings, attempts + 1);
     }
   }
 

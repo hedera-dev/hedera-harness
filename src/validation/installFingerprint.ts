@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathExists } from "../fsUtils.js";
 
 const FINGERPRINT_FILES = ["yarn.lock", "package.json"] as const;
 
@@ -49,13 +50,4 @@ export async function readCachedInstallFingerprint(cachePath: string): Promise<s
 export async function writeCachedInstallFingerprint(cachePath: string, fingerprint: string): Promise<void> {
   await mkdir(path.dirname(cachePath), { recursive: true });
   await writeFile(cachePath, `${fingerprint}\n`, "utf8");
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
 }

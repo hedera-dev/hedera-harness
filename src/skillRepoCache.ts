@@ -1,7 +1,8 @@
-import { access, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
+import { pathExists } from "./fsUtils.js";
 
 const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
 export const SKILL_CACHE_DIRNAME = ".skill-cache";
@@ -85,13 +86,4 @@ async function resolveCommitSha(checkoutPath: string, ref: string): Promise<stri
     `Unable to resolve skill repo ref ${JSON.stringify(ref)} in ${checkoutPath}. ` +
       `Check skills-index.json defaults.ref / entry.ref.`,
   );
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
 }

@@ -13,6 +13,10 @@ test("refactored modules export the shared attempt loop and both runners", async
   const extendOutro = await import(pathToFileURL(path.resolve("dist/extendOutro.js")).href);
 
   assert.equal(typeof attemptLoop.runAttemptLoop, "function");
+  assert.equal(typeof attemptLoop.runIsolatedAttemptLoop, "function");
+  assert.equal(typeof attemptLoop.runExtendAttemptLoop, "function");
+  assert.equal(typeof attemptLoop.createIsolatedPromptStrategy, "function");
+  assert.equal(typeof attemptLoop.createExtendPromptStrategy, "function");
   assert.equal(typeof attemptLoop.runAttemptValidation, "function");
   assert.equal(typeof runner.runHarness, "function");
   assert.equal(typeof runner.validateWorkspace, "function");

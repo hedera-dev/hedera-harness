@@ -1,6 +1,9 @@
-import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeRelativeDir } from "./fsUtils.js";
 import { ISOLATED_CONTEXT_DIR } from "./runtimePaths.js";
+
+export { pathExists } from "./fsUtils.js";
 
 export const HARNESS_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
 export const VENDORED_PRD_PATH = `${HARNESS_CONTEXT_DIR}/prd.md`;
@@ -166,17 +169,4 @@ export async function withPlaywrightMcpSnapshot<T>(
       }
     }
   }
-}
-
-export async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function normalizeRelativeDir(value: string): string {
-  return value.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
 }

@@ -34,6 +34,12 @@ seed:
 generator:
   provider: command
   command: agent
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: yarn install
+        timeoutMs: 300000
 validators:
   static: .harness/validators/static.json
   commands: .harness/validators/commands.json

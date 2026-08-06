@@ -3,8 +3,9 @@
  * Gate 0–1 consumers should not need to install these (~hundreds of MB).
  */
 
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathExists } from "./fsUtils.js";
 
 export type PackageInstallTool = "yarn" | "npm" | "pnpm";
 
@@ -116,13 +117,4 @@ function toolFromPackageManagerField(value: string | undefined): PackageInstallT
   if (trimmed.startsWith("pnpm")) return "pnpm";
   if (trimmed.startsWith("npm")) return "npm";
   return undefined;
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }

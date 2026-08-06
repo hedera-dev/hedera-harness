@@ -5,7 +5,7 @@ import {
   appendHarnessNote,
   writeStatusFile,
 } from "./runArtifacts.js";
-import { logPhase, runAttemptLoop } from "./attemptLoop.js";
+import { logPhase, runExtendAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import type { ChainSigner, CliOptions, RunReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
@@ -220,7 +220,7 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
       );
     }
 
-    report = await runAttemptLoop({
+    report = await runExtendAttemptLoop({
       layout,
       spec,
       specPath: loaded.specPath,

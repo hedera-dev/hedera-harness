@@ -13,7 +13,7 @@ import {
   writeJsonFile,
   writeStatusFile,
 } from "./runArtifacts.js";
-import { logPhase, runAttemptLoop } from "./attemptLoop.js";
+import { logPhase, runIsolatedAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import type {
   ChainSigner,
@@ -258,7 +258,7 @@ export async function runHarness(options: CliOptions): Promise<RunReport> {
   }
 
   try {
-    return await runAttemptLoop({
+    return await runIsolatedAttemptLoop({
       layout,
       spec,
       specPath: loaded.specPath,

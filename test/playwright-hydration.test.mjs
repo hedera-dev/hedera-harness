@@ -57,3 +57,31 @@ test("waitForMeaningfulBodyText times out with last empty body", async () => {
   assert.equal(result.bodyText, "");
   assert.ok(Date.now() - started >= 100);
 });
+
+test("waitForMeaningfulBodyText fails fast when server dies", async () => {
+  let reads = 0;
+  const page = {
+    locator() {
+      return {
+        async innerText() {
+          reads += 1;
+          return "";
+        },
+      };
+    },
+  };
+
+  const started = Date.now();
+  await assert.rejects(
+    () =>
+      gate.waitForMeaningfulBodyText(page, {
+        timeoutMs: 5_000,
+        minLength: 20,
+        pollMs: 20,
+        isServerAlive: () => reads < 2,
+      }),
+    /Dev server exited while waiting for page hydration/,
+  );
+  assert.ok(Date.now() - started < 1_000);
+  assert.ok(reads >= 1);
+});
