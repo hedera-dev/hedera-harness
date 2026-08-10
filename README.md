@@ -14,7 +14,7 @@ The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validato
 1. **`init`** clones scaffold-hbar into a project directory, replaces `.git` with a **fresh repo** (no scaffold history/remote), and provisions `.harness/`
 2. **`run`** vendors skills/context into ignored runtime paths under `.harness/runtime/`
 3. **Creates or continues** a `harness/run-<spec>-<id>` branch with checkpoint commits
-4. **Runs a generator agent** (Cursor CLI `agent` by default) against your PRD
+4. **Runs a generator agent** (Cursor CLI or Claude Code CLI — see [generator config](#configure-a-project-centric-spec)) against your PRD
 5. **Validates** in layers you enable in the spec (see below)
 6. **Repairs** on failure with focused prompts, up to `maxAttempts`
 7. **Audits** agent logs for oracle peeking (informational — does not fail the run)
@@ -85,12 +85,14 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 - **Node.js** >= 20
 - **git**
 - **yarn** (scaffold-hbar workspaces are Yarn-based)
-- **Cursor CLI** (`agent` on your `PATH`, authenticated)
+- **A supported AI coding agent CLI** (one of):
+  - **Cursor CLI** — `agent` on your `PATH`, authenticated
+  - **Claude Code CLI** — `claude` on your `PATH`, authenticated (Claude Pro/Max subscription or `ANTHROPIC_API_KEY`)
 
 **Install as a CLI dependency** (recommended for consumer projects):
 
 ```bash
-npm install -D hedera-harness@1.1.1
+npm install -D hedera-harness@1.1.2
 npx hedera-harness --help
 ```
 
@@ -231,6 +233,10 @@ skills:
 
 ## Configure a project-centric spec
 
+The harness spawns your chosen AI coding agent via the `generator` block. Below are examples for **Cursor CLI** and **Claude Code CLI**.
+
+### Generator: Cursor CLI (default)
+
 ```yaml
 name: my-feature
 prd: .harness/prd.md
@@ -238,9 +244,51 @@ prd: .harness/prd.md
 generator:
   provider: command
   command: agent
-  args: [ -p, --trust, --sandbox, enabled, --workspace, "{workspace}", --model, composer-2.5, --force, --output-format, stream-json, --stream-partial-output ]
+  args:
+    - -p
+    - --trust
+    - --sandbox
+    - enabled
+    - --workspace
+    - "{workspace}"
+    - --model
+    - composer-2.5
+    - --force
+    - --output-format
+    - stream-json
+    - --stream-partial-output
   timeoutMs: 3600000
+```
 
+### Generator: Claude Code CLI
+
+```yaml
+name: my-feature
+prd: .harness/prd.md
+
+generator:
+  provider: command
+  command: claude
+  args:
+    - -p
+    - "{prompt}"
+    - --model
+    - sonnet                    # or opus, haiku — pin the model to control cost
+    - --permission-mode
+    - acceptEdits               # auto-approve file writes
+    - --allowedTools
+    - Bash,Read,Edit,Write      # pre-approve tools to avoid prompts
+    - --output-format
+    - stream-json
+    - --verbose
+  timeoutMs: 3600000
+```
+
+> **Tip:** Use `--model sonnet` (or `claude-sonnet-5`) to keep token costs lower during development. Omit the flag to use your account's default model.
+
+### Common spec fields (both agents)
+
+```yaml
 skills:
   - quality-gates
 
