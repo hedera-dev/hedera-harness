@@ -48,7 +48,7 @@ test("formatExtendAttemptCommitMessage includes finding IDs in body", () => {
       { id: "gate-b", category: "agent", message: "b" },
     ],
   });
-  assert.equal(subject, "harness: extension attempt 2 passed");
+  assert.equal(subject, "harness: run attempt 2 passed");
   assert.match(body, /Finding IDs: gate-a, gate-b/);
   assert.match(body, /squash attempt commits/i);
 });
@@ -83,7 +83,7 @@ test("commitExtendAttempt never stages secrets or runtime; records finding IDs",
   const result = await gitMod.commitExtendAttempt(root, 1, false, findings);
   assert.equal(result.committed, true);
   assert.deepEqual(result.skippedSecrets, [".env"]);
-  assert.match(result.message, /extension attempt 1 failed/);
+  assert.match(result.message, /run attempt 1 failed/);
 
   const showNames = git(root, ["show", "--name-only", "--pretty=format:", "HEAD"]);
   assert.match(showNames, /feature\.ts/);
@@ -155,7 +155,7 @@ test("formatExtendOutro success prints push/PR instructions without implying exe
       blindIntegrity: { passed: true },
     },
     session: {
-      branch: "harness/extend-demo-abc123",
+      branch: "harness/run-demo-abc123",
       baseBranch: "main",
       baseSha: "deadbeefcafebabe",
     },
@@ -168,8 +168,8 @@ test("formatExtendOutro success prints push/PR instructions without implying exe
     specPath: ".harness/spec.yaml",
   });
   const text = lines.join("\n");
-  assert.match(text, /Extend PASSED/);
-  assert.match(text, /git push -u origin harness\/extend-demo-abc123/);
+  assert.match(text, /Run PASSED/);
+  assert.match(text, /git push -u origin harness\/run-demo-abc123/);
   assert.match(text, /gh pr create --base main/);
   assert.match(text, /did not push, open a PR, merge/);
   assert.doesNotMatch(text, /git checkout main/);
@@ -189,7 +189,7 @@ test("formatExtendOutro failure prints continue/abandon and stays on harness bra
       blindIntegrity: { passed: true },
     },
     session: {
-      branch: "harness/extend-demo-abc123",
+      branch: "harness/run-demo-abc123",
       baseBranch: "main",
       baseSha: "deadbeefcafebabe",
     },
@@ -202,10 +202,10 @@ test("formatExtendOutro failure prints continue/abandon and stays on harness bra
     specPath: ".harness/spec.yaml",
   });
   const text = lines.join("\n");
-  assert.match(text, /Extend FAILED/);
-  assert.match(text, /hedera-harness extend \.harness\/spec\.yaml/);
+  assert.match(text, /Run FAILED/);
+  assert.match(text, /hedera-harness run \.harness\/spec\.yaml/);
   assert.match(text, /git checkout main/);
-  assert.match(text, /git branch -D harness\/extend-demo-abc123/);
+  assert.match(text, /git branch -D harness\/run-demo-abc123/);
   assert.match(text, /did not push, open a PR, merge/);
-  assert.doesNotMatch(text, /Optional next steps/);
+  assert.doesNotMatch(text, /Optional next steps \(run manually\)/);
 });

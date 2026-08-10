@@ -19,7 +19,7 @@ export function formatExtendOutro(input: ExtendOutroInput): string[] {
   const status = report.passed ? "PASSED" : infraAbort ? "ABORTED" : "FAILED";
 
   const lines: string[] = [
-    `Extend ${status}`,
+    `Run ${status}`,
     `branch=${session.branch}`,
     `base=${session.baseBranch} @ ${session.baseSha.slice(0, 8)}`,
     `workspace=${report.workspacePath}`,
@@ -61,10 +61,13 @@ export function formatExtendOutro(input: ExtendOutroInput): string[] {
     );
   } else {
     lines.push(
-      "You remain on the harness extend branch with persisted reports.",
+      "You remain on the harness run branch with persisted reports.",
       "",
       "Continue (same branch, automatic session match):",
-      `  hedera-harness extend ${specPath}`,
+      `  hedera-harness run ${specPath}`,
+      "",
+      "Start a fresh branch for the same spec:",
+      `  hedera-harness run ${specPath} --new`,
       "",
       "Inspect:",
       `  cat ${report.runDirectory}/reports/report.json`,

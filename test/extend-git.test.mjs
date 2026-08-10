@@ -32,10 +32,11 @@ async function initRepo() {
   return root;
 }
 
-test("buildExtendBranchName uses harness/extend-<slug>-<id>", () => {
+test("buildExtendBranchName uses harness/run-<slug>-<id>", () => {
   const name = gitMod.buildExtendBranchName("My Demo App!", "abc123");
-  assert.equal(name, "harness/extend-my-demo-app-abc123");
+  assert.equal(name, "harness/run-my-demo-app-abc123");
   assert.equal(gitMod.isHarnessExtendBranch(name), true);
+  assert.equal(gitMod.isHarnessExtendBranch("harness/extend-legacy-abc123"), true);
   assert.equal(gitMod.isHarnessExtendBranch("main"), false);
 });
 
@@ -57,7 +58,7 @@ test("createAndCheckoutExtendBranch creates harness branch from clean HEAD", asy
   const root = await initRepo();
   const base = git(root, ["branch", "--show-current"]);
   const created = await gitMod.createAndCheckoutExtendBranch(root, "demo-spec", "f00bar");
-  assert.equal(created.branch, "harness/extend-demo-spec-f00bar");
+  assert.equal(created.branch, "harness/run-demo-spec-f00bar");
   assert.equal(git(root, ["branch", "--show-current"]), created.branch);
   assert.equal(await gitMod.resolveCurrentBranch(root), created.branch);
   assert.notEqual(base, created.branch);
@@ -91,7 +92,7 @@ test("commitExtendAttempt stages only consumer-relevant paths", async () => {
     { id: "f2", category: "agent", message: "two" },
   ]);
   assert.equal(result.committed, true);
-  assert.match(result.message, /extension attempt 1 failed/);
+  assert.match(result.message, /run attempt 1 failed/);
   const show = git(root, ["show", "--name-only", "--pretty=format:", "HEAD"]);
   assert.match(show, /app\.ts/);
   assert.doesNotMatch(show, /harness-skills/);

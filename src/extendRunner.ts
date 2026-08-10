@@ -51,8 +51,8 @@ export interface ExtendRunResult {
 }
 
 /**
- * In-place extend entrypoint: skips `seedWorkspace`, uses cwd as the workspace,
- * and stores harness runtime artifacts under `.harness/runs/<id>/`.
+ * Project-centric in-place entrypoint (used by `run` and deprecated `extend`):
+ * uses cwd as the workspace and stores artifacts under `.harness/runs/<id>/`.
  *
  * Git/session orchestration owns branch creation, continuation, and dirty recovery.
  * Completion cleans runtime injections and prints push/PR/continue instructions
@@ -71,6 +71,8 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
     loaded,
     skipToolChecks: options.skipToolChecks,
     skipBaseline: options.skipBaseline,
+    forceNew: options.forceNew,
+    continueBranch: options.continueBranch,
   });
 
   const { layout, session, mode } = prepared;
@@ -87,7 +89,7 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
   }
 
   logPhase(
-    isContinue ? "Extend continued" : "Extend started",
+    isContinue ? "Run continued" : "Run started",
     `${layout.runDirectory} (${session.branch})`,
   );
   await writeStatusFile(layout.runDirectory, {
@@ -133,8 +135,8 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
   await appendHarnessNote(
     layout.notesLogPath,
     isContinue
-      ? `Extend continued: ${spec.name} (cycle ${cycle})`
-      : `Extend started: ${spec.name}`,
+      ? `Run continued: ${spec.name} (cycle ${cycle})`
+      : `Run started: ${spec.name}`,
     [
       `Branch: ${session.branch}`,
       `Base: ${session.baseBranch} @ ${session.baseSha.slice(0, 8)}`,
@@ -288,14 +290,14 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
 
     cleanup = await cleanupExtendRuntimeInjections(layout.workspacePath);
     logPhase(
-      "Extend runtime cleaned",
+      "Run runtime cleaned",
       cleanup.removedPaths.length > 0
         ? cleanup.removedPaths.join(", ")
         : "(nothing removable left)",
     );
     await appendHarnessNote(
       layout.notesLogPath,
-      "Extend runtime cleanup",
+      "Run runtime cleanup",
       [
         `removed=${cleanup.removedPaths.join(", ") || "(none)"}`,
         `mcpStripped=${cleanup.mcpStripped}`,
@@ -326,7 +328,7 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
   if (currentBranch !== session.branch) {
     throw new Error(
       [
-        "Extend completion safety check failed: branch changed unexpectedly.",
+        "Run completion safety check failed: branch changed unexpectedly.",
         `expected=${session.branch}`,
         `actual=${currentBranch ?? "(detached)"}`,
       ].join("\n"),
@@ -351,8 +353,8 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
     specPath: loaded.specPath,
   });
 
-  await appendHarnessNote(layout.notesLogPath, "Extend outro", outroLines.join("\n"));
-  logPhase(`Extend ${report.passed ? "passed" : "failed"}`, session.branch);
+  await appendHarnessNote(layout.notesLogPath, "Run outro", outroLines.join("\n"));
+  logPhase(`Run ${report.passed ? "passed" : "failed"}`, session.branch);
 
   return {
     report,

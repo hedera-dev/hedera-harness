@@ -1,11 +1,24 @@
 import { access } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import {
+  HARNESS_EXTEND_BRANCH_PREFIX,
+  HARNESS_RUN_BRANCH_PREFIX,
+  buildRunBranchName,
+  isHarnessBranch,
+  slugifyForBranch,
+} from "./branchDetection.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { ValidationFinding } from "./types.js";
 import type { WorkspaceGitCommitResult } from "./workspaceGit.js";
 
-export const HARNESS_EXTEND_BRANCH_PREFIX = "harness/extend-";
+export {
+  HARNESS_EXTEND_BRANCH_PREFIX,
+  HARNESS_RUN_BRANCH_PREFIX,
+  slugifyForBranch,
+};
+/** @deprecated Use HARNESS_RUN_BRANCH_PREFIX — kept for callers that import the extend name. */
+export const HARNESS_BRANCH_PREFIX = HARNESS_RUN_BRANCH_PREFIX;
 
 /** Paths that must never be committed / must not block clean continue. */
 export const EXTEND_RUNTIME_PATH_PREFIXES = [
@@ -70,23 +83,15 @@ export interface GitRepoSnapshot {
   entries: GitWorkingTreeEntry[];
 }
 
+/** Recognizes both `harness/run-*` and legacy `harness/extend-*`. */
 export function isHarnessExtendBranch(branch: string | null | undefined): boolean {
-  return Boolean(branch && branch.startsWith(HARNESS_EXTEND_BRANCH_PREFIX));
+  return isHarnessBranch(branch);
 }
 
-export function slugifyForBranch(value: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-  return slug || "extension";
-}
-
+/** Build `harness/run-<slug>-<id>` (primary project-centric prefix). */
 export function buildExtendBranchName(specSlug: string, shortId?: string): string {
   const id = shortId ?? randomBytes(3).toString("hex");
-  return `${HARNESS_EXTEND_BRANCH_PREFIX}${slugifyForBranch(specSlug)}-${id}`;
+  return buildRunBranchName(specSlug, id);
 }
 
 export function isExtendRuntimePath(relativePath: string): boolean {
@@ -138,7 +143,7 @@ export function formatExtendAttemptCommitMessage(input: {
   passed: boolean;
   findings: ValidationFinding[];
 }): { subject: string; body: string } {
-  const subject = `harness: extension attempt ${input.attempt} ${input.passed ? "passed" : "failed"}`;
+  const subject = `harness: run attempt ${input.attempt} ${input.passed ? "passed" : "failed"}`;
   const findingIds = input.findings
     .map(finding => finding.id)
     .filter(Boolean)
@@ -148,7 +153,7 @@ export function formatExtendAttemptCommitMessage(input: {
     findingIds.length > 0 ? `Finding IDs: ${findingIds.join(", ")}` : undefined,
     input.findings.length > 30 ? `…and ${input.findings.length - 30} more` : undefined,
     "",
-    "Created by hedera-harness extend. Optional: squash attempt commits before merge.",
+    "Created by hedera-harness run. Optional: squash attempt commits before merge.",
   ].filter((line): line is string => line !== undefined);
   return { subject, body: bodyLines.join("\n") };
 }
@@ -280,7 +285,7 @@ export async function assertWorkingTreeCleanForExtendStart(cwd: string): Promise
   const more = entries.length > 12 ? `\n...and ${entries.length - 12} more` : "";
   throw new Error(
     [
-      "Extend requires a completely clean working tree on a normal branch (no auto-stash).",
+      "Harness run requires a completely clean working tree (no auto-stash).",
       "Commit or discard local changes, then re-run.",
       preview + more,
     ].join("\n"),
@@ -288,8 +293,8 @@ export async function assertWorkingTreeCleanForExtendStart(cwd: string): Promise
 }
 
 /**
- * Create and checkout `harness/extend-<slug>-<short-id>` from the current HEAD.
- * Caller must already be on a clean, attached, non-harness branch.
+ * Create and checkout `harness/run-<slug>-<short-id>` from the current HEAD.
+ * Caller must already have a clean working tree on an attached branch.
  */
 export async function createAndCheckoutExtendBranch(
   cwd: string,

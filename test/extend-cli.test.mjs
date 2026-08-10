@@ -14,23 +14,75 @@ const { shouldIgnoreWorkspaceActivity } = await import(
   pathToFileURL(path.resolve("dist/workspaceWatcher.js")).href
 );
 
-test("parseCliArgs accepts extend with max-attempts and defaults workspace to unset (cwd)", () => {
+test("parseCliArgs accepts run with max-attempts and defaults workspace to unset (cwd)", () => {
+  const parsed = cli.parseCliArgs(["run", ".harness/spec.yaml", "--max-attempts", "3"]);
+  assert.equal(parsed.command, "run");
+  assert.equal(parsed.options.specPath, ".harness/spec.yaml");
+  assert.equal(parsed.options.maxAttempts, 3);
+  assert.equal(parsed.options.workspacePath, undefined);
+  assert.equal(parsed.options.forceNew, undefined);
+  assert.equal(parsed.options.continueBranch, undefined);
+});
+
+test("parseCliArgs defaults run spec to .harness/spec.yaml", () => {
+  const parsed = cli.parseCliArgs(["run", "--max-attempts", "2"]);
+  assert.equal(parsed.command, "run");
+  assert.equal(parsed.options.specPath, ".harness/spec.yaml");
+  assert.equal(parsed.options.maxAttempts, 2);
+});
+
+test("parseCliArgs accepts --new and --continue <branch> for run", () => {
+  const fresh = cli.parseCliArgs(["run", ".harness/spec.yaml", "--new"]);
+  assert.equal(fresh.options.forceNew, true);
+
+  const cont = cli.parseCliArgs([
+    "run",
+    ".harness/spec.yaml",
+    "--continue",
+    "harness/run-my-feature-abc123",
+  ]);
+  assert.equal(cont.options.continueBranch, "harness/run-my-feature-abc123");
+});
+
+test("parseCliArgs rejects --new with --continue", () => {
+  assert.throws(
+    () =>
+      cli.parseCliArgs([
+        "run",
+        ".harness/spec.yaml",
+        "--new",
+        "--continue",
+        "harness/run-x-abc123",
+      ]),
+    /both --new and --continue/,
+  );
+});
+
+test("parseCliArgs accepts deprecated extend as alias shape", () => {
   const parsed = cli.parseCliArgs(["extend", ".harness/spec.yaml", "--max-attempts", "3"]);
   assert.equal(parsed.command, "extend");
   assert.equal(parsed.options.specPath, ".harness/spec.yaml");
   assert.equal(parsed.options.maxAttempts, 3);
-  assert.equal(parsed.options.workspacePath, undefined);
-  assert.equal(parsed.options.continueRunDirectory, undefined);
 });
 
-test("parseCliArgs rejects --continue for extend", () => {
-  assert.throws(
-    () => cli.parseCliArgs(["extend", ".harness/spec.yaml", "--continue", "runs/x"]),
-    /continues automatically/,
-  );
+test("parseCliArgs accepts init with target and flags", () => {
+  const parsed = cli.parseCliArgs([
+    "init",
+    "my-app",
+    "--repo",
+    "https://github.com/hedera-dev/scaffold-hbar.git",
+    "--ref",
+    "main",
+    "--skip-install",
+  ]);
+  assert.equal(parsed.command, "init");
+  assert.equal(parsed.initOptions?.targetDir, "my-app");
+  assert.equal(parsed.initOptions?.repo, "https://github.com/hedera-dev/scaffold-hbar.git");
+  assert.equal(parsed.initOptions?.ref, "main");
+  assert.equal(parsed.initOptions?.skipInstall, true);
 });
 
-test("printHelp documents extend contract", () => {
+test("printHelp documents init and project-centric run", () => {
   const lines = [];
   const original = console.log;
   console.log = (...args) => {
@@ -42,12 +94,15 @@ test("printHelp documents extend contract", () => {
     console.log = original;
   }
   const help = lines.join("\n");
-  assert.match(help, /hedera-harness extend <spec>/);
+  assert.match(help, /hedera-harness init/);
+  assert.match(help, /hedera-harness run/);
   assert.match(help, /continues automatically/i);
+  assert.match(help, /--new/);
+  assert.match(help, /deprecated/i);
   assert.match(help, /Does not auto-stash/);
 });
 
-test("loadTemplateSpec allow missing seed for extend mode", async () => {
+test("loadTemplateSpec allow missing seed for project-centric mode", async () => {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const root = await makeTestTempDir("extend-spec-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
@@ -91,7 +146,7 @@ logging:
   );
 });
 
-test("loadTemplateSpec rejects extend mode without baseline install command", async () => {
+test("loadTemplateSpec rejects project-centric mode without baseline install command", async () => {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const root = await makeTestTempDir("extend-baseline-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });

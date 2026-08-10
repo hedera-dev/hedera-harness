@@ -1,12 +1,12 @@
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branchDetection.js";
 import { executeCommand } from "./command.js";
 import {
   assertWorkingTreeCleanForExtendStart,
   commandExists,
   createAndCheckoutExtendBranch,
   filterRelevantDirtyEntries,
-  isHarnessExtendBranch,
   readGitRepoSnapshot,
   resolveHeadSha,
   type GitRepoSnapshot,
@@ -64,6 +64,10 @@ export interface PrepareExtendSessionInput {
   skipToolChecks?: boolean;
   /** Optional override used by tests (skip baseline commands). */
   skipBaseline?: boolean;
+  /** Force a new harness branch even when current branch matches the spec. */
+  forceNew?: boolean;
+  /** Explicit harness branch to checkout and continue. */
+  continueBranch?: string;
 }
 
 export interface PreparedExtendSession {
@@ -136,17 +140,32 @@ export async function updateExtendSession(
 }
 
 /**
- * Read-only preflight + branch/session classification + start/continue orchestration.
- * Mutates git only after classification decides a clean normal-branch start.
+ * Read-only preflight + smart branch classification + start/continue orchestration.
+ *
+ * - Same harness branch + same spec → continue
+ * - Different spec (or normal branch) → new `harness/run-*` branch
+ * - `--new` → always new branch
+ * - `--continue <branch>` → checkout that branch and continue
  */
 export async function prepareExtendSession(
   input: PrepareExtendSessionInput,
 ): Promise<PreparedExtendSession> {
   const workspacePath = path.resolve(input.workspacePath);
-  const { spec, specPath } = input.loaded;
+  const { spec } = input.loaded;
 
   await assertPathExists(workspacePath, "workspace");
   await assertRecipeFilesExist(spec);
+
+  if (input.forceNew && input.continueBranch) {
+    throw new ExtendSessionError(
+      "conflicting-flags",
+      "Cannot pass both --new and --continue.",
+    );
+  }
+
+  if (input.continueBranch?.trim()) {
+    await checkoutContinueBranch(workspacePath, input.continueBranch.trim());
+  }
 
   const snapshot = await readGitRepoSnapshot(workspacePath);
   await assertReadOnlyGitPreflight(snapshot);
@@ -155,7 +174,14 @@ export async function prepareExtendSession(
     await assertHostTooling(workspacePath, spec);
   }
 
-  if (isHarnessExtendBranch(snapshot.branch)) {
+  const decision = decideBranchAction({
+    currentBranch: snapshot.branch,
+    specName: spec.name,
+    forceNew: input.forceNew,
+    continueBranch: input.continueBranch,
+  });
+
+  if (decision.action === "continue") {
     return continueExtendSession({
       workspacePath,
       loaded: input.loaded,
@@ -163,12 +189,51 @@ export async function prepareExtendSession(
     });
   }
 
+  // Different-spec on a harness branch: start a new branch from current HEAD
+  // (accumulates prior feature work) after a clean-tree check.
   return startExtendSession({
     workspacePath,
     loaded: input.loaded,
     snapshot,
     skipBaseline: input.skipBaseline,
   });
+}
+
+async function checkoutContinueBranch(workspacePath: string, branch: string): Promise<void> {
+  if (!isHarnessBranch(branch)) {
+    throw new ExtendSessionError(
+      "invalid-continue-branch",
+      [
+        `--continue expects a harness branch (harness/run-* or legacy harness/extend-*).`,
+        `Got ${JSON.stringify(branch)}.`,
+      ].join(" "),
+    );
+  }
+
+  const parsed = parseHarnessBranch(branch);
+  if (!parsed) {
+    throw new ExtendSessionError(
+      "invalid-continue-branch",
+      `Unable to parse harness branch name ${JSON.stringify(branch)}.`,
+    );
+  }
+
+  await assertWorkingTreeCleanForExtendStart(workspacePath);
+
+  const result = await executeCommand({
+    command: "git",
+    args: ["checkout", branch],
+    cwd: workspacePath,
+  });
+  if (result.exitCode !== 0) {
+    throw new ExtendSessionError(
+      "continue-checkout-failed",
+      [
+        `Failed to checkout continue branch ${JSON.stringify(branch)}.`,
+        result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`,
+      ].join("\n"),
+    );
+  }
 }
 
 async function startExtendSession(input: {
@@ -183,7 +248,7 @@ async function startExtendSession(input: {
   if (!snapshot.branch) {
     throw new ExtendSessionError(
       "detached-or-unborn",
-      "Extend start requires an attached branch name (not detached HEAD).",
+      "Harness run start requires an attached branch name (not detached HEAD).",
     );
   }
 
@@ -226,8 +291,8 @@ async function startExtendSession(input: {
       throw new ExtendSessionError(
         "baseline-failed",
         [
-          "Extend baseline health commands failed before generation.",
-          "These check the existing app (not the extension acceptance gates).",
+          "Harness baseline health commands failed before generation.",
+          "These check the existing app (not the run acceptance gates).",
           ...baselineResult.commands
             .filter(command => command.exitCode !== 0)
             .map(
@@ -272,10 +337,10 @@ async function continueExtendSession(input: {
     throw new ExtendSessionError(
       "unknown-harness-branch",
       [
-        `Current branch ${JSON.stringify(branch)} looks like a harness extend branch,`,
+        `Current branch ${JSON.stringify(branch)} looks like a harness run branch,`,
         "but no matching local session metadata was found under .harness/runs/*/session.json.",
-        "Refuse to create a nested branch. Checkout a normal branch to start a new extension,",
-        "or restore the matching session metadata before continuing.",
+        "Refuse to create a nested branch. Use --new from a clean tree to start a fresh run,",
+        "checkout a normal branch, or restore the matching session metadata before continuing.",
       ].join(" "),
     );
   }
@@ -297,7 +362,7 @@ async function continueExtendSession(input: {
     throw new ExtendSessionError(
       "checkpoint-mismatch",
       [
-        "Extend continue refused: HEAD does not match the session lastCheckpointSha.",
+        "Harness continue refused: HEAD does not match the session lastCheckpointSha.",
         `HEAD=${snapshot.headSha}`,
         `lastCheckpointSha=${session.lastCheckpointSha}`,
         "If you intentionally added commits, update or abandon the session before re-running.",
@@ -375,13 +440,13 @@ async function assertReadOnlyGitPreflight(snapshot: GitRepoSnapshot): Promise<vo
   if (snapshot.detached) {
     throw new ExtendSessionError(
       "detached-head",
-      "Extend requires an attached HEAD (checkout a branch before running).",
+      "Harness run requires an attached HEAD (checkout a branch before running).",
     );
   }
   if (snapshot.inProgressOperation) {
     throw new ExtendSessionError(
       "git-operation-in-progress",
-      `Extend refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
+      `Harness run refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
     );
   }
   if (!snapshot.branch) {
@@ -397,12 +462,12 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
   if (!Number.isFinite(nodeMajor) || nodeMajor < 20) {
     throw new ExtendSessionError(
       "node-version",
-      `Extend requires Node.js >= 20 (found ${process.versions.node}).`,
+      `Harness run requires Node.js >= 20 (found ${process.versions.node}).`,
     );
   }
 
   if (!(await commandExists("git", cwd))) {
-    throw new ExtendSessionError("missing-git", "Extend requires `git` on PATH.");
+    throw new ExtendSessionError("missing-git", "Harness run requires `git` on PATH.");
   }
 
   const agentCommand = spec.generator.command?.trim() || "agent";
@@ -411,7 +476,7 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
     if (!(await commandExists(agentCommand, cwd))) {
       throw new ExtendSessionError(
         "missing-agent",
-        `Extend requires generator command ${JSON.stringify(agentCommand)} on PATH.`,
+        `Harness run requires generator command ${JSON.stringify(agentCommand)} on PATH.`,
       );
     }
   }
@@ -422,7 +487,7 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
     if (!(await commandExists(binary, cwd))) {
       throw new ExtendSessionError(
         "missing-package-manager",
-        `Extend requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`,
+        `Harness run requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`,
       );
     }
   }
@@ -452,7 +517,7 @@ async function assertPathExists(filePath: string, label: string): Promise<void> 
   } catch {
     throw new ExtendSessionError(
       "missing-recipe-file",
-      `Extend preflight failed: required ${label} path does not exist: ${filePath}`,
+      `Harness run preflight failed: required ${label} path does not exist: ${filePath}`,
     );
   }
 }
@@ -505,18 +570,18 @@ function formatInterruptedDirtyRecovery(input: {
   const preview = input.dirty.slice(0, 20).join("\n");
   const more = input.dirty.length > 20 ? `\n...and ${input.dirty.length - 20} more` : "";
   return [
-    "Extend session interrupted with uncommitted consumer changes.",
+    "Harness session interrupted with uncommitted consumer changes.",
     `Branch: ${input.branch}`,
     `HEAD: ${input.headSha}`,
     `Last checkpoint: ${input.session.lastCheckpointSha}`,
     `Session: ${sessionFilePath(input.session.runDirectory)}`,
     "",
     "The harness will not auto-commit potentially user-authored changes.",
-    "Recover manually, then re-run extend on this branch:",
+    "Recover manually, then re-run on this branch:",
     "  git status",
     "  git diff",
     "  # discard unintended files, or commit intentional work",
-    "  # then: hedera-harness extend <spec>",
+    "  # then: hedera-harness run <spec>",
     "",
     "Dirty paths:",
     preview + more,

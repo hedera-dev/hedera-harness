@@ -1,7 +1,7 @@
 {
   "name": "hedera-harness",
   "version": "1.1.1",
-  "description": "Agentic harness for generating and validating scaffold-hbar templates.",
+  "description": "Agentic harness for scaffolding and iteratively extending scaffold-hbar projects (init + run).",
   "type": "module",
   "bin": {
     "hedera-harness": "./dist/index.js"
