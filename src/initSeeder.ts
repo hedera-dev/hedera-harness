@@ -1,5 +1,6 @@
 import { mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { logPhase } from "./attemptLoop.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { CommandExecutionResult, PreflightCommandConfig } from "./types.js";
 
@@ -43,12 +44,14 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
 
   // Prefer the given repo path/URL as-is (including local checkouts). Cloning never
   // modifies the seed, so we do not rewrite local paths to `origin`.
+  logPhase("Cloning scaffold project", `${repo}@${ref} → ${targetDir}`);
   const cloneArgs = ["clone", "--branch", ref, "--single-branch", repo, targetDir];
   await executeCommandOrThrow({
     command: "git",
     args: cloneArgs,
     cwd: path.dirname(targetDir),
     timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
+    streamOutput: true,
   });
 
   const commitSha = (
@@ -59,6 +62,7 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
       timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
     })
   ).stdout.trim();
+  logPhase("Scaffold cloned", `${commitSha.slice(0, 8)} (keeping .git)`);
 
   // Ensure we are on a named branch (clone --branch usually is).
   const branch = (
@@ -130,17 +134,24 @@ async function runPreflightCommands(
   for (const commandConfig of commands) {
     const normalized =
       typeof commandConfig === "string" ? { command: commandConfig } : commandConfig;
+    const label = normalized.name ?? normalized.command;
+    logPhase("Init preflight", label);
     const result = await executeCommand({
       command: normalized.command,
       cwd,
       timeoutMs: normalized.timeoutMs,
       shell: true,
+      streamOutput: true,
     });
     results.push(result);
     if (result.exitCode !== 0) {
-      const label = normalized.name ? ` "${normalized.name}"` : "";
-      throw new Error(`Init preflight${label} failed for command "${normalized.command}".`);
+      const named = normalized.name ? ` "${normalized.name}"` : "";
+      throw new Error(`Init preflight${named} failed for command "${normalized.command}".`);
     }
+    logPhase(
+      "Init preflight finished",
+      `${label} exit=${result.exitCode} durationMs=${result.durationMs}`,
+    );
   }
   return results;
 }

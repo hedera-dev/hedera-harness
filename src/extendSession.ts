@@ -1,5 +1,6 @@
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { logPhase } from "./attemptLoop.js";
 import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branchDetection.js";
 import { executeCommand } from "./command.js";
 import {
@@ -256,8 +257,11 @@ async function startExtendSession(input: {
 
   const baseBranch = snapshot.branch;
   const baseSha = snapshot.headSha;
+  logPhase("Creating harness branch", `from ${baseBranch}`);
   const created = await createAndCheckoutExtendBranch(workspacePath, spec.name);
+  logPhase("Harness branch ready", created.branch);
   const layout = await createExtendLayout(workspacePath, spec.name, resolveExtendLogging(spec));
+  logPhase("Run artifacts directory", layout.runDirectory);
 
   const startedAt = new Date().toISOString();
   let session: ExtendSessionMetadata = {
@@ -280,6 +284,7 @@ async function startExtendSession(input: {
   };
 
   if (!input.skipBaseline) {
+    logPhase("Running host baseline health checks", workspacePath);
     const baselineResult = await runExtendBaseline(workspacePath, spec);
     session = {
       ...session,
@@ -534,11 +539,13 @@ async function runExtendBaseline(
   const results: ExtendBaselineResult["commands"] = [];
   for (const commandConfig of commands) {
     const name = commandConfig.name?.trim() || commandConfig.command;
+    logPhase("Baseline command", name);
     const result = await executeCommand({
       command: commandConfig.command,
       cwd: workspacePath,
       timeoutMs: commandConfig.timeoutMs,
       shell: true,
+      streamOutput: true,
     });
     results.push({
       name,
@@ -547,6 +554,10 @@ async function runExtendBaseline(
       durationMs: result.durationMs,
       timedOut: result.timedOut,
     });
+    logPhase(
+      "Baseline command finished",
+      `${name} exit=${result.exitCode} durationMs=${result.durationMs}`,
+    );
     if (result.exitCode !== 0) {
       return { passed: false, commands: results };
     }

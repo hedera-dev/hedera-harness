@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { logPhase } from "./attemptLoop.js";
 import { pathExists } from "./fsUtils.js";
 import { resolveSkillPaths, resolveSkillsIndexPath, SKILLS_INDEX_FILENAME } from "./skillResolver.js";
 import { vendorSkills } from "./skillVendor.js";
@@ -65,11 +66,14 @@ export async function provisionHarnessProject(
   let vendoredSkillFiles: string[] = [];
   const skillNames = input.skillNames ?? [];
   if (skillNames.length > 0) {
+    logPhase("Resolving skills", `${skillNames.length} name(s)`);
     const resolved = await resolveSkillPaths(skillNames, targetDir);
+    logPhase("Vendoring skills into .harness/skills", `${resolved.length} skill(s)`);
     const vendored = await vendorSkills(targetDir, resolved, {
       skillsDir: ".harness/skills",
     });
     vendoredSkillFiles = vendored.map(entry => entry.relativePath);
+    logPhase("Skills vendored", `${vendoredSkillFiles.length} file(s)`);
   }
 
   const gitignoreUpdated = await ensureHarnessGitignore(targetDir, skeletonRoot);

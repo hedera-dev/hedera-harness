@@ -76,6 +76,10 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         "",
         "Next steps:",
         ...result.nextSteps.map(step => `  ${step}`),
+        "",
+        "Tip: authoring skills (create/review harness-spec) ship via the hedera-skills",
+        "marketplace plugin — they are not copied into the project. Generator skills for",
+        "`run` are still vendored under .harness/skills/ from skills-index.json.",
       ].join("\n"),
     );
     return;

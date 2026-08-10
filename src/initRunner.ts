@@ -1,4 +1,5 @@
 import path from "node:path";
+import { logPhase } from "./attemptLoop.js";
 import { listRegisteredSkillNames, provisionHarnessProject } from "./harnessProvisioner.js";
 import { DEFAULT_SCAFFOLD_REF, DEFAULT_SCAFFOLD_REPO, seedProjectForInit } from "./initSeeder.js";
 import type { InitCliOptions, InitResult } from "./types.js";
@@ -22,6 +23,8 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
   const ref = options.ref?.trim() || options.template?.trim() || DEFAULT_SCAFFOLD_REF;
   const skipInstall = options.skipInstall === true;
 
+  logPhase("Init started", targetDir);
+
   const seeded = await seedProjectForInit({
     targetDir,
     repo,
@@ -39,15 +42,30 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
     }
   }
 
+  logPhase(
+    "Provisioning .harness/",
+    skillNames.length > 0 ? `skills=${skillNames.join(",")}` : "skills=none",
+  );
+
   const provisioned = await provisionHarnessProject({
     targetDir: seeded.targetDir,
     skillNames,
     copySkillsIndex: true,
   });
 
+  logPhase(
+    "Init complete",
+    `${provisioned.writtenFiles.length} recipe file(s), ${provisioned.vendoredSkillFiles.length} skill file(s)`,
+  );
+
   const nextSteps = [
     `cd ${seeded.targetDir}`,
-    "Edit .harness/prd.md and .harness/spec.yaml for your feature",
+    "Install the hedera-harness plugin from the marketplace, then author the recipe (recommended):",
+    "  /plugin marketplace add hedera-dev/hedera-skills",
+    "  /plugin install hedera-harness",
+    "  /create-harness-spec — turn a demo idea into .harness/prd.md + spec + validators",
+    "  /review-harness-spec — audit the recipe before you run",
+    "Or edit .harness/prd.md and .harness/spec.yaml by hand",
     "hedera-harness run .harness/spec.yaml",
     // yarn script if package.json was updated
     provisioned.packageJsonUpdated ? "or: yarn harness:run" : undefined,

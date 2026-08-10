@@ -46,7 +46,9 @@
       "path": "plugins/system-contracts/skills/hss-system-contract/SKILL.md",
       "tags": ["hss", "schedule", "solidity", "precompile", "evm", "system-contracts"],
       "description": "HSS system contract (0x16b) patterns: scheduleCall, capacity checks, deleteSchedule, and recurring vault reschedule loops in Solidity."
-    },
+    }
+  ],
+  "unmerged-skills": [
     {
       "name": "hedera-oracle-adapters",
       "path": "plugins/system-contracts/skills/hedera-oracle-adapters/SKILL.md",

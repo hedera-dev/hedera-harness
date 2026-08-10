@@ -66,6 +66,7 @@ export async function runExtend(options: RunExtendOptions): Promise<ExtendRunRes
   const { spec, projectRoot } = loaded;
   const maxAttempts = options.maxAttempts ?? spec.maxAttempts;
 
+  logPhase("Preparing harness session", `${spec.name} @ ${workspacePath}`);
   const prepared = await prepareExtendSession({
     workspacePath,
     loaded,

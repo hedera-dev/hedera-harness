@@ -8,6 +8,11 @@ export interface ExecuteCommandOptions {
   env?: Record<string, string>;
   timeoutMs?: number;
   shell?: boolean;
+  /**
+   * When true, tee child stdout/stderr to the parent process while still
+   * capturing buffers for result inspection / error messages.
+   */
+  streamOutput?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -16,6 +21,7 @@ export function executeCommand(options: ExecuteCommandOptions): Promise<CommandE
   const startedAt = Date.now();
   const args = options.args ?? [];
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const streamOutput = options.streamOutput === true;
 
   return new Promise<CommandExecutionResult>((resolve, reject) => {
     const child = spawn(options.command, args, {
@@ -39,11 +45,19 @@ export function executeCommand(options: ExecuteCommandOptions): Promise<CommandE
     }, timeoutMs);
 
     child.stdout.on("data", chunk => {
-      stdoutChunks.push(Buffer.from(chunk));
+      const buffer = Buffer.from(chunk);
+      stdoutChunks.push(buffer);
+      if (streamOutput) {
+        process.stdout.write(buffer);
+      }
     });
 
     child.stderr.on("data", chunk => {
-      stderrChunks.push(Buffer.from(chunk));
+      const buffer = Buffer.from(chunk);
+      stderrChunks.push(buffer);
+      if (streamOutput) {
+        process.stderr.write(buffer);
+      }
     });
 
     child.on("error", error => {
