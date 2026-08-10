@@ -2,16 +2,16 @@ import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
 import {
   buildContinuePrompt,
-  buildExtendContinuePrompt,
-  buildExtendPrompt,
-  buildExtendRepairPrompt,
+  buildSessionContinuePrompt,
+  buildSessionPrompt,
+  buildSessionRepairPrompt,
   buildGeneratorPrompt,
   buildRepairPrompt,
 } from "./promptBuilder.js";
 import {
   appendHarnessLog,
   appendHarnessNote,
-  LAYOUT_MODE_IN_PLACE_EXTEND,
+  LAYOUT_MODE_IN_PLACE_RUN,
   type RunLayout,
   writeJsonFile,
   writePromptFile,
@@ -107,12 +107,12 @@ export function createIsolatedPromptStrategy(
         : buildGeneratorPrompt(spec, 1, vendoredSkills);
     },
     async buildRepairPrompt(findings, nextAttempt) {
-      return buildRepairPrompt(spec, findings, nextAttempt, vendoredContext);
+      return buildRepairPrompt(spec, findings, nextAttempt);
     },
   };
 }
 
-export function createExtendPromptStrategy(
+export function createSessionPromptStrategy(
   session: Pick<SessionContext, "spec" | "vendoredSkills" | "vendoredContext">,
 ): AttemptPromptStrategy {
   const { spec, vendoredSkills, vendoredContext } = session;
@@ -120,11 +120,11 @@ export function createExtendPromptStrategy(
     playwrightMcpMode: "snapshot-restore",
     async buildInitialPrompt(isContinue, cycle) {
       return isContinue
-        ? buildExtendContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
-        : buildExtendPrompt(spec, 1, vendoredSkills, vendoredContext);
+        ? buildSessionContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
+        : buildSessionPrompt(spec, 1, vendoredSkills, vendoredContext);
     },
     async buildRepairPrompt(findings, nextAttempt) {
-      return buildExtendRepairPrompt(spec, findings, nextAttempt, vendoredContext);
+      return buildSessionRepairPrompt(spec, findings, nextAttempt, vendoredContext);
     },
   };
 }
@@ -136,8 +136,8 @@ function resolvePromptStrategy(input: AttemptLoopInput): AttemptPromptStrategy {
     vendoredSkills: input.vendoredSkills,
     vendoredContext: input.vendoredContext,
   };
-  return input.layout.mode === LAYOUT_MODE_IN_PLACE_EXTEND
-    ? createExtendPromptStrategy(session)
+  return input.layout.mode === LAYOUT_MODE_IN_PLACE_RUN
+    ? createSessionPromptStrategy(session)
     : createIsolatedPromptStrategy(session);
 }
 
@@ -150,10 +150,10 @@ export async function runIsolatedAttemptLoop(input: AttemptLoopInput): Promise<R
 }
 
 /** In-place `extend` attempt loop. */
-export async function runExtendAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
+export async function runSessionAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
   return runAttemptLoop({
     ...input,
-    promptStrategy: input.promptStrategy ?? createExtendPromptStrategy(input),
+    promptStrategy: input.promptStrategy ?? createSessionPromptStrategy(input),
   });
 }
 

@@ -1,0 +1,31 @@
+{
+  "name": "my-feature-yarn",
+  "description": "Yarn commands for the project-centric harness recipe. Keep install named \"install\" for fingerprint skip across attempts.",
+  "requiresNoSecrets": true,
+  "forbiddenCommands": [
+    "npm install",
+    "npm run",
+    "pnpm install",
+    "pnpm run"
+  ],
+  "commands": [
+    {
+      "name": "install",
+      "command": "yarn install",
+      "timeoutMs": 300000,
+      "purpose": "Install workspace dependencies."
+    },
+    {
+      "name": "lint",
+      "command": "yarn lint",
+      "timeoutMs": 180000,
+      "purpose": "Lint the project."
+    },
+    {
+      "name": "build",
+      "command": "yarn next:build",
+      "timeoutMs": 300000,
+      "purpose": "Production build (includes TypeScript checks)."
+    }
+  ]
+}

@@ -18,7 +18,7 @@ test("importHieroSdk succeeds when @hiero-ledger/sdk is installed as a devDepend
 
 test("package.json declares playwright and SDK as optional peers, not runtime deps", async () => {
   const pkg = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile("package.json", "utf8")));
-  assert.equal(pkg.version, "1.1.1");
+  assert.equal(pkg.version, "1.1.2");
   assert.ok(!pkg.dependencies?.playwright);
   assert.ok(!pkg.dependencies?.["@hiero-ledger/sdk"]);
   assert.equal(pkg.peerDependencies.playwright, "^1.61.1");

@@ -1,0 +1,8 @@
+# hedera-harness (project-centric)
+.harness/runs/
+.harness/runtime/
+.harness/cache/
+.harness/skills/
+.skill-cache/
+.harness-skills/
+.harness-context/

@@ -6,8 +6,8 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { makeTestTempDir } from "./tmpDir.mjs";
 
-const sessionMod = await import(pathToFileURL(path.resolve("dist/extendSession.js")).href);
-const gitMod = await import(pathToFileURL(path.resolve("dist/extendGit.js")).href);
+const sessionMod = await import(pathToFileURL(path.resolve("dist/session.js")).href);
+const gitMod = await import(pathToFileURL(path.resolve("dist/harnessGit.js")).href);
 const { loadTemplateSpec } = await import(pathToFileURL(path.resolve("dist/specLoader.js")).href);
 
 function git(cwd, args) {
@@ -78,7 +78,7 @@ test("normal branch start requires clean tree, creates harness branch + session 
   const baseBranch = git(root, ["branch", "--show-current"]);
   const baseSha = git(root, ["rev-parse", "HEAD"]);
 
-  const prepared = await sessionMod.prepareExtendSession({
+  const prepared = await sessionMod.prepareSession({
     workspacePath: root,
     loaded,
     skipToolChecks: true,
@@ -88,7 +88,7 @@ test("normal branch start requires clean tree, creates harness branch + session 
   assert.equal(prepared.mode, "start");
   assert.equal(prepared.startingAttempt, 1);
   assert.equal(prepared.cycle, undefined);
-  assert.match(prepared.session.branch, /^harness\/extend-demo-extend-[a-f0-9]+$/);
+  assert.match(prepared.session.branch, /^harness\/run-demo-extend-[a-f0-9]+$/);
   assert.equal(prepared.session.baseBranch, baseBranch);
   assert.equal(prepared.session.baseSha, baseSha);
   assert.equal(prepared.session.lastCheckpointSha, git(root, ["rev-parse", "HEAD"]));
@@ -108,7 +108,7 @@ test("dirty normal branch is refused before branch creation", async () => {
 
   await assert.rejects(
     () =>
-      sessionMod.prepareExtendSession({
+      sessionMod.prepareSession({
         workspacePath: root,
         loaded,
         skipToolChecks: true,
@@ -116,7 +116,7 @@ test("dirty normal branch is refused before branch creation", async () => {
       }),
     error => {
       assert.match(error.message, /clean working tree/i);
-      assert.equal(gitMod.isHarnessExtendBranch(git(root, ["branch", "--show-current"])), false);
+      assert.equal(gitMod.isHarnessBranch(git(root, ["branch", "--show-current"])), false);
       return true;
     },
   );
@@ -124,7 +124,7 @@ test("dirty normal branch is refused before branch creation", async () => {
 
 test("harness branch with matching session continues without nested branch", async () => {
   const { root, loaded } = await initExtendFixture();
-  const first = await sessionMod.prepareExtendSession({
+  const first = await sessionMod.prepareSession({
     workspacePath: root,
     loaded,
     skipToolChecks: true,
@@ -133,14 +133,14 @@ test("harness branch with matching session continues without nested branch", asy
   const branch = first.session.branch;
 
   // Simulate a completed attempt checkpoint at current HEAD.
-  await sessionMod.recordExtendCheckpoint({
+  await sessionMod.recordCheckpoint({
     runDirectory: first.layout.runDirectory,
     attempt: 2,
     checkpointSha: git(root, ["rev-parse", "HEAD"]),
     gateStatus: "failed",
   });
 
-  const continued = await sessionMod.prepareExtendSession({
+  const continued = await sessionMod.prepareSession({
     workspacePath: root,
     loaded,
     skipToolChecks: true,
@@ -157,13 +157,13 @@ test("harness branch with matching session continues without nested branch", asy
 
 test("interrupted dirty recovery refuses continue and does not auto-commit", async () => {
   const { root, loaded } = await initExtendFixture();
-  const first = await sessionMod.prepareExtendSession({
+  const first = await sessionMod.prepareSession({
     workspacePath: root,
     loaded,
     skipToolChecks: true,
     skipBaseline: true,
   });
-  await sessionMod.recordExtendCheckpoint({
+  await sessionMod.recordCheckpoint({
     runDirectory: first.layout.runDirectory,
     attempt: 1,
     checkpointSha: git(root, ["rev-parse", "HEAD"]),
@@ -173,7 +173,7 @@ test("interrupted dirty recovery refuses continue and does not auto-commit", asy
 
   await assert.rejects(
     () =>
-      sessionMod.prepareExtendSession({
+      sessionMod.prepareSession({
         workspacePath: root,
         loaded,
         skipToolChecks: true,
@@ -191,13 +191,14 @@ test("interrupted dirty recovery refuses continue and does not auto-commit", asy
   );
 });
 
-test("unknown harness branch without session metadata is refused", async () => {
+test("same-spec harness branch without session metadata is refused", async () => {
   const { root, loaded } = await initExtendFixture();
-  git(root, ["checkout", "-b", "harness/extend-orphan-deadbeef"]);
+  // Same slug as fixture spec name `demo-extend`, but no session.json → refuse continue.
+  git(root, ["checkout", "-b", "harness/run-demo-extend-deadbeef"]);
 
   await assert.rejects(
     () =>
-      sessionMod.prepareExtendSession({
+      sessionMod.prepareSession({
         workspacePath: root,
         loaded,
         skipToolChecks: true,
@@ -211,15 +212,99 @@ test("unknown harness branch without session metadata is refused", async () => {
   );
 });
 
-test("checkpoint mismatch refuses continue when HEAD moved", async () => {
+test("different-spec on harness branch starts a new harness/run-* branch", async () => {
   const { root, loaded } = await initExtendFixture();
-  const first = await sessionMod.prepareExtendSession({
+  const first = await sessionMod.prepareSession({
     workspacePath: root,
     loaded,
     skipToolChecks: true,
     skipBaseline: true,
   });
-  await sessionMod.recordExtendCheckpoint({
+
+  // Rewrite recipe to a different feature name while staying on the first harness branch.
+  // Commit so the tree is clean (start requires a clean working tree).
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(
+    path.join(root, ".harness", "spec.yaml"),
+    `name: other-feature
+prd: .harness/prd.md
+generator:
+  provider: command
+  command: agent
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: yarn install
+validators:
+  static: .harness/validators/static.json
+  commands: .harness/validators/commands.json
+requiredFiles: []
+forbiddenFiles: []
+logging:
+  jsonl: .harness/runs/harness.log.jsonl
+  notes: .harness/runs/harness-notes.md
+constraints:
+  packageManager: yarn
+`,
+  );
+  git(root, ["add", ".harness/spec.yaml"]);
+  git(root, ["commit", "-m", "switch to other-feature recipe"]);
+
+  const other = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), {
+    requireSeed: false,
+  });
+
+  const prepared = await sessionMod.prepareSession({
+    workspacePath: root,
+    loaded: other,
+    skipToolChecks: true,
+    skipBaseline: true,
+  });
+
+  assert.equal(prepared.mode, "start");
+  assert.match(prepared.session.branch, /^harness\/run-other-feature-[a-f0-9]+$/);
+  assert.notEqual(prepared.session.branch, first.session.branch);
+  assert.equal(git(root, ["branch", "--show-current"]), prepared.session.branch);
+});
+
+test("--new forces a fresh harness branch even on a matching session branch", async () => {
+  const { root, loaded } = await initExtendFixture();
+  const first = await sessionMod.prepareSession({
+    workspacePath: root,
+    loaded,
+    skipToolChecks: true,
+    skipBaseline: true,
+  });
+  await sessionMod.recordCheckpoint({
+    runDirectory: first.layout.runDirectory,
+    attempt: 1,
+    checkpointSha: git(root, ["rev-parse", "HEAD"]),
+    gateStatus: "failed",
+  });
+
+  const prepared = await sessionMod.prepareSession({
+    workspacePath: root,
+    loaded,
+    skipToolChecks: true,
+    skipBaseline: true,
+    forceNew: true,
+  });
+
+  assert.equal(prepared.mode, "start");
+  assert.match(prepared.session.branch, /^harness\/run-demo-extend-[a-f0-9]+$/);
+  assert.notEqual(prepared.session.branch, first.session.branch);
+});
+
+test("checkpoint mismatch refuses continue when HEAD moved", async () => {
+  const { root, loaded } = await initExtendFixture();
+  const first = await sessionMod.prepareSession({
+    workspacePath: root,
+    loaded,
+    skipToolChecks: true,
+    skipBaseline: true,
+  });
+  await sessionMod.recordCheckpoint({
     runDirectory: first.layout.runDirectory,
     attempt: 1,
     checkpointSha: git(root, ["rev-parse", "HEAD"]),
@@ -231,7 +316,7 @@ test("checkpoint mismatch refuses continue when HEAD moved", async () => {
 
   await assert.rejects(
     () =>
-      sessionMod.prepareExtendSession({
+      sessionMod.prepareSession({
         workspacePath: root,
         loaded,
         skipToolChecks: true,
@@ -264,7 +349,7 @@ test("merge in progress fails read-only preflight", async () => {
 
   await assert.rejects(
     () =>
-      sessionMod.prepareExtendSession({
+      sessionMod.prepareSession({
         workspacePath: root,
         loaded,
         skipToolChecks: true,

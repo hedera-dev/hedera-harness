@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-repo pilot smoke:
 #   pack harness tarball → scaffold hedera-demo via create-scaffold-hbar (local template)
-#   → extend (fail) → continue (pass) → hygiene checks
+#   → run (fail) → continue (pass) → hygiene checks
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,9 +9,9 @@ WORK_ROOT="$(cd "$ROOT/.." && pwd)"
 HARNESS_ROOT="$ROOT"
 CREATE_ROOT="$WORK_ROOT/create-hbar"
 TEMPLATE_ROOT="$WORK_ROOT/scaffold-hbar"
-MOCK_AGENT="$HARNESS_ROOT/scripts/mock-extend-agent.mjs"
+MOCK_AGENT="$HARNESS_ROOT/scripts/mock-agent.mjs"
 
-SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hedera-extend-e2e.XXXXXX")"
+SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hedera-run-e2e.XXXXXX")"
 TGZ_PATH=""
 cleanup() {
   rm -rf "$SMOKE_DIR"
@@ -73,11 +73,12 @@ test -f .harness/spec.yaml
 test -f .harness/prd.md
 test -f .harness/validators/static.json
 node --input-type=module -e '
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json","utf8"));
-if (pkg.scripts?.["harness:extend"] !== "hedera-harness extend .harness/spec.yaml") {
-  throw new Error("missing harness:extend script: " + pkg.scripts?.["harness:extend"]);
-}
+pkg.scripts = { ...(pkg.scripts || {}), "harness:run": "hedera-harness run .harness/spec.yaml" };
+// Drop legacy template alias if present.
+delete pkg.scripts["harness:extend"];
+writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
 if (pkg.devDependencies?.["hedera-harness"] !== "1.1.0") {
   throw new Error("expected exact hedera-harness@1.1.0 pin, got " + pkg.devDependencies?.["hedera-harness"]);
 }
@@ -155,7 +156,7 @@ writeFileSync(
   ".harness/validators/yarn.json",
   JSON.stringify(
     {
-      name: "hedera-demo-extend-yarn-smoke",
+      name: "hedera-demo-run-yarn-smoke",
       description: "Fast smoke commands; static validators enforce the Learn page.",
       requiresNoSecrets: true,
       forbiddenCommands: ["npm install", "npm run", "pnpm install", "pnpm run"],
@@ -180,23 +181,23 @@ git -c user.email=smoke@example.com -c user.name=Smoke \
   commit --no-gpg-sign -m "chore: smoke mock generator and fast validators"
 MAIN_SHA="$(git rev-parse HEAD)"
 
-echo "==> extend #1 (expect FAIL + checkpoint)"
+echo "==> run #1 (expect FAIL + checkpoint)"
 # Husky pre-commit (lint-staged/typecheck) is consumer-local and can fail on template
 # drift; smoke verifies harness checkpoint/continue mechanics with hooks disabled.
 export HUSKY=0
-export MOCK_EXTEND_MODE=fail
-export MOCK_EXTEND_WORKSPACE="$APP_DIR"
+export MOCK_HARNESS_MODE=fail
+export MOCK_HARNESS_WORKSPACE="$APP_DIR"
 rm -f .env packages/nextjs/.env
 set +e
-yarn harness:extend
-EXTEND1_EC=$?
+yarn harness:run
+RUN1_EC=$?
 set -e
-echo "    extend#1 exit=$EXTEND1_EC"
-test "$EXTEND1_EC" -ne 0
+echo "    run#1 exit=$RUN1_EC"
+test "$RUN1_EC" -ne 0
 
 EXT_BRANCH="$(git branch --show-current)"
 echo "    branch=$EXT_BRANCH"
-[[ "$EXT_BRANCH" == harness/extend-* ]]
+[[ "$EXT_BRANCH" == harness/run-* ]]
 test "$(git rev-parse main)" = "$MAIN_SHA"
 # Drop any hook-stash leftovers so continue isn't blocked as interrupted-dirty.
 git reset --hard HEAD >/dev/null
@@ -214,21 +215,21 @@ if git ls-tree -r HEAD --name-only | grep -E '^\.harness/(runs|cache|runtime)/|^
   exit 1
 fi
 
-echo "==> extend #2 continue same branch (expect PASS)"
+echo "==> run #2 continue same branch (expect PASS)"
 export HUSKY=0
-export MOCK_EXTEND_MODE=pass
+export MOCK_HARNESS_MODE=pass
 PREV_BRANCH="$EXT_BRANCH"
 set +e
-yarn harness:extend
-EXTEND2_EC=$?
+yarn harness:run
+RUN2_EC=$?
 set -e
-echo "    extend#2 exit=$EXTEND2_EC"
-test "$EXTEND2_EC" -eq 0
+echo "    run#2 exit=$RUN2_EC"
+test "$RUN2_EC" -eq 0
 
 EXT_BRANCH2="$(git branch --show-current)"
 test "$EXT_BRANCH2" = "$PREV_BRANCH"
 test "$(git rev-parse main)" = "$MAIN_SHA"
-NESTED_COUNT="$(git branch --list 'harness/extend-*' | wc -l | tr -d ' ')"
+NESTED_COUNT="$(git branch --list 'harness/run-*' | wc -l | tr -d ' ')"
 test "$NESTED_COUNT" -eq 1
 test -z "$(git status --porcelain)"
 
@@ -252,7 +253,7 @@ if (session.gateStatus !== "passed") throw new Error("expected gateStatus=passed
 console.log("    final session gateStatus=" + session.gateStatus + " cycle=" + session.cycle + " branch=" + session.branch);
 ' "$LATEST_SESSION"
 
-echo "==> smoke-extend-e2e OK"
+echo "==> smoke-run-e2e OK"
 echo "    main untouched @ $MAIN_SHA"
 echo "    harness branch $EXT_BRANCH2"
 echo "    runtime ignored; no nested branch; continue worked"

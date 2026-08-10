@@ -4,10 +4,10 @@ import type { HarnessLogEvent } from "./types.js";
 
 /** Artifact layout for an isolated seed-and-run session under `runs/<id>/`. */
 export const LAYOUT_MODE_ISOLATED_RUN = "isolated-run" as const;
-/** Artifact layout for in-place extend: code stays in cwd, runtime under `.harness/runs/<id>/`. */
-export const LAYOUT_MODE_IN_PLACE_EXTEND = "in-place-extend" as const;
+/** Artifact layout for project-centric run: code stays in cwd, runtime under `.harness/runs/<id>/`. */
+export const LAYOUT_MODE_IN_PLACE_RUN = "in-place-run" as const;
 
-export type RunLayoutMode = typeof LAYOUT_MODE_ISOLATED_RUN | typeof LAYOUT_MODE_IN_PLACE_EXTEND;
+export type RunLayoutMode = typeof LAYOUT_MODE_ISOLATED_RUN | typeof LAYOUT_MODE_IN_PLACE_RUN;
 
 const LAYOUT_META_FILENAME = "layout.json";
 const LAYOUT_META_SCHEMA_VERSION = 1;
@@ -55,10 +55,10 @@ export async function createRunLayout(
 }
 
 /**
- * In-place extend layout: generated code lives in `workspacePath` (typically cwd);
+ * Project-centric run layout: generated code lives in `workspacePath` (typically cwd);
  * prompts, logs, reports, cache, and status live under `.harness/runs/<id>/`.
  */
-export async function createExtendLayout(
+export async function createSessionLayout(
   workspacePath: string,
   specName: string,
   logging: { jsonlPath: string; notesPath: string },
@@ -67,7 +67,7 @@ export async function createExtendLayout(
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const runDirectory = path.join(absoluteWorkspace, ".harness", "runs", `${timestamp}-${specName}`);
   return createLayoutDirectories({
-    mode: LAYOUT_MODE_IN_PLACE_EXTEND,
+    mode: LAYOUT_MODE_IN_PLACE_RUN,
     runDirectory,
     workspacePath: absoluteWorkspace,
     logging,
@@ -84,8 +84,8 @@ export async function openRunLayout(
   const mode = meta?.mode ?? LAYOUT_MODE_ISOLATED_RUN;
   const workspacePath =
     meta?.workspacePath ??
-    (mode === LAYOUT_MODE_IN_PLACE_EXTEND
-      ? resolveExtendWorkspaceFromRunDirectory(absoluteRunDirectory)
+    (mode === LAYOUT_MODE_IN_PLACE_RUN
+      ? resolveWorkspaceFromRunDirectory(absoluteRunDirectory)
       : path.join(absoluteRunDirectory, "workspace"));
 
   await access(workspacePath);
@@ -102,9 +102,13 @@ export async function readLayoutMeta(runDirectory: string): Promise<RunLayoutMet
   try {
     const raw = await readFile(path.join(runDirectory, LAYOUT_META_FILENAME), "utf8");
     const parsed = JSON.parse(raw) as Partial<RunLayoutMeta>;
+    // Accept legacy on-disk mode from the removed `extend` command.
+    const rawMode = parsed.mode as string | undefined;
+    const normalizedMode =
+      rawMode === "in-place-extend" ? LAYOUT_MODE_IN_PLACE_RUN : parsed.mode;
     if (
-      parsed.mode !== LAYOUT_MODE_ISOLATED_RUN &&
-      parsed.mode !== LAYOUT_MODE_IN_PLACE_EXTEND
+      normalizedMode !== LAYOUT_MODE_ISOLATED_RUN &&
+      normalizedMode !== LAYOUT_MODE_IN_PLACE_RUN
     ) {
       return null;
     }
@@ -113,7 +117,7 @@ export async function readLayoutMeta(runDirectory: string): Promise<RunLayoutMet
     }
     return {
       schemaVersion: parsed.schemaVersion ?? LAYOUT_META_SCHEMA_VERSION,
-      mode: parsed.mode,
+      mode: normalizedMode,
       workspacePath: path.resolve(parsed.workspacePath),
     };
   } catch {
@@ -136,7 +140,7 @@ export async function resolveArtifactDirsForWorkspace(
     return fromParent;
   }
 
-  const fromExtendRuns = await findExtendArtifactDirs(resolvedWorkspace);
+  const fromExtendRuns = await findHarnessArtifactDirs(resolvedWorkspace);
   if (fromExtendRuns) {
     return fromExtendRuns;
   }
@@ -312,7 +316,7 @@ async function createLayoutDirectories(input: {
   return layout;
 }
 
-function resolveExtendWorkspaceFromRunDirectory(runDirectory: string): string {
+function resolveWorkspaceFromRunDirectory(runDirectory: string): string {
   // `.harness/runs/<id>` → project root
   return path.resolve(runDirectory, "..", "..", "..");
 }
@@ -339,7 +343,7 @@ async function artifactDirsFromRunDirectory(
 /**
  * Prefer the newest `.harness/runs/<id>` whose layout metadata points at this workspace.
  */
-async function findExtendArtifactDirs(workspacePath: string): Promise<WorkspaceArtifactDirs | null> {
+async function findHarnessArtifactDirs(workspacePath: string): Promise<WorkspaceArtifactDirs | null> {
   const runsRoot = path.join(workspacePath, ".harness", "runs");
   let entries: string[];
   try {

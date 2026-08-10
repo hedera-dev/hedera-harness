@@ -6,9 +6,9 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { makeTestTempDir } from "./tmpDir.mjs";
 
-const gitMod = await import(pathToFileURL(path.resolve("dist/extendGit.js")).href);
-const cleanupMod = await import(pathToFileURL(path.resolve("dist/extendCleanup.js")).href);
-const outroMod = await import(pathToFileURL(path.resolve("dist/extendOutro.js")).href);
+const gitMod = await import(pathToFileURL(path.resolve("dist/harnessGit.js")).href);
+const cleanupMod = await import(pathToFileURL(path.resolve("dist/runCleanup.js")).href);
+const outroMod = await import(pathToFileURL(path.resolve("dist/runOutro.js")).href);
 const contextMod = await import(pathToFileURL(path.resolve("dist/contextVendor.js")).href);
 
 function git(cwd, args) {
@@ -39,8 +39,8 @@ async function pathExists(target) {
   }
 }
 
-test("formatExtendAttemptCommitMessage includes finding IDs in body", () => {
-  const { subject, body } = gitMod.formatExtendAttemptCommitMessage({
+test("formatAttemptCommitMessage includes finding IDs in body", () => {
+  const { subject, body } = gitMod.formatAttemptCommitMessage({
     attempt: 2,
     passed: true,
     findings: [
@@ -48,13 +48,13 @@ test("formatExtendAttemptCommitMessage includes finding IDs in body", () => {
       { id: "gate-b", category: "agent", message: "b" },
     ],
   });
-  assert.equal(subject, "harness: extension attempt 2 passed");
+  assert.equal(subject, "harness: run attempt 2 passed");
   assert.match(body, /Finding IDs: gate-a, gate-b/);
   assert.match(body, /squash attempt commits/i);
 });
 
-test("filterCommitableExtendEntries skips secrets and runtime", () => {
-  const { commitable, skippedSecrets } = gitMod.filterCommitableExtendEntries([
+test("filterCommitableHarnessEntries skips secrets and runtime", () => {
+  const { commitable, skippedSecrets } = gitMod.filterCommitableHarnessEntries([
     { code: "??", path: "src/app.ts" },
     { code: "??", path: ".env" },
     { code: "??", path: ".harness/runtime/skills/x/SKILL.md" },
@@ -71,19 +71,19 @@ test("filterCommitableExtendEntries skips secrets and runtime", () => {
   );
 });
 
-test("commitExtendAttempt never stages secrets or runtime; records finding IDs", async () => {
+test("commitAttempt never stages secrets or runtime; records finding IDs", async () => {
   const root = await initRepo();
-  await gitMod.createAndCheckoutExtendBranch(root, "secret-demo", "s3cret");
+  await gitMod.createAndCheckoutHarnessBranch(root, "secret-demo", "s3cret");
   await mkdir(path.join(root, ".harness", "runtime", "skills"), { recursive: true });
   await writeFile(path.join(root, ".harness", "runtime", "skills", "SKILL.md"), "# skill\n");
   await writeFile(path.join(root, ".env"), "SECRET=1\n");
   await writeFile(path.join(root, "feature.ts"), "export const ok = true;\n");
 
   const findings = [{ id: "missing-route", category: "deterministic", message: "missing" }];
-  const result = await gitMod.commitExtendAttempt(root, 1, false, findings);
+  const result = await gitMod.commitAttempt(root, 1, false, findings);
   assert.equal(result.committed, true);
   assert.deepEqual(result.skippedSecrets, [".env"]);
-  assert.match(result.message, /extension attempt 1 failed/);
+  assert.match(result.message, /run attempt 1 failed/);
 
   const showNames = git(root, ["show", "--name-only", "--pretty=format:", "HEAD"]);
   assert.match(showNames, /feature\.ts/);
@@ -94,7 +94,7 @@ test("commitExtendAttempt never stages secrets or runtime; records finding IDs",
   assert.match(showBody, /Finding IDs: missing-route/);
 });
 
-test("cleanupExtendRuntimeInjections removes runtime/MCP but keeps runs", async () => {
+test("cleanupRuntimeInjections removes runtime/MCP but keeps runs", async () => {
   const root = await initRepo();
   await mkdir(path.join(root, ".harness", "runtime", "context"), { recursive: true });
   await writeFile(path.join(root, ".harness", "runtime", "context", "prd.md"), "# prd\n");
@@ -125,7 +125,7 @@ test("cleanupExtendRuntimeInjections removes runtime/MCP but keeps runs", async 
     )}\n`,
   );
 
-  const cleanup = await cleanupMod.cleanupExtendRuntimeInjections(root);
+  const cleanup = await cleanupMod.cleanupRuntimeInjections(root);
   assert.ok(cleanup.removedPaths.includes(".harness/runtime"));
   assert.ok(cleanup.removedPaths.includes(".harness-skills"));
   assert.equal(cleanup.mcpStripped, true);
@@ -142,8 +142,8 @@ test("cleanupExtendRuntimeInjections removes runtime/MCP but keeps runs", async 
   assert.ok(mcp.mcpServers.other);
 });
 
-test("formatExtendOutro success prints push/PR instructions without implying execution", () => {
-  const lines = outroMod.formatExtendOutro({
+test("formatRunOutro success prints push/PR instructions without implying execution", () => {
+  const lines = outroMod.formatRunOutro({
     report: {
       passed: true,
       workspacePath: "/tmp/app",
@@ -155,7 +155,7 @@ test("formatExtendOutro success prints push/PR instructions without implying exe
       blindIntegrity: { passed: true },
     },
     session: {
-      branch: "harness/extend-demo-abc123",
+      branch: "harness/run-demo-abc123",
       baseBranch: "main",
       baseSha: "deadbeefcafebabe",
     },
@@ -168,15 +168,15 @@ test("formatExtendOutro success prints push/PR instructions without implying exe
     specPath: ".harness/spec.yaml",
   });
   const text = lines.join("\n");
-  assert.match(text, /Extend PASSED/);
-  assert.match(text, /git push -u origin harness\/extend-demo-abc123/);
+  assert.match(text, /Run PASSED/);
+  assert.match(text, /git push -u origin harness\/run-demo-abc123/);
   assert.match(text, /gh pr create --base main/);
   assert.match(text, /did not push, open a PR, merge/);
   assert.doesNotMatch(text, /git checkout main/);
 });
 
-test("formatExtendOutro failure prints continue/abandon and stays on harness branch", () => {
-  const lines = outroMod.formatExtendOutro({
+test("formatRunOutro failure prints continue/abandon and stays on harness branch", () => {
+  const lines = outroMod.formatRunOutro({
     report: {
       passed: false,
       workspacePath: "/tmp/app",
@@ -189,7 +189,7 @@ test("formatExtendOutro failure prints continue/abandon and stays on harness bra
       blindIntegrity: { passed: true },
     },
     session: {
-      branch: "harness/extend-demo-abc123",
+      branch: "harness/run-demo-abc123",
       baseBranch: "main",
       baseSha: "deadbeefcafebabe",
     },
@@ -202,10 +202,10 @@ test("formatExtendOutro failure prints continue/abandon and stays on harness bra
     specPath: ".harness/spec.yaml",
   });
   const text = lines.join("\n");
-  assert.match(text, /Extend FAILED/);
-  assert.match(text, /hedera-harness extend \.harness\/spec\.yaml/);
+  assert.match(text, /Run FAILED/);
+  assert.match(text, /hedera-harness run \.harness\/spec\.yaml/);
   assert.match(text, /git checkout main/);
-  assert.match(text, /git branch -D harness\/extend-demo-abc123/);
+  assert.match(text, /git branch -D harness\/run-demo-abc123/);
   assert.match(text, /did not push, open a PR, merge/);
-  assert.doesNotMatch(text, /Optional next steps/);
+  assert.doesNotMatch(text, /Optional next steps \(run manually\)/);
 });

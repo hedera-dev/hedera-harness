@@ -1,0 +1,31 @@
+{
+  "name": "my-feature-static",
+  "description": "Static invariants for the project-centric harness recipe. Adjust required files and text assertions to match your PRD.",
+  "jsonAssertions": [
+    {
+      "file": "package.json",
+      "path": "packageManager",
+      "equals": "yarn@3.2.3"
+    }
+  ],
+  "fileAssertions": {
+    "required": [
+      "README.md",
+      "AGENTS.md",
+      "package.json",
+      "packages/nextjs/package.json",
+      ".harness/spec.yaml",
+      ".harness/prd.md"
+    ],
+    "forbidden": [
+      ".env",
+      "packages/nextjs/.env"
+    ]
+  },
+  "textAssertions": [
+    {
+      "file": "README.md",
+      "contains": ["yarn install"]
+    }
+  ]
+}

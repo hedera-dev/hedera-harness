@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "run" | "extend" | "validate" | "validate-semantic";
+export type HarnessCommand = "init" | "run" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -16,16 +16,48 @@ export interface CommandExecutionResult {
 }
 
 export interface CliOptions {
+  /** Spec path; defaults to `.harness/spec.yaml` for project-centric `run`. */
   specPath: string;
   maxAttempts?: number;
   workspacePath?: string;
-  /** Reuse an existing run directory's workspace (accumulating project). */
+  /**
+   * @deprecated Isolated-run continue directory. Project-centric `run` uses
+   * `--continue <branch>` (`continueBranch`) instead.
+   */
   continueRunDirectory?: string;
+  /** Force a new `harness/run-*` branch even when current branch matches the spec. */
+  forceNew?: boolean;
+  /** Explicit harness branch to checkout and continue. */
+  continueBranch?: string;
+}
+
+export interface InitCliOptions {
+  targetDir?: string;
+  repo?: string;
+  ref?: string;
+  /** Alias for ref (e.g. scaffold template branch). */
+  template?: string;
+  skipInstall?: boolean;
+  provisionSkills?: string[];
+}
+
+export interface InitResult {
+  targetDir: string;
+  repo: string;
+  ref: string;
+  commitSha: string;
+  harnessDir: string;
+  writtenFiles: string[];
+  vendoredSkillCount: number;
+  gitignoreUpdated: boolean;
+  packageJsonUpdated: boolean;
+  nextSteps: string[];
 }
 
 export interface ParsedCli {
   command: HarnessCommand;
   options: CliOptions;
+  initOptions?: InitCliOptions;
 }
 
 export interface AgentRunInput {
@@ -166,20 +198,23 @@ export interface ChainSigner {
   network: "testnet";
 }
 
-export interface ExtendBaselineCommandConfig {
+export interface BaselineCommandConfig {
   name?: string;
   command: string;
   timeoutMs?: number;
 }
 
-export interface ExtendBaselineConfig {
+export interface BaselineConfig {
   /** Non-target health checks run once after branch creation (before generation). */
-  commands?: ExtendBaselineCommandConfig[];
+  commands?: BaselineCommandConfig[];
 }
 
-/** In-place `extend` options (ignored by isolated `run`). */
+/**
+ * Host baseline config for project-centric `run`.
+ * YAML key remains `extend.baseline` for compatibility with existing recipes.
+ */
 export interface ExtendConfig {
-  baseline?: ExtendBaselineConfig;
+  baseline?: BaselineConfig;
 }
 
 export interface TemplateSpec {

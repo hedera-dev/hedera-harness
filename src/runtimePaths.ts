@@ -1,16 +1,19 @@
-/** Session-scoped runtime root for in-place extend (ignored; not committed). */
-export const EXTEND_RUNTIME_DIR = ".harness/runtime";
-export const EXTEND_SKILLS_DIR = `${EXTEND_RUNTIME_DIR}/skills`;
-export const EXTEND_CONTEXT_DIR = `${EXTEND_RUNTIME_DIR}/context`;
+/** Session-scoped runtime root for project-centric `run` (ignored; not committed). */
+export const HARNESS_RUNTIME_DIR = ".harness/runtime";
+export const HARNESS_SKILLS_DIR = `${HARNESS_RUNTIME_DIR}/skills`;
+export const HARNESS_CONTEXT_DIR = `${HARNESS_RUNTIME_DIR}/context`;
 
-/** Isolated `run` workspace vendor locations (existing behavior). */
+/**
+ * Legacy isolated-workspace vendor locations (kept for validate-semantic refresh
+ * and older layouts; project-centric `run` uses `.harness/runtime/`).
+ */
 export const ISOLATED_SKILLS_DIR = ".harness-skills";
 export const ISOLATED_CONTEXT_DIR = ".harness-context";
 
-export function extendPrdRelativePath(): string {
-  return `${EXTEND_CONTEXT_DIR}/prd.md`;
+export function harnessPrdRelativePath(): string {
+  return `${HARNESS_CONTEXT_DIR}/prd.md`;
 }
 
-export function extendContractRelativePath(): string {
-  return `${EXTEND_CONTEXT_DIR}/acceptance-contract.json`;
+export function harnessContractRelativePath(): string {
+  return `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`;
 }

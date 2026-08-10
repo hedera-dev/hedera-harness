@@ -1,0 +1,89 @@
+name: my-feature
+description: >
+  Project-centric harness recipe. Edit this PRD/spec for the feature you want the
+  agent to implement in this scaffold-hbar project, then run: hedera-harness run
+
+# Paths are relative to the project root (parent of .harness/).
+prd: .harness/prd.md
+
+# No seed — `run` operates on the project cwd (created by `hedera-harness init`).
+
+generator:
+  provider: command
+  command: agent
+  args:
+    - -p
+    - --trust
+    - --sandbox
+    - enabled
+    - --workspace
+    - "{workspace}"
+    - --model
+    - composer-2.5
+    - --force
+    - --output-format
+    - stream-json
+    - --stream-partial-output
+  timeoutMs: 3600000
+
+skills:
+  - project-scaffolding
+  - quality-gates
+
+constraints:
+  packageManager: yarn@3.2.3
+  workspaces:
+    - packages/nextjs
+  forbiddenCommands:
+    - npm install
+    - npm run
+    - pnpm install
+    - pnpm run
+
+templateMetadata:
+  name: scaffold-hbar
+  frontend: nextjs-app
+
+# Baseline = existing project health before the agent implements the feature.
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: yarn install
+        timeoutMs: 300000
+      - name: lint
+        command: yarn lint
+        timeoutMs: 180000
+      - name: build
+        command: yarn next:build
+        timeoutMs: 300000
+
+validators:
+  static: .harness/validators/static.json
+  commands: .harness/validators/yarn.json
+
+requiredFiles:
+  - README.md
+  - AGENTS.md
+  - package.json
+  - packages/nextjs/package.json
+  - .harness/spec.yaml
+  - .harness/prd.md
+
+forbiddenFiles:
+  - .env
+  - packages/nextjs/.env
+
+secretScan:
+  failOnFiles:
+    - .env
+    - packages/nextjs/.env
+  patterns:
+    - name: private-key-assignment
+      pattern: "(PRIVATE_KEY|OPERATOR_KEY|HEDERA_OPERATOR_PRIVATE_KEY)\\s*=\\s*(0x)?[0-9a-fA-F]{32,}"
+
+maxAttempts: 3
+
+logging:
+  jsonl: .harness/runs/harness.log.jsonl
+  notes: .harness/runs/harness-notes.md

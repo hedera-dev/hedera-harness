@@ -6,7 +6,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { makeTestTempDir } from "./tmpDir.mjs";
 
-const gitMod = await import(pathToFileURL(path.resolve("dist/extendGit.js")).href);
+const gitMod = await import(pathToFileURL(path.resolve("dist/harnessGit.js")).href);
 
 function git(cwd, args) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -32,11 +32,12 @@ async function initRepo() {
   return root;
 }
 
-test("buildExtendBranchName uses harness/extend-<slug>-<id>", () => {
-  const name = gitMod.buildExtendBranchName("My Demo App!", "abc123");
-  assert.equal(name, "harness/extend-my-demo-app-abc123");
-  assert.equal(gitMod.isHarnessExtendBranch(name), true);
-  assert.equal(gitMod.isHarnessExtendBranch("main"), false);
+test("buildRunBranchName uses harness/run-<slug>-<id>", () => {
+  const name = gitMod.buildRunBranchName("My Demo App!", "abc123");
+  assert.equal(name, "harness/run-my-demo-app-abc123");
+  assert.equal(gitMod.isHarnessBranch(name), true);
+  assert.equal(gitMod.isHarnessBranch("harness/extend-legacy-abc123"), true);
+  assert.equal(gitMod.isHarnessBranch("main"), false);
 });
 
 test("filterRelevantDirtyEntries ignores runtime vendor/cache paths", () => {
@@ -53,45 +54,45 @@ test("filterRelevantDirtyEntries ignores runtime vendor/cache paths", () => {
   );
 });
 
-test("createAndCheckoutExtendBranch creates harness branch from clean HEAD", async () => {
+test("createAndCheckoutHarnessBranch creates harness branch from clean HEAD", async () => {
   const root = await initRepo();
   const base = git(root, ["branch", "--show-current"]);
-  const created = await gitMod.createAndCheckoutExtendBranch(root, "demo-spec", "f00bar");
-  assert.equal(created.branch, "harness/extend-demo-spec-f00bar");
+  const created = await gitMod.createAndCheckoutHarnessBranch(root, "demo-spec", "f00bar");
+  assert.equal(created.branch, "harness/run-demo-spec-f00bar");
   assert.equal(git(root, ["branch", "--show-current"]), created.branch);
   assert.equal(await gitMod.resolveCurrentBranch(root), created.branch);
   assert.notEqual(base, created.branch);
 });
 
-test("assertWorkingTreeCleanForExtendStart refuses dirty trees", async () => {
+test("assertWorkingTreeCleanForRunStart refuses dirty trees", async () => {
   const root = await initRepo();
   await writeFile(path.join(root, "dirty.txt"), "nope\n");
   await assert.rejects(
-    () => gitMod.assertWorkingTreeCleanForExtendStart(root),
+    () => gitMod.assertWorkingTreeCleanForRunStart(root),
     /clean working tree/i,
   );
 });
 
-test("assertWorkingTreeCleanForExtendStart allows only runtime untracked paths", async () => {
+test("assertWorkingTreeCleanForRunStart allows only runtime untracked paths", async () => {
   const root = await initRepo();
   await mkdir(path.join(root, ".harness-skills", "x"), { recursive: true });
   await writeFile(path.join(root, ".harness-skills", "x", "SKILL.md"), "# skill\n");
-  await gitMod.assertWorkingTreeCleanForExtendStart(root);
+  await gitMod.assertWorkingTreeCleanForRunStart(root);
 });
 
-test("commitExtendAttempt stages only consumer-relevant paths", async () => {
+test("commitAttempt stages only consumer-relevant paths", async () => {
   const root = await initRepo();
-  await gitMod.createAndCheckoutExtendBranch(root, "commit-demo", "c0ffee");
+  await gitMod.createAndCheckoutHarnessBranch(root, "commit-demo", "c0ffee");
   await mkdir(path.join(root, ".harness-skills"), { recursive: true });
   await writeFile(path.join(root, ".harness-skills", "SKILL.md"), "# ignored\n");
   await writeFile(path.join(root, "app.ts"), "export {}\n");
 
-  const result = await gitMod.commitExtendAttempt(root, 1, false, [
+  const result = await gitMod.commitAttempt(root, 1, false, [
     { id: "f1", category: "agent", message: "one" },
     { id: "f2", category: "agent", message: "two" },
   ]);
   assert.equal(result.committed, true);
-  assert.match(result.message, /extension attempt 1 failed/);
+  assert.match(result.message, /run attempt 1 failed/);
   const show = git(root, ["show", "--name-only", "--pretty=format:", "HEAD"]);
   assert.match(show, /app\.ts/);
   assert.doesNotMatch(show, /harness-skills/);

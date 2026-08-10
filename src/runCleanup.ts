@@ -1,10 +1,10 @@
 import { access, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PLAYWRIGHT_MCP_SERVER } from "./contextVendor.js";
-import { listExtendConsumerDirtyPaths } from "./extendGit.js";
-import { EXTEND_RUNTIME_DIR } from "./runtimePaths.js";
+import { listHarnessConsumerDirtyPaths } from "./harnessGit.js";
+import { HARNESS_RUNTIME_DIR } from "./runtimePaths.js";
 
-export interface ExtendCleanupResult {
+export interface CleanupResult {
   removedPaths: string[];
   mcpStripped: boolean;
   consumerDirtyPaths: string[];
@@ -12,7 +12,7 @@ export interface ExtendCleanupResult {
 }
 
 const REMOVABLE_RUNTIME_DIRS = [
-  EXTEND_RUNTIME_DIR,
+  HARNESS_RUNTIME_DIR,
   ".harness-skills",
   ".harness-context",
   ".skill-cache",
@@ -23,9 +23,9 @@ const REMOVABLE_RUNTIME_DIRS = [
  * from `.cursor/mcp.json` if still present. Does not delete `.harness/runs/`
  * (reports/session must remain). Never switches branches or touches remotes.
  */
-export async function cleanupExtendRuntimeInjections(
+export async function cleanupRuntimeInjections(
   workspacePath: string,
-): Promise<ExtendCleanupResult> {
+): Promise<CleanupResult> {
   const removedPaths: string[] = [];
 
   for (const relativeDir of REMOVABLE_RUNTIME_DIRS) {
@@ -56,7 +56,7 @@ export async function cleanupExtendRuntimeInjections(
     }
   }
 
-  const consumerDirtyPaths = await listExtendConsumerDirtyPaths(workspacePath);
+  const consumerDirtyPaths = await listHarnessConsumerDirtyPaths(workspacePath);
   return {
     removedPaths,
     mcpStripped,

@@ -1,18 +1,19 @@
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { logPhase } from "./attemptLoop.js";
+import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branchDetection.js";
 import { executeCommand } from "./command.js";
 import {
-  assertWorkingTreeCleanForExtendStart,
+  assertWorkingTreeCleanForRunStart,
   commandExists,
-  createAndCheckoutExtendBranch,
+  createAndCheckoutHarnessBranch,
   filterRelevantDirtyEntries,
-  isHarnessExtendBranch,
   readGitRepoSnapshot,
   resolveHeadSha,
   type GitRepoSnapshot,
-} from "./extendGit.js";
+} from "./harnessGit.js";
 import {
-  createExtendLayout,
+  createSessionLayout,
   openRunLayout,
   type RunLayout,
   writeJsonFile,
@@ -20,13 +21,13 @@ import {
 import type { LoadedTemplateSpec } from "./specLoader.js";
 import type { TemplateSpec } from "./types.js";
 
-export const EXTEND_SESSION_SCHEMA_VERSION = 1;
-export const EXTEND_SESSION_FILENAME = "session.json";
+export const SESSION_SCHEMA_VERSION = 1;
+export const SESSION_FILENAME = "session.json";
 
-export type ExtendSessionMode = "start" | "continue";
-export type ExtendGateStatus = "pending" | "passed" | "failed" | "aborted";
+export type SessionMode = "start" | "continue";
+export type GateStatus = "pending" | "passed" | "failed" | "aborted";
 
-export interface ExtendBaselineResult {
+export interface BaselineResult {
   passed: boolean;
   commands: Array<{
     name: string;
@@ -37,7 +38,7 @@ export interface ExtendBaselineResult {
   }>;
 }
 
-export interface ExtendSessionMetadata {
+export interface SessionMetadata {
   schemaVersion: number;
   sessionId: string;
   runDirectory: string;
@@ -53,49 +54,53 @@ export interface ExtendSessionMetadata {
   cycle: number;
   lastAttempt: number;
   lastCheckpointSha: string;
-  gateStatus: ExtendGateStatus;
-  baselineResult?: ExtendBaselineResult;
+  gateStatus: GateStatus;
+  baselineResult?: BaselineResult;
 }
 
-export interface PrepareExtendSessionInput {
+export interface PrepareSessionInput {
   workspacePath: string;
   loaded: LoadedTemplateSpec;
   /** Optional override used by tests (skip host tool checks). */
   skipToolChecks?: boolean;
   /** Optional override used by tests (skip baseline commands). */
   skipBaseline?: boolean;
+  /** Force a new harness branch even when current branch matches the spec. */
+  forceNew?: boolean;
+  /** Explicit harness branch to checkout and continue. */
+  continueBranch?: string;
 }
 
-export interface PreparedExtendSession {
-  mode: ExtendSessionMode;
+export interface PreparedSession {
+  mode: SessionMode;
   layout: RunLayout;
-  session: ExtendSessionMetadata;
+  session: SessionMetadata;
   snapshot: GitRepoSnapshot;
   startingAttempt: number;
   cycle: number | undefined;
 }
 
-export class ExtendSessionError extends Error {
+export class SessionError extends Error {
   readonly code: string;
 
   constructor(code: string, message: string) {
     super(message);
-    this.name = "ExtendSessionError";
+    this.name = "SessionError";
     this.code = code;
   }
 }
 
 export function sessionFilePath(runDirectory: string): string {
-  return path.join(runDirectory, EXTEND_SESSION_FILENAME);
+  return path.join(runDirectory, SESSION_FILENAME);
 }
 
-export async function readExtendSession(
+export async function readSession(
   runDirectory: string,
-): Promise<ExtendSessionMetadata | null> {
+): Promise<SessionMetadata | null> {
   try {
     const raw = await readFile(sessionFilePath(runDirectory), "utf8");
-    const parsed = JSON.parse(raw) as ExtendSessionMetadata;
-    if (parsed.schemaVersion !== EXTEND_SESSION_SCHEMA_VERSION) {
+    const parsed = JSON.parse(raw) as SessionMetadata;
+    if (parsed.schemaVersion !== SESSION_SCHEMA_VERSION) {
       return null;
     }
     if (typeof parsed.sessionId !== "string" || typeof parsed.branch !== "string") {
@@ -107,7 +112,7 @@ export async function readExtendSession(
   }
 }
 
-export async function writeExtendSession(session: ExtendSessionMetadata): Promise<void> {
+export async function writeSession(session: SessionMetadata): Promise<void> {
   await mkdir(session.runDirectory, { recursive: true });
   await writeJsonFile(sessionFilePath(session.runDirectory), {
     ...session,
@@ -115,38 +120,53 @@ export async function writeExtendSession(session: ExtendSessionMetadata): Promis
   });
 }
 
-export async function updateExtendSession(
+export async function updateSession(
   runDirectory: string,
-  patch: Partial<ExtendSessionMetadata>,
-): Promise<ExtendSessionMetadata> {
-  const current = await readExtendSession(runDirectory);
+  patch: Partial<SessionMetadata>,
+): Promise<SessionMetadata> {
+  const current = await readSession(runDirectory);
   if (!current) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "session-missing",
-      `Cannot update extend session: missing ${sessionFilePath(runDirectory)}`,
+      `Cannot update harness session: missing ${sessionFilePath(runDirectory)}`,
     );
   }
-  const next: ExtendSessionMetadata = {
+  const next: SessionMetadata = {
     ...current,
     ...patch,
     updatedAt: new Date().toISOString(),
   };
-  await writeExtendSession(next);
+  await writeSession(next);
   return next;
 }
 
 /**
- * Read-only preflight + branch/session classification + start/continue orchestration.
- * Mutates git only after classification decides a clean normal-branch start.
+ * Read-only preflight + smart branch classification + start/continue orchestration.
+ *
+ * - Same harness branch + same spec → continue
+ * - Different spec (or normal branch) → new `harness/run-*` branch
+ * - `--new` → always new branch
+ * - `--continue <branch>` → checkout that branch and continue
  */
-export async function prepareExtendSession(
-  input: PrepareExtendSessionInput,
-): Promise<PreparedExtendSession> {
+export async function prepareSession(
+  input: PrepareSessionInput,
+): Promise<PreparedSession> {
   const workspacePath = path.resolve(input.workspacePath);
-  const { spec, specPath } = input.loaded;
+  const { spec } = input.loaded;
 
   await assertPathExists(workspacePath, "workspace");
   await assertRecipeFilesExist(spec);
+
+  if (input.forceNew && input.continueBranch) {
+    throw new SessionError(
+      "conflicting-flags",
+      "Cannot pass both --new and --continue.",
+    );
+  }
+
+  if (input.continueBranch?.trim()) {
+    await checkoutContinueBranch(workspacePath, input.continueBranch.trim());
+  }
 
   const snapshot = await readGitRepoSnapshot(workspacePath);
   await assertReadOnlyGitPreflight(snapshot);
@@ -155,15 +175,24 @@ export async function prepareExtendSession(
     await assertHostTooling(workspacePath, spec);
   }
 
-  if (isHarnessExtendBranch(snapshot.branch)) {
-    return continueExtendSession({
+  const decision = decideBranchAction({
+    currentBranch: snapshot.branch,
+    specName: spec.name,
+    forceNew: input.forceNew,
+    continueBranch: input.continueBranch,
+  });
+
+  if (decision.action === "continue") {
+    return continueSession({
       workspacePath,
       loaded: input.loaded,
       snapshot,
     });
   }
 
-  return startExtendSession({
+  // Different-spec on a harness branch: start a new branch from current HEAD
+  // (accumulates prior feature work) after a clean-tree check.
+  return startSession({
     workspacePath,
     loaded: input.loaded,
     snapshot,
@@ -171,32 +200,72 @@ export async function prepareExtendSession(
   });
 }
 
-async function startExtendSession(input: {
+async function checkoutContinueBranch(workspacePath: string, branch: string): Promise<void> {
+  if (!isHarnessBranch(branch)) {
+    throw new SessionError(
+      "invalid-continue-branch",
+      [
+        `--continue expects a harness branch (harness/run-* or legacy harness/extend-*).`,
+        `Got ${JSON.stringify(branch)}.`,
+      ].join(" "),
+    );
+  }
+
+  const parsed = parseHarnessBranch(branch);
+  if (!parsed) {
+    throw new SessionError(
+      "invalid-continue-branch",
+      `Unable to parse harness branch name ${JSON.stringify(branch)}.`,
+    );
+  }
+
+  await assertWorkingTreeCleanForRunStart(workspacePath);
+
+  const result = await executeCommand({
+    command: "git",
+    args: ["checkout", branch],
+    cwd: workspacePath,
+  });
+  if (result.exitCode !== 0) {
+    throw new SessionError(
+      "continue-checkout-failed",
+      [
+        `Failed to checkout continue branch ${JSON.stringify(branch)}.`,
+        result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`,
+      ].join("\n"),
+    );
+  }
+}
+
+async function startSession(input: {
   workspacePath: string;
   loaded: LoadedTemplateSpec;
   snapshot: GitRepoSnapshot;
   skipBaseline?: boolean;
-}): Promise<PreparedExtendSession> {
+}): Promise<PreparedSession> {
   const { workspacePath, loaded, snapshot } = input;
   const { spec, specPath } = loaded;
 
   if (!snapshot.branch) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "detached-or-unborn",
-      "Extend start requires an attached branch name (not detached HEAD).",
+      "Harness run start requires an attached branch name (not detached HEAD).",
     );
   }
 
-  await assertWorkingTreeCleanForExtendStart(workspacePath);
+  await assertWorkingTreeCleanForRunStart(workspacePath);
 
   const baseBranch = snapshot.branch;
   const baseSha = snapshot.headSha;
-  const created = await createAndCheckoutExtendBranch(workspacePath, spec.name);
-  const layout = await createExtendLayout(workspacePath, spec.name, resolveExtendLogging(spec));
+  logPhase("Creating harness branch", `from ${baseBranch}`);
+  const created = await createAndCheckoutHarnessBranch(workspacePath, spec.name);
+  logPhase("Harness branch ready", created.branch);
+  const layout = await createSessionLayout(workspacePath, spec.name, resolveSessionLogging(spec));
+  logPhase("Run artifacts directory", layout.runDirectory);
 
   const startedAt = new Date().toISOString();
-  let session: ExtendSessionMetadata = {
-    schemaVersion: EXTEND_SESSION_SCHEMA_VERSION,
+  let session: SessionMetadata = {
+    schemaVersion: SESSION_SCHEMA_VERSION,
     sessionId: path.basename(layout.runDirectory),
     runDirectory: layout.runDirectory,
     workspacePath,
@@ -215,19 +284,20 @@ async function startExtendSession(input: {
   };
 
   if (!input.skipBaseline) {
-    const baselineResult = await runExtendBaseline(workspacePath, spec);
+    logPhase("Running host baseline health checks", workspacePath);
+    const baselineResult = await runBaseline(workspacePath, spec);
     session = {
       ...session,
       baselineResult,
       updatedAt: new Date().toISOString(),
     };
     if (!baselineResult.passed) {
-      await writeExtendSession(session);
-      throw new ExtendSessionError(
+      await writeSession(session);
+      throw new SessionError(
         "baseline-failed",
         [
-          "Extend baseline health commands failed before generation.",
-          "These check the existing app (not the extension acceptance gates).",
+          "Harness baseline health commands failed before generation.",
+          "These check the existing app (not the run acceptance gates).",
           ...baselineResult.commands
             .filter(command => command.exitCode !== 0)
             .map(
@@ -239,7 +309,7 @@ async function startExtendSession(input: {
     }
   }
 
-  await writeExtendSession(session);
+  await writeSession(session);
 
   return {
     mode: "start",
@@ -251,16 +321,16 @@ async function startExtendSession(input: {
   };
 }
 
-async function continueExtendSession(input: {
+async function continueSession(input: {
   workspacePath: string;
   loaded: LoadedTemplateSpec;
   snapshot: GitRepoSnapshot;
-}): Promise<PreparedExtendSession> {
+}): Promise<PreparedSession> {
   const { workspacePath, loaded, snapshot } = input;
   const { spec, specPath } = loaded;
   const branch = snapshot.branch!;
 
-  const session = await findMatchingExtendSession({
+  const session = await findMatchingSession({
     workspacePath,
     branch,
     specSlug: spec.name,
@@ -269,20 +339,20 @@ async function continueExtendSession(input: {
   });
 
   if (!session) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "unknown-harness-branch",
       [
-        `Current branch ${JSON.stringify(branch)} looks like a harness extend branch,`,
+        `Current branch ${JSON.stringify(branch)} looks like a harness run branch,`,
         "but no matching local session metadata was found under .harness/runs/*/session.json.",
-        "Refuse to create a nested branch. Checkout a normal branch to start a new extension,",
-        "or restore the matching session metadata before continuing.",
+        "Refuse to create a nested branch. Use --new from a clean tree to start a fresh run,",
+        "checkout a normal branch, or restore the matching session metadata before continuing.",
       ].join(" "),
     );
   }
 
   const relevantDirty = filterRelevantDirtyEntries(snapshot.entries);
   if (relevantDirty.length > 0) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "interrupted-dirty",
       formatInterruptedDirtyRecovery({
         branch,
@@ -294,10 +364,10 @@ async function continueExtendSession(input: {
   }
 
   if (snapshot.headSha !== session.lastCheckpointSha) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "checkpoint-mismatch",
       [
-        "Extend continue refused: HEAD does not match the session lastCheckpointSha.",
+        "Harness continue refused: HEAD does not match the session lastCheckpointSha.",
         `HEAD=${snapshot.headSha}`,
         `lastCheckpointSha=${session.lastCheckpointSha}`,
         "If you intentionally added commits, update or abandon the session before re-running.",
@@ -306,17 +376,17 @@ async function continueExtendSession(input: {
     );
   }
 
-  const layout = await openRunLayout(session.runDirectory, resolveExtendLogging(spec));
-  if (layout.mode !== "in-place-extend") {
-    throw new ExtendSessionError(
+  const layout = await openRunLayout(session.runDirectory, resolveSessionLogging(spec));
+  if (layout.mode !== "in-place-run") {
+    throw new SessionError(
       "layout-mismatch",
-      `Expected in-place-extend layout at ${layout.runDirectory}, got ${layout.mode}`,
+      `Expected in-place-run layout at ${layout.runDirectory}, got ${layout.mode}`,
     );
   }
 
   const cycle = session.cycle + 1;
   const startingAttempt = session.lastAttempt + 1;
-  const updated = await updateExtendSession(session.runDirectory, {
+  const updated = await updateSession(session.runDirectory, {
     cycle,
     specPath,
     gateStatus: "pending",
@@ -332,13 +402,13 @@ async function continueExtendSession(input: {
   };
 }
 
-export async function findMatchingExtendSession(input: {
+export async function findMatchingSession(input: {
   workspacePath: string;
   branch: string;
   specSlug: string;
   specPath: string;
   repositoryRoot: string;
-}): Promise<ExtendSessionMetadata | null> {
+}): Promise<SessionMetadata | null> {
   const runsRoot = path.join(input.workspacePath, ".harness", "runs");
   let entries: string[];
   try {
@@ -347,10 +417,10 @@ export async function findMatchingExtendSession(input: {
     return null;
   }
 
-  const matches: ExtendSessionMetadata[] = [];
+  const matches: SessionMetadata[] = [];
   for (const entry of entries) {
     const runDirectory = path.join(runsRoot, entry);
-    const session = await readExtendSession(runDirectory);
+    const session = await readSession(runDirectory);
     if (!session) continue;
     if (session.branch !== input.branch) continue;
     if (session.specSlug !== input.specSlug) continue;
@@ -373,19 +443,19 @@ export async function findMatchingExtendSession(input: {
 
 async function assertReadOnlyGitPreflight(snapshot: GitRepoSnapshot): Promise<void> {
   if (snapshot.detached) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "detached-head",
-      "Extend requires an attached HEAD (checkout a branch before running).",
+      "Harness run requires an attached HEAD (checkout a branch before running).",
     );
   }
   if (snapshot.inProgressOperation) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "git-operation-in-progress",
-      `Extend refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
+      `Harness run refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
     );
   }
   if (!snapshot.branch) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "missing-branch",
       "Unable to determine the current git branch.",
     );
@@ -395,23 +465,23 @@ async function assertReadOnlyGitPreflight(snapshot: GitRepoSnapshot): Promise<vo
 async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void> {
   const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
   if (!Number.isFinite(nodeMajor) || nodeMajor < 20) {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "node-version",
-      `Extend requires Node.js >= 20 (found ${process.versions.node}).`,
+      `Harness run requires Node.js >= 20 (found ${process.versions.node}).`,
     );
   }
 
   if (!(await commandExists("git", cwd))) {
-    throw new ExtendSessionError("missing-git", "Extend requires `git` on PATH.");
+    throw new SessionError("missing-git", "Harness run requires `git` on PATH.");
   }
 
   const agentCommand = spec.generator.command?.trim() || "agent";
   // Only enforce PATH presence for bare commands (not absolute paths / npx wrappers).
   if (!agentCommand.includes("/") && !agentCommand.includes("\\")) {
     if (!(await commandExists(agentCommand, cwd))) {
-      throw new ExtendSessionError(
+      throw new SessionError(
         "missing-agent",
-        `Extend requires generator command ${JSON.stringify(agentCommand)} on PATH.`,
+        `Harness run requires generator command ${JSON.stringify(agentCommand)} on PATH.`,
       );
     }
   }
@@ -420,9 +490,9 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
   if (packageManager) {
     const binary = packageManager.split("@")[0] || packageManager;
     if (!(await commandExists(binary, cwd))) {
-      throw new ExtendSessionError(
+      throw new SessionError(
         "missing-package-manager",
-        `Extend requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`,
+        `Harness run requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`,
       );
     }
   }
@@ -450,30 +520,32 @@ async function assertPathExists(filePath: string, label: string): Promise<void> 
   try {
     await access(filePath);
   } catch {
-    throw new ExtendSessionError(
+    throw new SessionError(
       "missing-recipe-file",
-      `Extend preflight failed: required ${label} path does not exist: ${filePath}`,
+      `Harness run preflight failed: required ${label} path does not exist: ${filePath}`,
     );
   }
 }
 
-async function runExtendBaseline(
+async function runBaseline(
   workspacePath: string,
   spec: TemplateSpec,
-): Promise<ExtendBaselineResult> {
+): Promise<BaselineResult> {
   const commands = spec.extend?.baseline?.commands ?? [];
   if (commands.length === 0) {
     return { passed: true, commands: [] };
   }
 
-  const results: ExtendBaselineResult["commands"] = [];
+  const results: BaselineResult["commands"] = [];
   for (const commandConfig of commands) {
     const name = commandConfig.name?.trim() || commandConfig.command;
+    logPhase("Baseline command", name);
     const result = await executeCommand({
       command: commandConfig.command,
       cwd: workspacePath,
       timeoutMs: commandConfig.timeoutMs,
       shell: true,
+      streamOutput: true,
     });
     results.push({
       name,
@@ -482,6 +554,10 @@ async function runExtendBaseline(
       durationMs: result.durationMs,
       timedOut: result.timedOut,
     });
+    logPhase(
+      "Baseline command finished",
+      `${name} exit=${result.exitCode} durationMs=${result.durationMs}`,
+    );
     if (result.exitCode !== 0) {
       return { passed: false, commands: results };
     }
@@ -489,7 +565,7 @@ async function runExtendBaseline(
   return { passed: true, commands: results };
 }
 
-function resolveExtendLogging(spec: TemplateSpec): { jsonlPath: string; notesPath: string } {
+function resolveSessionLogging(spec: TemplateSpec): { jsonlPath: string; notesPath: string } {
   return {
     jsonlPath: spec.logging.jsonlPath,
     notesPath: spec.logging.notesPath,
@@ -498,25 +574,25 @@ function resolveExtendLogging(spec: TemplateSpec): { jsonlPath: string; notesPat
 
 function formatInterruptedDirtyRecovery(input: {
   branch: string;
-  session: ExtendSessionMetadata;
+  session: SessionMetadata;
   dirty: string[];
   headSha: string;
 }): string {
   const preview = input.dirty.slice(0, 20).join("\n");
   const more = input.dirty.length > 20 ? `\n...and ${input.dirty.length - 20} more` : "";
   return [
-    "Extend session interrupted with uncommitted consumer changes.",
+    "Harness session interrupted with uncommitted consumer changes.",
     `Branch: ${input.branch}`,
     `HEAD: ${input.headSha}`,
     `Last checkpoint: ${input.session.lastCheckpointSha}`,
     `Session: ${sessionFilePath(input.session.runDirectory)}`,
     "",
     "The harness will not auto-commit potentially user-authored changes.",
-    "Recover manually, then re-run extend on this branch:",
+    "Recover manually, then re-run on this branch:",
     "  git status",
     "  git diff",
     "  # discard unintended files, or commit intentional work",
-    "  # then: hedera-harness extend <spec>",
+    "  # then: hedera-harness run <spec>",
     "",
     "Dirty paths:",
     preview + more,
@@ -524,13 +600,13 @@ function formatInterruptedDirtyRecovery(input: {
 }
 
 /** Test helper: record checkpoint SHA / attempt counters after an attempt. */
-export async function recordExtendCheckpoint(input: {
+export async function recordCheckpoint(input: {
   runDirectory: string;
   attempt: number;
   checkpointSha: string;
-  gateStatus?: ExtendGateStatus;
-}): Promise<ExtendSessionMetadata> {
-  return updateExtendSession(input.runDirectory, {
+  gateStatus?: GateStatus;
+}): Promise<SessionMetadata> {
+  return updateSession(input.runDirectory, {
     lastAttempt: input.attempt,
     lastCheckpointSha: input.checkpointSha,
     ...(input.gateStatus ? { gateStatus: input.gateStatus } : {}),

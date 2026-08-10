@@ -1,14 +1,27 @@
 import { access } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import {
+  HARNESS_EXTEND_BRANCH_PREFIX,
+  HARNESS_RUN_BRANCH_PREFIX,
+  buildRunBranchName,
+  isHarnessBranch,
+  slugifyForBranch,
+} from "./branchDetection.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { ValidationFinding } from "./types.js";
 import type { WorkspaceGitCommitResult } from "./workspaceGit.js";
 
-export const HARNESS_EXTEND_BRANCH_PREFIX = "harness/extend-";
+export {
+  HARNESS_EXTEND_BRANCH_PREFIX,
+  HARNESS_RUN_BRANCH_PREFIX,
+  buildRunBranchName,
+  isHarnessBranch,
+  slugifyForBranch,
+};
 
 /** Paths that must never be committed / must not block clean continue. */
-export const EXTEND_RUNTIME_PATH_PREFIXES = [
+export const HARNESS_RUNTIME_PATH_PREFIXES = [
   ".harness/runs/",
   ".harness/cache/",
   ".harness/runtime/",
@@ -24,7 +37,7 @@ export const EXTEND_RUNTIME_PATH_PREFIXES = [
   "test-results/",
 ] as const;
 
-export const EXTEND_RUNTIME_PATH_NAMES = new Set([
+export const HARNESS_RUNTIME_PATH_NAMES = new Set([
   ".harness/runs",
   ".harness/cache",
   ".harness/runtime",
@@ -41,8 +54,8 @@ export const EXTEND_RUNTIME_PATH_NAMES = new Set([
   "chain-signer.json",
 ]);
 
-/** Secret / credential paths that must never be staged by extend checkpoints. */
-export const EXTEND_SECRET_PATH_MARKERS = [
+/** Secret / credential paths that must never be staged by harness checkpoints. */
+export const HARNESS_SECRET_PATH_MARKERS = [
   /^\.env(\.|$)/i,
   /(^|\/)\.env(\.|$)/i,
   /(^|\/)secrets?\//i,
@@ -70,44 +83,25 @@ export interface GitRepoSnapshot {
   entries: GitWorkingTreeEntry[];
 }
 
-export function isHarnessExtendBranch(branch: string | null | undefined): boolean {
-  return Boolean(branch && branch.startsWith(HARNESS_EXTEND_BRANCH_PREFIX));
-}
-
-export function slugifyForBranch(value: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-  return slug || "extension";
-}
-
-export function buildExtendBranchName(specSlug: string, shortId?: string): string {
-  const id = shortId ?? randomBytes(3).toString("hex");
-  return `${HARNESS_EXTEND_BRANCH_PREFIX}${slugifyForBranch(specSlug)}-${id}`;
-}
-
-export function isExtendRuntimePath(relativePath: string): boolean {
+export function isHarnessRuntimePath(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (EXTEND_RUNTIME_PATH_NAMES.has(normalized)) {
+  if (HARNESS_RUNTIME_PATH_NAMES.has(normalized)) {
     return true;
   }
-  return EXTEND_RUNTIME_PATH_PREFIXES.some(
+  return HARNESS_RUNTIME_PATH_PREFIXES.some(
     prefix => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix),
   );
 }
 
-export function isExtendSecretPath(relativePath: string): boolean {
+export function isHarnessSecretPath(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
-  return EXTEND_SECRET_PATH_MARKERS.some(pattern => pattern.test(normalized));
+  return HARNESS_SECRET_PATH_MARKERS.some(pattern => pattern.test(normalized));
 }
 
 export function filterRelevantDirtyEntries(entries: GitWorkingTreeEntry[]): GitWorkingTreeEntry[] {
   return entries.filter(entry => {
-    if (isExtendRuntimePath(entry.path)) return false;
-    if (entry.origPath && isExtendRuntimePath(entry.origPath)) return false;
+    if (isHarnessRuntimePath(entry.path)) return false;
+    if (entry.origPath && isHarnessRuntimePath(entry.origPath)) return false;
     // Ignore harness-injected MCP churn for cleanliness / continue decisions.
     if (entry.path === ".cursor/mcp.json" || entry.path.endsWith("/.cursor/mcp.json")) {
       return false;
@@ -116,15 +110,15 @@ export function filterRelevantDirtyEntries(entries: GitWorkingTreeEntry[]): GitW
   });
 }
 
-/** Paths safe to stage for an extend checkpoint (excludes runtime + secrets). */
-export function filterCommitableExtendEntries(
+/** Paths safe to stage for a harness checkpoint (excludes runtime + secrets). */
+export function filterCommitableHarnessEntries(
   entries: GitWorkingTreeEntry[],
 ): { commitable: GitWorkingTreeEntry[]; skippedSecrets: GitWorkingTreeEntry[] } {
   const relevant = filterRelevantDirtyEntries(entries);
   const commitable: GitWorkingTreeEntry[] = [];
   const skippedSecrets: GitWorkingTreeEntry[] = [];
   for (const entry of relevant) {
-    if (isExtendSecretPath(entry.path) || (entry.origPath && isExtendSecretPath(entry.origPath))) {
+    if (isHarnessSecretPath(entry.path) || (entry.origPath && isHarnessSecretPath(entry.origPath))) {
       skippedSecrets.push(entry);
       continue;
     }
@@ -133,12 +127,12 @@ export function filterCommitableExtendEntries(
   return { commitable, skippedSecrets };
 }
 
-export function formatExtendAttemptCommitMessage(input: {
+export function formatAttemptCommitMessage(input: {
   attempt: number;
   passed: boolean;
   findings: ValidationFinding[];
 }): { subject: string; body: string } {
-  const subject = `harness: extension attempt ${input.attempt} ${input.passed ? "passed" : "failed"}`;
+  const subject = `harness: run attempt ${input.attempt} ${input.passed ? "passed" : "failed"}`;
   const findingIds = input.findings
     .map(finding => finding.id)
     .filter(Boolean)
@@ -148,7 +142,7 @@ export function formatExtendAttemptCommitMessage(input: {
     findingIds.length > 0 ? `Finding IDs: ${findingIds.join(", ")}` : undefined,
     input.findings.length > 30 ? `…and ${input.findings.length - 30} more` : undefined,
     "",
-    "Created by hedera-harness extend. Optional: squash attempt commits before merge.",
+    "Created by hedera-harness run. Optional: squash attempt commits before merge.",
   ].filter((line): line is string => line !== undefined);
   return { subject, body: bodyLines.join("\n") };
 }
@@ -269,7 +263,7 @@ export async function readWorkingTreeEntries(cwd: string): Promise<GitWorkingTre
   return entries;
 }
 
-export async function assertWorkingTreeCleanForExtendStart(cwd: string): Promise<void> {
+export async function assertWorkingTreeCleanForRunStart(cwd: string): Promise<void> {
   const entries = filterRelevantDirtyEntries(await readWorkingTreeEntries(cwd));
   if (entries.length === 0) return;
 
@@ -280,7 +274,7 @@ export async function assertWorkingTreeCleanForExtendStart(cwd: string): Promise
   const more = entries.length > 12 ? `\n...and ${entries.length - 12} more` : "";
   throw new Error(
     [
-      "Extend requires a completely clean working tree on a normal branch (no auto-stash).",
+      "Harness run requires a completely clean working tree (no auto-stash).",
       "Commit or discard local changes, then re-run.",
       preview + more,
     ].join("\n"),
@@ -288,15 +282,15 @@ export async function assertWorkingTreeCleanForExtendStart(cwd: string): Promise
 }
 
 /**
- * Create and checkout `harness/extend-<slug>-<short-id>` from the current HEAD.
- * Caller must already be on a clean, attached, non-harness branch.
+ * Create and checkout `harness/run-<slug>-<short-id>` from the current HEAD.
+ * Caller must already have a clean working tree on an attached branch.
  */
-export async function createAndCheckoutExtendBranch(
+export async function createAndCheckoutHarnessBranch(
   cwd: string,
   specSlug: string,
   shortId?: string,
 ): Promise<{ branch: string; headSha: string }> {
-  const branch = buildExtendBranchName(specSlug, shortId);
+  const branch = buildRunBranchName(specSlug, shortId ?? randomBytes(3).toString("hex"));
   await executeCommandOrThrow({
     command: "git",
     args: ["checkout", "-b", branch],
@@ -306,21 +300,21 @@ export async function createAndCheckoutExtendBranch(
   return { branch, headSha };
 }
 
-export interface ExtendCheckpointCommitResult extends WorkspaceGitCommitResult {
+export interface CheckpointCommitResult extends WorkspaceGitCommitResult {
   skippedSecrets: string[];
 }
 
 /**
- * Commit consumer-relevant changes for an extend attempt.
+ * Commit consumer-relevant changes for a harness run attempt.
  * Uses the consumer repo's normal Git identity/hooks.
  * Never stages runtime/cache/vendor/secrets/MCP paths; never `git add -A`.
  */
-export async function commitExtendAttempt(
+export async function commitAttempt(
   workspacePath: string,
   attempt: number,
   passed: boolean,
   findings: ValidationFinding[] | number = [],
-): Promise<ExtendCheckpointCommitResult> {
+): Promise<CheckpointCommitResult> {
   const findingList: ValidationFinding[] = Array.isArray(findings)
     ? findings
     : Array.from({ length: findings }, (_, index) => ({
@@ -329,12 +323,12 @@ export async function commitExtendAttempt(
         message: `finding ${index + 1}`,
       }));
 
-  const { subject, body } = formatExtendAttemptCommitMessage({
+  const { subject, body } = formatAttemptCommitMessage({
     attempt,
     passed,
     findings: findingList,
   });
-  const { commitable, skippedSecrets } = filterCommitableExtendEntries(
+  const { commitable, skippedSecrets } = filterCommitableHarnessEntries(
     await readWorkingTreeEntries(workspacePath),
   );
 
@@ -349,7 +343,7 @@ export async function commitExtendAttempt(
   // Safety: refuse path traversal / absolute paths in porcelain output.
   for (const entry of commitable) {
     if (path.isAbsolute(entry.path) || entry.path.includes("\0") || entry.path.startsWith("..")) {
-      throw new Error(`Extend checkpoint refused unsafe path: ${JSON.stringify(entry.path)}`);
+      throw new Error(`Harness checkpoint refused unsafe path: ${JSON.stringify(entry.path)}`);
     }
   }
 
@@ -362,7 +356,7 @@ export async function commitExtendAttempt(
   });
 
   // Double-check the index does not contain secrets/runtime before commit.
-  await assertIndexSafeForExtendCommit(workspacePath);
+  await assertIndexSafeForHarnessCommit(workspacePath);
 
   await executeCommandOrThrow({
     command: "git",
@@ -378,7 +372,7 @@ export async function commitExtendAttempt(
   };
 }
 
-async function assertIndexSafeForExtendCommit(cwd: string): Promise<void> {
+async function assertIndexSafeForHarnessCommit(cwd: string): Promise<void> {
   const result = await executeCommandOrThrow({
     command: "git",
     args: ["diff", "--cached", "--name-only", "-z"],
@@ -386,7 +380,7 @@ async function assertIndexSafeForExtendCommit(cwd: string): Promise<void> {
   });
   const staged = result.stdout.split("\0").map(value => value.trim()).filter(Boolean);
   const unsafe = staged.filter(
-    filePath => isExtendRuntimePath(filePath) || isExtendSecretPath(filePath),
+    filePath => isHarnessRuntimePath(filePath) || isHarnessSecretPath(filePath),
   );
   if (unsafe.length > 0) {
     // Best-effort unstage, then fail hard.
@@ -397,7 +391,7 @@ async function assertIndexSafeForExtendCommit(cwd: string): Promise<void> {
     });
     throw new Error(
       [
-        "Extend checkpoint aborted: staged files included runtime/secret paths.",
+        "Harness checkpoint aborted: staged files included runtime/secret paths.",
         ...unsafe.map(filePath => `- ${filePath}`),
       ].join("\n"),
     );
@@ -405,8 +399,8 @@ async function assertIndexSafeForExtendCommit(cwd: string): Promise<void> {
 }
 
 /** Consumer-relevant dirty paths remaining after runtime/secret filtering. */
-export async function listExtendConsumerDirtyPaths(cwd: string): Promise<string[]> {
-  const { commitable, skippedSecrets } = filterCommitableExtendEntries(
+export async function listHarnessConsumerDirtyPaths(cwd: string): Promise<string[]> {
+  const { commitable, skippedSecrets } = filterCommitableHarnessEntries(
     await readWorkingTreeEntries(cwd),
   );
   // Secrets left uncommitted still count as "not clean" for completion reporting.

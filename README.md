@@ -1,18 +1,24 @@
 # hedera-harness
 
-TypeScript CLI that **generates and validates [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) templates** from a product brief you supply — either greenfield (`run`) or in-place on an already-scaffolded app (`extend`).
+TypeScript CLI that **bootstraps and iteratively develops [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) projects** from a product brief you supply.
 
-The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.). For `run`, the loop is: seed → generate → validate → repair until pass or budget exhausted. For `extend`, there is no seed — the project cwd is the workspace.
+Two main commands:
+
+1. **`init`** — create a new project (seeds scaffold-hbar, fresh `git init`, provisions `.harness/` + generator skills)
+2. **`run`** — generate → validate → repair on the **same project cwd**, versioned with `harness/run-*` git branches
+
+The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.).
 
 ## What it does
 
-1. **Seeds** an isolated workspace from a pinned `scaffold-hbar` git ref
-2. **Vendors** optional skills and harness context into the workspace
-3. **Runs a generator agent** (Cursor CLI `agent` by default) against your PRD
-4. **Validates** in layers you enable in the spec (see below)
-5. **Repairs** on failure with focused prompts, up to `maxAttempts`
-6. **Audits** agent logs for oracle peeking (informational — does not fail the run)
-7. **Writes artifacts** under `runs/` for inspection
+1. **`init`** clones scaffold-hbar into a project directory, replaces `.git` with a **fresh repo** (no scaffold history/remote), and provisions `.harness/`
+2. **`run`** vendors skills/context into ignored runtime paths under `.harness/runtime/`
+3. **Creates or continues** a `harness/run-<spec>-<id>` branch with checkpoint commits
+4. **Runs a generator agent** (Cursor CLI or Claude Code CLI — see [generator config](#configure-a-project-centric-spec)) against your PRD
+5. **Validates** in layers you enable in the spec (see below)
+6. **Repairs** on failure with focused prompts, up to `maxAttempts`
+7. **Audits** agent logs for oracle peeking (informational — does not fail the run)
+8. **Writes artifacts** under `.harness/runs/` for inspection
 
 **Pass condition:** every validation tier enabled in the spec must pass. Oracle audit never blocks a pass.
 
@@ -20,13 +26,11 @@ The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validato
 
 Happy path (top → bottom). Skip validation tiers that are not enabled in the spec. The dashed edge is the repair loop.
 
-- Vertical graph: [`docs/harness-flow.svg`](./docs/harness-flow.svg) · [`docs/harness-flow.png`](./docs/harness-flow.png)
-- Sequence (who talks to whom): [`docs/harness-sequence.svg`](./docs/harness-sequence.svg) · [`docs/harness-sequence.png`](./docs/harness-sequence.png)
-
 ```mermaid
 flowchart TD
-  inputs[1 Inputs: Spec + PRD + validators] --> seed[2 Seed workspace]
-  seed --> vendor[3 Vendor skills and context]
+  init[Optional: hedera-harness init] --> inputs[1 Inputs: Spec + PRD + validators]
+  inputs --> branch[2 Create or continue harness/run-* branch]
+  branch --> vendor[3 Vendor skills and context]
   vendor --> generate[4 Generate]
   generate --> audit[5 Oracle audit - informational]
   audit --> validate[6 Validate enabled tiers]
@@ -35,7 +39,7 @@ flowchart TD
   tier2 --> tier3[Tier 3 Semantic - opt-in]
   tier3 --> tier35[Tier 3.5 On-chain - opt-in]
   tier35 --> outcome[7 Outcome: Pass / Fail / Abort]
-  outcome --> artifacts[runs/ artifacts]
+  outcome --> artifacts[.harness/runs/ artifacts]
   tier01 -.->|fail + attempts left| generate
   tier2 -.->|fail + attempts left| generate
   tier3 -.->|fail + attempts left| generate
@@ -44,59 +48,24 @@ flowchart TD
 **Branches**
 
 - Validation **fail** + attempts left → repair prompt → back to **Generate**
-- Validation **fail** + budget exhausted → **Fail** → `runs/`
-- Semantic **infra** failure (MCP / browser) → **Abort** (no repair) → `runs/`
+- Validation **fail** + budget exhausted → **Fail** → stay on harness branch
+- Semantic **infra** failure (MCP / browser) → **Abort** (no repair)
 - Oracle audit never blocks a pass
 
-When Tier 2 and Tier 3 are both on, they share one dev server. Tier 3.5 injects an ephemeral funded ECDSA signer into the workspace before semantic grading.
+### Smart branch detection
 
-<details>
-<summary>Detailed sequence diagram (actors / messages)</summary>
+| Current branch | Spec | Behavior |
+|----------------|------|----------|
+| `harness/run-feature-abc` | Same as branch | **Continue** — resume attempts |
+| `harness/run-feature-abc` | Different | **New branch** — different feature |
+| `main` or other | Any | **New branch** |
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor CLI as CLI / User
-  participant H as Harness
-  participant G as Git sources
-  participant W as Workspace
-  participant Gen as Generator
-  participant V as Validators
+Overrides:
 
-  CLI->>H: run(spec.yaml)
-
-  Note over H,W: Seed
-  H->>G: clone scaffold-hbar @ ref
-  G-->>H: checkout ready
-  H->>W: materialize + yarn preflight
-  W-->>H: workspace ready
-
-  Note over H,W: Vendor
-  H->>G: fetch hedera-skills
-  G-->>H: SKILL.md paths
-  H->>W: vendor skills + PRD / context
-
-  Note over H,Gen: Generate
-  H->>Gen: generate from PRD
-  Gen->>W: write template files
-  Gen-->>H: exit / stream done
-
-  Note over H,V: Validate
-  H->>H: oracle audit (informational)
-  H->>V: Tier 0-1 deterministic
-  V->>W: assert files / yarn / secrets
-  V-->>H: pass / fail
-  H->>V: Tier 2 Playwright (if enabled)
-  V->>W: boot app + hit routes
-  V-->>H: pass / fail
-  H->>V: Tier 3 semantic (+ 3.5 if on)
-  V->>W: grade acceptance contract
-  V-->>H: pass / fail / infra abort
-
-  H-->>CLI: report + runs/ artifacts
+```bash
+hedera-harness run .harness/spec.yaml --new
+hedera-harness run .harness/spec.yaml --continue harness/run-my-feature-abc123
 ```
-
-</details>
 
 ## Validation tiers (opt-in via spec)
 
@@ -114,16 +83,16 @@ Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos.
 ### Always
 
 - **Node.js** >= 20
-- **git** (workspace seeding)
-- **yarn** (seeded workspaces are Yarn-based)
-- **Cursor CLI** (`agent` on your `PATH`, authenticated)
-- A **scaffold-hbar** seed — public remote works; local clone optional
-- A **PRD** markdown for the product you want to generate (start from the skeleton — see Quickstart)
+- **git**
+- **yarn** (scaffold-hbar workspaces are Yarn-based)
+- **A supported AI coding agent CLI** (one of):
+  - **Cursor CLI** — `agent` on your `PATH`, authenticated
+  - **Claude Code CLI** — `claude` on your `PATH`, authenticated (Claude Pro/Max subscription or `ANTHROPIC_API_KEY`)
 
-**Install as a CLI dependency** (recommended for consumer projects / templates):
+**Install as a CLI dependency** (recommended for consumer projects):
 
 ```bash
-npm install -D hedera-harness@1.1.1
+npm install -D hedera-harness@1.1.2
 npx hedera-harness --help
 ```
 
@@ -137,167 +106,124 @@ cd hedera-harness
 npm install
 ```
 
-(SSH works too: `git@github.com:hedera-dev/hedera-harness.git`.)
+## Quickstart
 
-## Quickstart — build your own idea
-
-The harness is meant for **your** Hedera demo. Prefer an AI coding agent with the **hedera-harness** plugin from [hedera-skills](https://github.com/hedera-dev/hedera-skills).
-
-### 1. Install the authoring skills
+### 1. Bootstrap a project
 
 ```bash
-# Claude Code
+npx hedera-harness init my-app
+cd my-app
+```
+
+This clones [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) `main`, replaces the cloned `.git` with a **fresh repository** (single initial commit, no remote), writes `.harness/` (spec, PRD, validators), copies `skills-index.json`, and pre-vendors generator skills under `.harness/skills/`.
+
+### 2. Edit the recipe
+
+```bash
+# Describe your feature
+$EDITOR .harness/prd.md
+$EDITOR .harness/spec.yaml
+# Align validators with the PRD
+$EDITOR .harness/validators/static.json
+$EDITOR .harness/validators/yarn.json
+```
+
+### 3. Run the harness
+
+```bash
+npx hedera-harness run .harness/spec.yaml --max-attempts 3
+# or: yarn harness:run
+```
+
+Creates `harness/run-<spec>-<id>`, runs the attempt loop, and checkpoints each attempt.
+
+### 4. Continue or start a new feature
+
+```bash
+# Same branch + same spec after a failed budget → continues automatically
+npx hedera-harness run .harness/spec.yaml --max-attempts 3
+
+# Different feature → edit spec name/PRD, then run (new branch)
+npx hedera-harness run .harness/other-feature.yaml
+
+# Force a clean slate for the same spec
+git checkout main
+npx hedera-harness run .harness/spec.yaml --new
+```
+
+### Author with agent skills (optional)
+
+Prefer an AI coding agent with the **hedera-harness** plugin from [hedera-skills](https://github.com/hedera-dev/hedera-skills):
+
+```bash
 /plugin marketplace add hedera-dev/hedera-skills
 /plugin install hedera-harness
-
-# Or any skills-compatible agent
-npx skills add hedera-dev/hedera-skills
-```
-
-### 2. Create the spec
-
-In the agent, from this repo (or with the harness clone as cwd):
-
-```
+# then:
 /create-harness-spec
-```
-
-The skill grills your idea one question at a time, then emits a gate 0–1 **spec** (PRD, spec file, validators). Optionally deepen to gates 2 / 3 / 3.5.
-
-### 3. Review before burning a run
-
-```
 /review-harness-spec
 ```
 
-Two-axis audit: mechanical Wiring (`check-spec.sh`) + Oracle judgment (journey↔assertion traceability, severity budget, thin Playwright).
-
-### 4. Run (or extend)
-
-**Greenfield** (harness clone):
-
-```bash
-npm run harness -- run specs/<slug>.yaml --max-attempts 3
-```
-
-**In-place** (already-scaffolded Scaffold HBAR app with `.harness/`):
-
-```bash
-yarn harness:extend
-# or: hedera-harness extend .harness/spec.yaml --max-attempts 3
-```
-
-See [Extend (in-place)](#extend-in-place) below.
-
-Optional inspiration: three **example** PRDs + specs ship in the repo (Proof Wall, HTS precompile, x402). Read them to see depth and shape; you do not need to run them. Details: [`docs/prds/README.md`](docs/prds/README.md). Full checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
-
-<details>
-<summary>Manual fallback (no agent skills)</summary>
-
-Copy the skeleton, rewrite placeholders to match `$NAME`, write a PRD, then run:
-
-```bash
-NAME=my-hedera-demo
-
-cp skeletons/new-template/prd.md              docs/prds/${NAME}.md
-cp skeletons/new-template/spec.yaml           specs/${NAME}.yaml
-cp skeletons/new-template/acceptance-contract.json contracts/${NAME}-acceptance.json
-cp skeletons/new-template/static.json         validators/${NAME}-static.json
-cp skeletons/new-template/yarn.json           validators/${NAME}-yarn.json
-cp skeletons/new-template/playwright-smoke.yaml playwright/${NAME}-smoke.yaml
-
-# Align internal paths / names with $NAME (macOS; on Linux drop the '').
-sed -i '' "s/my-template/${NAME}/g" \
-  specs/${NAME}.yaml \
-  validators/${NAME}-static.json \
-  validators/${NAME}-yarn.json \
-  contracts/${NAME}-acceptance.json \
-  playwright/${NAME}-smoke.yaml
-```
-
-1. Rewrite `docs/prds/${NAME}.md` for your product (goal, journeys, Hedera services, non-goals).
-2. Edit `specs/${NAME}.yaml`: fill remaining `REPLACE_ME` stubs. `seed.repo` already defaults to the public [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) remote.
-3. Fill validators (and optionally contract / Playwright) — checklist: [`docs/authoring-a-template.md`](docs/authoring-a-template.md).
-4. `npm run harness -- run specs/${NAME}.yaml --max-attempts 3`
-
-</details>
+Optional inspiration: three **example** PRDs + greenfield specs ship in this repo under `specs/` / `docs/prds/` (historical isolated-run shape). For project-centric work, start from `.harness/` after `init`.
 
 ### If you enable Tier 2 (`validators.playwright`)
-
-Install the optional Playwright peer and browser binary (not pulled in by a default `hedera-harness` install):
 
 ```bash
 npm install -D playwright
 npx playwright install chromium
 ```
 
-Without these, the Playwright gate fails with an explicit install error instead of a cryptic module-resolution stack.
-
-After navigation, the gate waits for `load` and **polls** `body` text until it looks hydrated (default 60s / 20+ characters). Override via smoke YAML `defaults.hydrationTimeoutMs` and `defaults.minBodyTextLength` for slow client shells.
-
 ### If you enable Tier 3 (`contract` + `validator`)
 
-- An **acceptance contract** JSON (numbered assertions the semantic agent grades)
-- Playwright MCP available to the Cursor agent (the harness merges MCP config into the workspace; keep a working Playwright MCP setup for headless runs)
-- Validator agent flags that allow MCP tool use in CI/headless contexts, typically:
-  - `--force`
-  - `--sandbox disabled`
-  - `--approve-mcps`
-
-Semantic infrastructure failures (MCP rejected, no browser) abort the repair loop instead of asking the generator to “fix” the app.
+- An **acceptance contract** JSON
+- Playwright MCP available to the Cursor agent
+- Validator flags typically: `--force`, `--sandbox disabled`, `--approve-mcps`
 
 ### If you enable Tier 3.5 (`chainValidation`)
 
-Install the optional Hedera SDK peer (not pulled in by a default `hedera-harness` install):
-
 ```bash
 npm install -D @hiero-ledger/sdk
-```
-
-Also required:
-
-- A **funded Hedera testnet account created with an ECDSA key** (not ED25519 — ECDSA is required for the EVM address alias used by the burner wallet)
-- Export operator credentials in the shell that runs the harness (never write them into a workspace):
-
-```bash
 export HEDERA_OPERATOR_ID=0.0.xxxx
 export HEDERA_OPERATOR_KEY=0x...   # ECDSA private key hex
 ```
 
-See [`.env.example`](.env.example) for the full host env reference (including optional `HARNESS_AGENT_IDLE_TIMEOUT_MS`). The harness does not auto-load `.env` — export vars in the shell that runs the CLI.
+See [`.env.example`](.env.example). The harness does not auto-load `.env`.
 
-The harness creates a disposable child account (~`fundingHbar` HBAR), injects its key as `burnerWallet.pk` for the validator, and best-effort sweeps the balance back at run end. See [docs/authoring-a-template.md](docs/authoring-a-template.md) for the full `chainValidation` shape (including optional `deploy` for Solidity templates).
+## Project layout (after `init`)
 
-## What you must provide
-
-To benchmark **your** Hedera template, supply:
-
-| Input | Required? | Notes |
-|-------|-----------|--------|
-| **PRD** (`prd`) | Yes | Markdown under `docs/prds/` — start from [`skeletons/new-template/prd.md`](skeletons/new-template/prd.md); see examples in [`docs/prds/`](docs/prds/) for inspiration. Agent-assisted path: [hedera-skills `hedera-harness` plugin](https://github.com/hedera-dev/hedera-skills) (`/create-harness-spec` / `/review-harness-spec`) — see [authoring-a-template.md](docs/authoring-a-template.md#author-with-an-agent-skill) |
-| **Spec YAML** | Yes | Paths, seed, generator, validators, constraints |
-| **Static validator JSON** | Yes | Structural / text / secret assertions for this template |
-| **Command validator JSON** | Yes | Yarn (or other) commands that must succeed without live secrets |
-| **scaffold-hbar seed** | Yes | Defaults to public `hedera-dev/scaffold-hbar`; override `seed.repo` for a local clone if you prefer |
-| **Skills** (`skills`) | Optional | Skill **names** from [`skills-index.json`](skills-index.json) (preferred), or absolute/`./` paths to `SKILL.md` |
-| **Playwright smoke YAML** | Tier 2 | `server.command` / `server.url` + routes to hit |
-| **Acceptance contract** | Tier 3 | Numbered assertions; source of truth for semantic pass/fail |
-| **Validator agent block** | Tier 3 | Separate from the generator; usually stricter MCP/sandbox flags |
-
-Skills default to the public [hedera-dev/hedera-skills](https://github.com/hedera-dev/hedera-skills) repo — no local checkout required. The skeleton / examples also default `seed.repo` to public [hedera-dev/scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar).
-
-### Skills index
-
-Specs should list skills by **name**. The harness resolves those names through [`skills-index.json`](skills-index.json) at the repo root, fetches them from git when needed (cached under `.skill-cache/`), then vendors the matching `SKILL.md` (+ `references/`) into the run workspace under `.harness-skills/`.
-
-Checked-in example specs already include the common Hedera skills. Defaults point at:
-
-```json
-"defaults": {
-  "repo": "https://github.com/hedera-dev/hedera-skills.git",
-  "ref": "master"
-}
 ```
+my-app/
+├── .harness/
+│   ├── spec.yaml              # no seed; paths relative to project root
+│   ├── prd.md
+│   ├── validators/
+│   │   ├── static.json
+│   │   └── yarn.json
+│   ├── skills/                # pre-vendored at init (gitignored)
+│   ├── runtime/               # session skills/context (gitignored)
+│   └── runs/                  # artifacts + session.json (gitignored)
+├── skills-index.json
+├── packages/
+└── ...
+```
+
+Required in the **spec file**:
+
+- Omit `seed` — workspace is the project cwd
+- `extend.baseline` — host-app health checks before generation (YAML key name kept for compatibility; must include a command literally named `install`)
+- Validators / PRD under `.harness/…`
+
+```bash
+hedera-harness run .harness/spec.yaml --max-attempts 3
+hedera-harness validate
+hedera-harness validate .harness/spec.yaml
+hedera-harness validate-semantic .harness/spec.yaml
+```
+
+## Skills index
+
+Specs should list skills by **name**. The harness resolves those names through [`skills-index.json`](skills-index.json), fetches them from git when needed (cached under `.skill-cache/`), then vendors into `.harness/runtime/skills/` during `run`.
+
+`init` also pre-vendors skills into `.harness/skills/` for offline browsing.
 
 ```yaml
 skills:
@@ -305,97 +231,15 @@ skills:
   - project-scaffolding
 ```
 
-**Add a skill the agent could benefit from:**
+## Configure a project-centric spec
 
-1. Open [`skills-index.json`](skills-index.json)
-2. Append an entry with a unique `name`, an in-repo `path` under the defaults repo (or a local/`repo` override), and optional `tags` / `description`
-3. Reference that `name` in your template spec’s `skills:` list
+The harness spawns your chosen AI coding agent via the `generator` block. Below are examples for **Cursor CLI** and **Claude Code CLI**.
 
-```json
-{
-  "name": "hts-system-contract",
-  "path": "plugins/system-contracts/skills/hts-system-contract/SKILL.md",
-  "tags": ["hts", "solidity"],
-  "description": "HTS precompile patterns in Solidity."
-}
-```
-
-**Local override** (skip the remote fetch for one skill while developing):
-
-```json
-{
-  "name": "my-wip-skill",
-  "path": "./vendor/my-wip-skill/SKILL.md"
-}
-```
-
-Absolute paths and `./` / `../` relative paths also work directly in a spec’s `skills:` list (they skip the index). If a name is missing from the index, the harness fails fast and lists the registered skills. First remote resolve needs network + `git`.
-
-## Extend (in-place)
-
-Use `extend` when you already have a Scaffold HBAR app and want an agent to
-implement a delta (new route, feature, payment gate) **without** re-seeding.
-
-Typical consumer path (template ships `.harness/` + `yarn harness:extend`):
-
-```bash
-npx create-scaffold-hbar@latest   # pick a template that includes .harness/
-cd my-app
-yarn install
-yarn harness:extend
-```
-
-Layout under the project root:
-
-```
-.harness/
-├── spec.yaml              # no seed; paths relative to project root
-├── prd.md
-├── validators/
-│   ├── static.json
-│   └── yarn.json
-├── playwright/            # optional (Tier 2)
-├── contracts/             # optional (Tier 3)
-└── runs/                  # artifacts (gitignored)
-```
-
-Required in the **spec file**:
-
-- Omit `seed` — workspace is the project cwd
-- `extend.baseline` — commands that prove host-app health before the extension
-  (must include a command literally named `install`)
-- Validators / PRD / optional contract paths under `.harness/…`
-- `templateMetadata.name` may keep the **host** template identity and differ
-  from the extension `name` slug
-
-```bash
-hedera-harness extend .harness/spec.yaml --max-attempts 3
-hedera-harness validate .harness/spec.yaml --workspace .
-hedera-harness validate-semantic .harness/spec.yaml --workspace .
-```
-
-Artifacts land under `.harness/runs/`. Gate enablement (0–1 / 2 / 3 / 3.5) is
-the same as `run`; only layout and CLI entrypoint differ.
-
-Authoring skills (`/create-harness-spec`, `/review-harness-spec`) detect
-`.harness/` and emit / audit the extend layout. See the [hedera-skills
-hedera-harness plugin](https://github.com/hedera-dev/hedera-skills).
-
-## Configure a spec
-
-Example **run** layout (paths are yours to fill in):
+### Generator: Cursor CLI (default)
 
 ```yaml
-name: my-hedera-template
-prd: docs/prds/my-template.md
-# contract: contracts/my-template-acceptance.json   # Tier 3
-
-seed:
-  repo: https://github.com/hedera-dev/scaffold-hbar.git   # or a local clone path
-  ref: main
-  preflight:
-    commands:
-      - command: yarn install
+name: my-feature
+prd: .harness/prd.md
 
 generator:
   provider: command
@@ -407,32 +251,65 @@ generator:
     - enabled
     - --workspace
     - "{workspace}"
-    - --model            # pin model for your agent CLI; examples use Cursor agent + composer-2.5
+    - --model
     - composer-2.5
     - --force
     - --output-format
     - stream-json
     - --stream-partial-output
   timeoutMs: 3600000
+```
 
-# validator:                        # Tier 3 — separate agent
-#   enabled: true
-#   provider: command
-#   command: agent
-#   args: [ -p, --trust, --force, --sandbox, disabled, --approve-mcps, --model, composer-2.5, ... ]
+### Generator: Claude Code CLI
 
-# skills:                           # names from skills-index.json
-#   - hedera-consensus-service
+```yaml
+name: my-feature
+prd: .harness/prd.md
+
+generator:
+  provider: command
+  command: claude
+  args:
+    - -p
+    - "{prompt}"
+    - --model
+    - sonnet                    # or opus, haiku — pin the model to control cost
+    - --permission-mode
+    - acceptEdits               # auto-approve file writes
+    - --allowedTools
+    - Bash,Read,Edit,Write      # pre-approve tools to avoid prompts
+    - --output-format
+    - stream-json
+    - --verbose
+  timeoutMs: 3600000
+```
+
+> **Tip:** Use `--model sonnet` (or `claude-sonnet-5`) to keep token costs lower during development. Omit the flag to use your account's default model.
+
+### Common spec fields (both agents)
+
+```yaml
+skills:
+  - quality-gates
+
+constraints:
+  packageManager: yarn@3.2.3
+
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: yarn install
+        timeoutMs: 300000
 
 validators:
-  static: validators/my-template-static.json
-  commands: validators/my-template-yarn.json
-  # playwright: playwright/my-template-smoke.yaml   # Tier 2
+  static: .harness/validators/static.json
+  commands: .harness/validators/yarn.json
 
 requiredFiles:
-  - template.json
   - README.md
-  - AGENTS.md
+  - package.json
+  - .harness/spec.yaml
 
 forbiddenFiles:
   - .env
@@ -440,86 +317,35 @@ forbiddenFiles:
 maxAttempts: 3
 
 logging:
-  jsonl: runs/harness.log.jsonl
-  notes: runs/harness-notes.md
+  jsonl: .harness/runs/harness.log.jsonl
+  notes: .harness/runs/harness-notes.md
 ```
 
-A checked-in example spec lives in [`specs/`](specs/) — useful for field shape and as optional inspiration. For your own product, start from the skeleton (Quickstart above), not by forking an example.
+Skeleton source: [`skeletons/project-harness/`](skeletons/project-harness/).
 
-### Adding a new template
-
-Same as Quickstart: copy [`skeletons/new-template/`](skeletons/new-template/) and follow [`docs/authoring-a-template.md`](docs/authoring-a-template.md). Example PRDs under [`docs/prds/`](docs/prds/) show what a filled brief looks like.
-
-## Run
+## CLI
 
 ```bash
-# First kick — creates runs/<timestamp>-<spec>/ with workspace/
-npm run harness -- run specs/my-template.yaml --max-attempts 3
-
-# Later kick — same project, updated PRD/contract on disk, fresh attempt budget
-npm run harness -- run specs/my-template.yaml --continue runs/<run-id> --max-attempts 3
+hedera-harness init [target-dir] [--repo URL] [--ref branch] [--template branch] [--skip-install] [--skills a,b]
+hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
+hedera-harness validate [spec] [--workspace <path>]
+hedera-harness validate-semantic [spec] [--workspace <path>]
 ```
 
-### Iterate on one project
+Default spec for `run`: `.harness/spec.yaml`.
 
-One run directory accumulates the whole project:
-
-1. **First kick** — seeds workspace, runs up to `maxAttempts`, writes logs under `runs/<id>/`.
-2. **Play with the app** — inspect `runs/<id>/workspace`, tweak locally if you want.
-3. **Edit PRD / contract / validators** on disk (harness re-vendors them on continue).
-4. **Continue kick** — `--continue runs/<id>` skips re-seed, refreshes context, starts a **continue prompt** (not a cold generate), and gives a **fresh `maxAttempts` budget**. Attempt numbers keep counting globally (4, 5, 6…). Cycle reports land in `reports/cycle-N.json`.
-
-Alias: `run … --workspace runs/<id>/workspace` resolves to the same run directory.
-
-Re-run deterministic (+ Playwright gate if configured) on an existing workspace:
-
-```bash
-npm run harness -- validate specs/my-template.yaml --workspace runs/<run-id>/workspace
-```
-
-Re-run semantic validation only (requires `contract` + `validator` in the spec):
-
-```bash
-npm run harness -- validate-semantic specs/my-template.yaml --workspace runs/<run-id>/workspace
-```
-
-## Repository layout
+## Repository layout (this package)
 
 ```
-├── src/              # Harness implementation
-├── specs/            # YAML run configs (examples) — greenfield `run`
-├── skills-index.json # Name → SKILL.md registry (remote hedera-skills by default)
-├── validators/       # JSON static + command validators
-├── contracts/        # Acceptance contracts (Tier 3)
-├── playwright/       # Playwright gate smoke configs (Tier 2)
-├── skeletons/        # Copyable stubs for a new template benchmark
+├── src/                      # Harness implementation
+├── skeletons/
+│   ├── project-harness/      # Provisioned by `init` into consumer .harness/
+│   └── new-template/         # Legacy greenfield authoring stubs
+├── skills-index.json
+├── specs/                    # Example specs (historical / inspiration)
 ├── docs/
-│   ├── authoring-a-template.md
-│   └── prds/         # Your PRDs + example briefs (private WIP: prds/local/)
-├── .skill-cache/     # Cached skill repo checkouts (gitignored)
-└── runs/             # Run artifacts (gitignored)
+└── test/
 ```
-
-Consumer **extend** layout lives in the scaffolded app (see
-[Extend (in-place)](#extend-in-place)), not in this clone.
-
-## Run artifacts
-
-Each run creates `runs/<timestamp>-<spec-name>/`:
-
-| Path | Contents |
-|------|----------|
-| `workspace/` | Seeded base + agent modifications |
-| `prompts/` | Generator, repair, and validator prompts |
-| `logs/` | Agent streams, validation, Playwright gate, semantic results |
-| `cache/` | Cross-attempt caches (e.g. install fingerprint) |
-| `reports/report.json` | Final pass/fail, seed SHA, findings |
-| `status.json` | Live progress during long runs |
-
-Cross-run logs (append-only):
-
-- `runs/harness.log.jsonl` — structured events
-- `runs/harness-notes.md` — human-readable notes
 
 ## Scripts
 
@@ -531,17 +357,18 @@ Cross-run logs (append-only):
 | `npm test` | Build, then run Node test runner suites |
 | `npm run smoke:pack` | Pack a release tarball and smoke-install it with Yarn 3 |
 
-CLI commands: `run`, `extend`, `validate`, `validate-semantic`.
+CLI commands: `init`, `run`, `validate`, `validate-semantic`.
 
-Published package version **1.1.1** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`). Named skills resolve from a project-local `skills-index.json` when present, otherwise from the package-bundled index.
+Published package version **1.1.2** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`).
 
 ## Design notes
 
-- **Validation is authoritative** — agents do not declare success; the harness does.
-- **Blind by default** — no reference finished template is passed in; compare outputs manually if you want.
-- **Oracle audit** — scans agent logs for access outside the run workspace; logged only.
-- **Yarn-only constraints** — typical for scaffold-hbar; encode package-manager rules in the spec.
-- **Repair stays in-workspace** — findings (including semantic assertion IDs when Tier 3 is on) feed a **scoped** repair prompt: semantic-only gaps get assertion `statement` / `howToVerify`; lint/Playwright failures stay runtime-focused.
+- **Project-centric** — one git worktree; versioning via `harness/run-*` branches + checkpoint commits
+- **Validation is authoritative** — agents do not declare success; the harness does
+- **Blind by default** — no reference finished template is passed in
+- **Oracle audit** — scans agent logs for access outside the workspace; logged only
+- **No auto-push / PR / merge** — completion prints optional next steps only
+- **Yarn-only constraints** — typical for scaffold-hbar; encode package-manager rules in the spec
 
 ## License
 

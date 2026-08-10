@@ -12,7 +12,7 @@ import type {
 export interface LoadTemplateSpecOptions {
   /**
    * When true (default), `seed` is required — used by isolated `run`.
-   * When false, `seed` is optional — used by in-place `extend`.
+   * When false, `seed` is optional — used by project-centric `run`.
    */
   requireSeed?: boolean;
 }
@@ -62,8 +62,8 @@ export async function loadTemplateSpec(
     },
   };
 
-  // Extend layout (no seed) requires baseline install. Isolated specs may omit
-  // `extend` entirely; validate/validate-semantic also use requireSeed:false.
+  // Project-centric layout (no seed) requires baseline install. Isolated specs
+  // may omit `extend` entirely; validate/validate-semantic also use requireSeed:false.
   if (!requireSeed && !spec.seed) {
     assertExtendBaselineHasInstall(spec);
   } else {
@@ -340,19 +340,19 @@ function readExtendConfig(parsed: Record<string, unknown>): ExtendConfig | undef
   };
 }
 
-/** Isolated `run` may omit extend; if baseline commands are listed, one must be named install. */
+/** Isolated greenfield specs may omit extend; if baseline commands are listed, one must be named install. */
 function assertBaselineInstallNameWhenPresent(spec: TemplateSpec): void {
   const commands = spec.extend?.baseline?.commands;
   if (!commands) return;
   assertCommandsIncludeInstall(commands);
 }
 
-/** In-place `extend` requires extend.baseline.commands with a literal install name. */
+/** Project-centric `run` requires extend.baseline.commands with a literal install name. */
 function assertExtendBaselineHasInstall(spec: TemplateSpec): void {
   const commands = spec.extend?.baseline?.commands;
   if (!commands || commands.length === 0) {
     throw new Error(
-      'extend mode requires extend.baseline.commands including a command literally named "install".',
+      'project-centric run requires extend.baseline.commands including a command literally named "install".',
     );
   }
   assertCommandsIncludeInstall(commands);
