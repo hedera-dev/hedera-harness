@@ -359,7 +359,7 @@ Default spec for `run`: `.harness/spec.yaml`.
 
 CLI commands: `init`, `run`, `validate`, `validate-semantic`.
 
-Published package version **1.1.1** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`).
+Published package version **1.1.2** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`).
 
 ## Design notes
 

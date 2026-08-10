@@ -82,12 +82,24 @@ test("seedProjectForInit clones into empty dir and creates a fresh git repo", as
   const target = path.join(parent, "app");
   await mkdir(target, { recursive: true });
 
-  // Use this harness repo as a local seed to avoid network in CI.
-  const localSeed = path.resolve(".");
+  // Local seed repo (not this checkout) — CI runs in detached HEAD, so
+  // `git clone --branch HEAD` would fail if we used the harness repo itself.
+  const localSeed = await makeTestTempDir("init-seed-repo-");
+  git(localSeed, ["init", "-b", "main", "--template="]);
+  git(localSeed, ["config", "user.email", "test@example.com"]);
+  git(localSeed, ["config", "user.name", "Test"]);
+  await writeFile(path.join(localSeed, "README.md"), "# seed\n");
+  await writeFile(
+    path.join(localSeed, "package.json"),
+    JSON.stringify({ name: "seed", private: true }, null, 2),
+  );
+  git(localSeed, ["add", "-A"]);
+  git(localSeed, ["commit", "-m", "seed"]);
+
   const result = await initSeeder.seedProjectForInit({
     targetDir: target,
     repo: localSeed,
-    ref: git(localSeed, ["rev-parse", "--abbrev-ref", "HEAD"]) || "main",
+    ref: "main",
     skipInstall: true,
   });
 
