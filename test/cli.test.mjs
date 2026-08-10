@@ -7,7 +7,7 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 const cli = await import(pathToFileURL(path.resolve("dist/cli.js")).href);
 const prompts = await import(pathToFileURL(path.resolve("dist/promptBuilder.js")).href);
 const { loadTemplateSpec } = await import(pathToFileURL(path.resolve("dist/specLoader.js")).href);
-const { EXTEND_CONTEXT_DIR, EXTEND_SKILLS_DIR } = await import(
+const { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } = await import(
   pathToFileURL(path.resolve("dist/runtimePaths.js")).href
 );
 const { shouldIgnoreWorkspaceActivity } = await import(
@@ -58,11 +58,28 @@ test("parseCliArgs rejects --new with --continue", () => {
   );
 });
 
-test("parseCliArgs accepts deprecated extend as alias shape", () => {
-  const parsed = cli.parseCliArgs(["extend", ".harness/spec.yaml", "--max-attempts", "3"]);
-  assert.equal(parsed.command, "extend");
+test("parseCliArgs accepts validate without --workspace (cwd default at runtime)", () => {
+  const parsed = cli.parseCliArgs(["validate", ".harness/spec.yaml"]);
+  assert.equal(parsed.command, "validate");
   assert.equal(parsed.options.specPath, ".harness/spec.yaml");
-  assert.equal(parsed.options.maxAttempts, 3);
+  assert.equal(parsed.options.workspacePath, undefined);
+});
+
+test("parseCliArgs defaults validate and validate-semantic spec to .harness/spec.yaml", () => {
+  const validate = cli.parseCliArgs(["validate"]);
+  assert.equal(validate.command, "validate");
+  assert.equal(validate.options.specPath, ".harness/spec.yaml");
+
+  const semantic = cli.parseCliArgs(["validate-semantic"]);
+  assert.equal(semantic.command, "validate-semantic");
+  assert.equal(semantic.options.specPath, ".harness/spec.yaml");
+});
+
+test("parseCliArgs rejects removed extend command", () => {
+  assert.throws(
+    () => cli.parseCliArgs(["extend", ".harness/spec.yaml"]),
+    /Expected command "init", "run"/,
+  );
 });
 
 test("parseCliArgs accepts init with target and flags", () => {
@@ -98,7 +115,7 @@ test("printHelp documents init and project-centric run", () => {
   assert.match(help, /hedera-harness run/);
   assert.match(help, /continues automatically/i);
   assert.match(help, /--new/);
-  assert.match(help, /deprecated/i);
+  assert.doesNotMatch(help, /hedera-harness extend/);
   assert.match(help, /Does not auto-stash/);
 });
 
@@ -182,13 +199,13 @@ logging:
   );
 });
 
-test("buildExtendPrompt preserves existing app and points at runtime paths", async () => {
+test("buildSessionPrompt preserves existing app and points at runtime paths", async () => {
   const { writeFile } = await import("node:fs/promises");
   const dir = await makeTestTempDir("extend-prompt-");
   const prdPath = path.join(dir, "prd.md");
   await writeFile(prdPath, "Add a tip jar panel.\n");
 
-  const prompt = await prompts.buildExtendPrompt(
+  const prompt = await prompts.buildSessionPrompt(
     {
       name: "demo",
       prdPath,
@@ -204,22 +221,22 @@ test("buildExtendPrompt preserves existing app and points at runtime paths", asy
     [
       {
         name: "hts",
-        relativePath: `${EXTEND_SKILLS_DIR}/hts/SKILL.md`,
+        relativePath: `${HARNESS_SKILLS_DIR}/hts/SKILL.md`,
         description: "HTS skill",
         sourcePath: "/tmp/SKILL.md",
       },
     ],
     {
-      prdRelativePath: `${EXTEND_CONTEXT_DIR}/prd.md`,
-      contractRelativePath: `${EXTEND_CONTEXT_DIR}/acceptance-contract.json`,
+      prdRelativePath: `${HARNESS_CONTEXT_DIR}/prd.md`,
+      contractRelativePath: `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`,
       prdSourcePath: prdPath,
     },
   );
 
   assert.match(prompt, /existing scaffold-hbar application/i);
   assert.match(prompt, /do NOT rebuild the app from scratch/i);
-  assert.match(prompt, new RegExp(EXTEND_CONTEXT_DIR));
-  assert.match(prompt, new RegExp(EXTEND_SKILLS_DIR));
+  assert.match(prompt, new RegExp(HARNESS_CONTEXT_DIR));
+  assert.match(prompt, new RegExp(HARNESS_SKILLS_DIR));
   assert.match(prompt, /Add a tip jar panel/);
 });
 

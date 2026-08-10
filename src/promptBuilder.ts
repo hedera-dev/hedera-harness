@@ -6,7 +6,7 @@ import {
   type VendoredContext,
 } from "./contextVendor.js";
 import type { VendoredSkill } from "./skillVendor.js";
-import { EXTEND_CONTEXT_DIR, EXTEND_SKILLS_DIR } from "./runtimePaths.js";
+import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 
 export type RepairScope = "semantic-scoped" | "runtime" | "broad";
 
@@ -91,7 +91,7 @@ export async function buildGeneratorPrompt(
 /**
  * In-place extend: inspect and preserve the existing app; implement the PRD extension.
  */
-export async function buildExtendPrompt(
+export async function buildSessionPrompt(
   spec: TemplateSpec,
   attempt: number,
   vendoredSkills: VendoredSkill[] = [],
@@ -99,11 +99,11 @@ export async function buildExtendPrompt(
 ): Promise<string> {
   const prd = await readFile(spec.prdPath, "utf8");
   const skillSummaries = formatSkillSummaries(vendoredSkills);
-  const prdPath = vendoredContext?.prdRelativePath ?? `${EXTEND_CONTEXT_DIR}/prd.md`;
+  const prdPath = vendoredContext?.prdRelativePath ?? `${HARNESS_CONTEXT_DIR}/prd.md`;
   const contractPath =
-    vendoredContext?.contractRelativePath ?? `${EXTEND_CONTEXT_DIR}/acceptance-contract.json`;
+    vendoredContext?.contractRelativePath ?? `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`;
   const skillsRoot =
-    vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || EXTEND_SKILLS_DIR;
+    vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || HARNESS_SKILLS_DIR;
 
   return [
     "You are the extension agent for an existing scaffold-hbar application.",
@@ -148,20 +148,20 @@ export async function buildExtendPrompt(
 }
 
 /**
- * Continue an in-place extend session on the same harness branch.
+ * Continue a project-centric `run` session on the same harness branch.
  */
-export async function buildExtendContinuePrompt(
+export async function buildSessionContinuePrompt(
   spec: TemplateSpec,
   cycle: number,
   vendoredSkills: VendoredSkill[] = [],
   vendoredContext?: VendoredContext,
 ): Promise<string> {
   const skillSummaries = formatSkillSummaries(vendoredSkills);
-  const prdPath = vendoredContext?.prdRelativePath ?? `${EXTEND_CONTEXT_DIR}/prd.md`;
+  const prdPath = vendoredContext?.prdRelativePath ?? `${HARNESS_CONTEXT_DIR}/prd.md`;
   const contractPath =
-    vendoredContext?.contractRelativePath ?? `${EXTEND_CONTEXT_DIR}/acceptance-contract.json`;
+    vendoredContext?.contractRelativePath ?? `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`;
   const skillsRoot =
-    vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || EXTEND_SKILLS_DIR;
+    vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || HARNESS_SKILLS_DIR;
 
   return [
     "You are continuing an in-place extension of an existing scaffold-hbar application.",
@@ -202,15 +202,15 @@ export async function buildExtendContinuePrompt(
 }
 
 /**
- * Repair prompt for in-place extend (preserves existing app; uses runtime context paths).
+ * Repair prompt for project-centric `run` (preserves existing app; uses runtime context paths).
  */
-export async function buildExtendRepairPrompt(
+export async function buildSessionRepairPrompt(
   spec: TemplateSpec,
   findings: ValidationFinding[],
   attempt: number,
   vendoredContext?: VendoredContext,
 ): Promise<string> {
-  const prompt = await buildRepairPrompt(spec, findings, attempt, vendoredContext);
+  const prompt = await buildRepairPrompt(spec, findings, attempt);
   return [
     "You are repairing an in-place extension of an existing application.",
     "Preserve unrelated working features. Prefer the smallest fix that clears the findings.",

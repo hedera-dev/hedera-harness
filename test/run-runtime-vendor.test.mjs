@@ -9,7 +9,7 @@ const { vendorSkills } = await import(pathToFileURL(path.resolve("dist/skillVend
 const { vendorHarnessContext, withPlaywrightMcpSnapshot } = await import(
   pathToFileURL(path.resolve("dist/contextVendor.js")).href
 );
-const { EXTEND_CONTEXT_DIR, EXTEND_SKILLS_DIR } = await import(
+const { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } = await import(
   pathToFileURL(path.resolve("dist/runtimePaths.js")).href
 );
 
@@ -32,18 +32,18 @@ test("extend vendoring writes skills/context under .harness/runtime and skips MC
   await writeFile(prdPath, "# PRD\n");
 
   const skills = await vendorSkills(root, [path.join(skillDir, "SKILL.md")], {
-    skillsDir: EXTEND_SKILLS_DIR,
+    skillsDir: HARNESS_SKILLS_DIR,
   });
   assert.equal(skills.length, 1);
-  assert.ok(skills[0].relativePath.startsWith(`${EXTEND_SKILLS_DIR}/`));
+  assert.ok(skills[0].relativePath.startsWith(`${HARNESS_SKILLS_DIR}/`));
   await access(path.join(root, ...skills[0].relativePath.split("/")));
 
   const context = await vendorHarnessContext(
     root,
     { prdPath },
-    { contextDir: EXTEND_CONTEXT_DIR, injectPlaywrightMcp: false },
+    { contextDir: HARNESS_CONTEXT_DIR, injectPlaywrightMcp: false },
   );
-  assert.equal(context.prdRelativePath, `${EXTEND_CONTEXT_DIR}/prd.md`);
+  assert.equal(context.prdRelativePath, `${HARNESS_CONTEXT_DIR}/prd.md`);
   assert.equal(context.playwrightMcpPath, undefined);
   await access(path.join(root, ...context.prdRelativePath.split("/")));
 

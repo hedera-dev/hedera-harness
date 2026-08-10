@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "init" | "run" | "extend" | "validate" | "validate-semantic";
+export type HarnessCommand = "init" | "run" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -198,20 +198,23 @@ export interface ChainSigner {
   network: "testnet";
 }
 
-export interface ExtendBaselineCommandConfig {
+export interface BaselineCommandConfig {
   name?: string;
   command: string;
   timeoutMs?: number;
 }
 
-export interface ExtendBaselineConfig {
+export interface BaselineConfig {
   /** Non-target health checks run once after branch creation (before generation). */
-  commands?: ExtendBaselineCommandConfig[];
+  commands?: BaselineCommandConfig[];
 }
 
-/** In-place `extend` options (ignored by isolated `run`). */
+/**
+ * Host baseline config for project-centric `run`.
+ * YAML key remains `extend.baseline` for compatibility with existing recipes.
+ */
 export interface ExtendConfig {
-  baseline?: ExtendBaselineConfig;
+  baseline?: BaselineConfig;
 }
 
 export interface TemplateSpec {

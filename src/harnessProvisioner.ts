@@ -156,20 +156,11 @@ async function ensureHarnessPackageScript(targetDir: string): Promise<boolean> {
       ? ({ ...(parsed.scripts as Record<string, unknown>) } as Record<string, string>)
       : {};
 
-  let changed = false;
-  if (!scripts["harness:run"]) {
-    scripts["harness:run"] = "hedera-harness run .harness/spec.yaml";
-    changed = true;
-  }
-  // Keep legacy alias pointing at the new command for templates that still document extend.
-  if (!scripts["harness:extend"]) {
-    scripts["harness:extend"] = "hedera-harness run .harness/spec.yaml";
-    changed = true;
-  }
-
-  if (!changed) {
+  if (scripts["harness:run"]) {
     return false;
   }
+
+  scripts["harness:run"] = "hedera-harness run .harness/spec.yaml";
 
   parsed.scripts = scripts;
   await writeFile(packageJsonPath, `${JSON.stringify(parsed, null, 2)}\n`);

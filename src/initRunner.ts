@@ -60,6 +60,10 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
 
   const nextSteps = [
     `cd ${seeded.targetDir}`,
+    "A starter recipe is already under .harness/ — customize it before run:",
+    "Optional: add your own remote (init created a fresh git repo with no origin):",
+    "  git remote add origin <your-repo-url>",
+    "  git push -u origin main",
     "Install the hedera-harness plugin from the marketplace, then author the recipe (recommended):",
     "  /plugin marketplace add hedera-dev/hedera-skills",
     "  /plugin install hedera-harness",

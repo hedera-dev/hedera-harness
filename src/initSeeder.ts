@@ -1,4 +1,4 @@
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { logPhase } from "./attemptLoop.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
@@ -7,6 +7,7 @@ import type { CommandExecutionResult, PreflightCommandConfig } from "./types.js"
 const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
 export const DEFAULT_SCAFFOLD_REPO = "https://github.com/hedera-dev/scaffold-hbar.git";
 export const DEFAULT_SCAFFOLD_REF = "main";
+const INITIAL_COMMIT_MESSAGE = "Initial scaffold from scaffold-hbar";
 
 export interface InitSeedInput {
   /** Absolute path where the project should be created. */
@@ -29,8 +30,8 @@ export interface InitSeedResult {
 }
 
 /**
- * Clone scaffold-hbar into `targetDir`, keeping `.git` so the project is a normal repo.
- * Unlike isolated `run` seeding, this does **not** strip `.git`.
+ * Clone scaffold-hbar into `targetDir`, then replace the cloned `.git` with a
+ * fresh repository and an initial commit (no scaffold-hbar history or remote).
  */
 export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeedResult> {
   const targetDir = path.resolve(input.targetDir);
@@ -54,6 +55,18 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
     streamOutput: true,
   });
 
+  const scaffoldSha = (
+    await executeCommandOrThrow({
+      command: "git",
+      args: ["rev-parse", "HEAD"],
+      cwd: targetDir,
+      timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
+    })
+  ).stdout.trim();
+  logPhase("Scaffold cloned", `${scaffoldSha.slice(0, 8)} (will re-init git)`);
+
+  await reinitializeFreshGitRepo(targetDir);
+
   const commitSha = (
     await executeCommandOrThrow({
       command: "git",
@@ -62,23 +75,7 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
       timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
     })
   ).stdout.trim();
-  logPhase("Scaffold cloned", `${commitSha.slice(0, 8)} (keeping .git)`);
-
-  // Ensure we are on a named branch (clone --branch usually is).
-  const branch = (
-    await executeCommand({
-      command: "git",
-      args: ["branch", "--show-current"],
-      cwd: targetDir,
-    })
-  ).stdout.trim();
-  if (!branch) {
-    await executeCommandOrThrow({
-      command: "git",
-      args: ["checkout", "-b", ref],
-      cwd: targetDir,
-    });
-  }
+  logPhase("Fresh git repository ready", `${commitSha.slice(0, 8)} on main (no remote)`);
 
   const preflightCommands: Array<string | PreflightCommandConfig> = input.skipInstall
     ? [...(input.preflightCommands ?? [])]
@@ -97,6 +94,40 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
     preflight,
     clonedIntoExistingEmptyDir: emptyExisting,
   };
+}
+
+async function reinitializeFreshGitRepo(targetDir: string): Promise<void> {
+  logPhase("Creating fresh git repository", "discarding scaffold-hbar history and remote");
+  await rm(path.join(targetDir, ".git"), { recursive: true, force: true });
+
+  await executeCommandOrThrow({
+    command: "git",
+    args: ["init", "-b", "main"],
+    cwd: targetDir,
+    timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
+  });
+
+  await executeCommandOrThrow({
+    command: "git",
+    args: ["add", "-A"],
+    cwd: targetDir,
+    timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
+  });
+
+  await executeCommandOrThrow({
+    command: "git",
+    args: [
+      "-c",
+      "user.name=hedera-harness",
+      "-c",
+      "user.email=hedera-harness@local",
+      "commit",
+      "-m",
+      INITIAL_COMMIT_MESSAGE,
+    ],
+    cwd: targetDir,
+    timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
+  });
 }
 
 async function assertTargetReadyForInit(

@@ -8,7 +8,7 @@ import test from "node:test";
 const distUrl = pathToFileURL(path.resolve("dist/runArtifacts.js")).href;
 const {
   createRunLayout,
-  createExtendLayout,
+  createSessionLayout,
   openRunLayout,
   readLayoutMeta,
   resolveArtifactDirsForWorkspace,
@@ -17,7 +17,7 @@ const {
   lastAttemptNumber,
   nextCycleNumber,
   LAYOUT_MODE_ISOLATED_RUN,
-  LAYOUT_MODE_IN_PLACE_EXTEND,
+  LAYOUT_MODE_IN_PLACE_RUN,
 } = await import(distUrl);
 
 function loggingPaths(root) {
@@ -57,33 +57,33 @@ test("isolated-run layout uses runs/<id>/workspace and persists mode metadata", 
   assert.equal(reopened.runDirectory, layout.runDirectory);
 });
 
-test("in-place-extend layout keeps code in cwd and artifacts under .harness/runs/<id>", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-extend-"));
-  const layout = await createExtendLayout(cwd, "extend-demo", loggingPaths(cwd));
+test("in-place-run layout keeps code in cwd and artifacts under .harness/runs/<id>", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-run-"));
+  const layout = await createSessionLayout(cwd, "run-demo", loggingPaths(cwd));
 
-  assert.equal(layout.mode, LAYOUT_MODE_IN_PLACE_EXTEND);
+  assert.equal(layout.mode, LAYOUT_MODE_IN_PLACE_RUN);
   assert.equal(layout.workspacePath, path.resolve(cwd));
   assert.ok(layout.runDirectory.startsWith(path.join(cwd, ".harness", "runs") + path.sep));
   assert.equal(layout.logsDirectory, path.join(layout.runDirectory, "logs"));
   assert.equal(layout.cacheDirectory, path.join(layout.runDirectory, "cache"));
 
   const meta = await readLayoutMeta(layout.runDirectory);
-  assert.equal(meta.mode, LAYOUT_MODE_IN_PLACE_EXTEND);
+  assert.equal(meta.mode, LAYOUT_MODE_IN_PLACE_RUN);
   assert.equal(meta.workspacePath, path.resolve(cwd));
 
   const reopened = await openRunLayout(layout.runDirectory, loggingPaths(cwd));
-  assert.equal(reopened.mode, LAYOUT_MODE_IN_PLACE_EXTEND);
+  assert.equal(reopened.mode, LAYOUT_MODE_IN_PLACE_RUN);
   assert.equal(reopened.workspacePath, path.resolve(cwd));
 });
 
 test("resolveArtifactDirsForWorkspace prefers layout.json over basename heuristics", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-artifacts-"));
-  const layout = await createExtendLayout(cwd, "artifacts", loggingPaths(cwd));
+  const layout = await createSessionLayout(cwd, "artifacts", loggingPaths(cwd));
 
   // Rename would break basename===workspace; metadata must still win for isolated.
   // For extend, workspace basename is the temp folder name — not "workspace".
   const dirs = await resolveArtifactDirsForWorkspace(cwd);
-  assert.equal(dirs.mode, LAYOUT_MODE_IN_PLACE_EXTEND);
+  assert.equal(dirs.mode, LAYOUT_MODE_IN_PLACE_RUN);
   assert.equal(dirs.runDirectory, layout.runDirectory);
   assert.equal(dirs.logsDirectory, layout.logsDirectory);
   assert.equal(dirs.promptsDirectory, layout.promptsDirectory);

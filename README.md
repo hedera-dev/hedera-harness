@@ -1,19 +1,17 @@
 # hedera-harness
 
-TypeScript CLI that **bootstraps and iteratively extends [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) projects** from a product brief you supply.
+TypeScript CLI that **bootstraps and iteratively develops [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) projects** from a product brief you supply.
 
 Two main commands:
 
-1. **`init`** — create a new project (seeds scaffold-hbar, keeps `.git`, provisions `.harness/` + skills)
+1. **`init`** — create a new project (seeds scaffold-hbar, fresh `git init`, provisions `.harness/` + generator skills)
 2. **`run`** — generate → validate → repair on the **same project cwd**, versioned with `harness/run-*` git branches
 
 The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.).
 
-> **`extend` is deprecated** and aliases `run` (same project-centric behavior). Prefer `hedera-harness run`.
-
 ## What it does
 
-1. **`init`** clones scaffold-hbar into a project directory (`.git` kept) and provisions `.harness/`
+1. **`init`** clones scaffold-hbar into a project directory, replaces `.git` with a **fresh repo** (no scaffold history/remote), and provisions `.harness/`
 2. **`run`** vendors skills/context into ignored runtime paths under `.harness/runtime/`
 3. **Creates or continues** a `harness/run-<spec>-<id>` branch with checkpoint commits
 4. **Runs a generator agent** (Cursor CLI `agent` by default) against your PRD
@@ -115,7 +113,7 @@ npx hedera-harness init my-app
 cd my-app
 ```
 
-This clones [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) `main` (keeps `.git`), writes `.harness/` (spec, PRD, validators), copies `skills-index.json`, and pre-vendors Hedera skills under `.harness/skills/`.
+This clones [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) `main`, replaces the cloned `.git` with a **fresh repository** (single initial commit, no remote), writes `.harness/` (spec, PRD, validators), copies `skills-index.json`, and pre-vendors generator skills under `.harness/skills/`.
 
 ### 2. Edit the recipe
 
@@ -209,13 +207,14 @@ my-app/
 Required in the **spec file**:
 
 - Omit `seed` — workspace is the project cwd
-- `extend.baseline` — host-app health checks before generation (must include a command literally named `install`)
+- `extend.baseline` — host-app health checks before generation (YAML key name kept for compatibility; must include a command literally named `install`)
 - Validators / PRD under `.harness/…`
 
 ```bash
 hedera-harness run .harness/spec.yaml --max-attempts 3
-hedera-harness validate .harness/spec.yaml --workspace .
-hedera-harness validate-semantic .harness/spec.yaml --workspace .
+hedera-harness validate
+hedera-harness validate .harness/spec.yaml
+hedera-harness validate-semantic .harness/spec.yaml
 ```
 
 ## Skills index
@@ -281,12 +280,11 @@ Skeleton source: [`skeletons/project-harness/`](skeletons/project-harness/).
 ```bash
 hedera-harness init [target-dir] [--repo URL] [--ref branch] [--template branch] [--skip-install] [--skills a,b]
 hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
-hedera-harness extend [spec]   # deprecated alias for run
-hedera-harness validate <spec> --workspace <path>
-hedera-harness validate-semantic <spec> --workspace <path>
+hedera-harness validate [spec] [--workspace <path>]
+hedera-harness validate-semantic [spec] [--workspace <path>]
 ```
 
-Default spec for `run` / `extend`: `.harness/spec.yaml`.
+Default spec for `run`: `.harness/spec.yaml`.
 
 ## Repository layout (this package)
 
@@ -311,7 +309,7 @@ Default spec for `run` / `extend`: `.harness/spec.yaml`.
 | `npm test` | Build, then run Node test runner suites |
 | `npm run smoke:pack` | Pack a release tarball and smoke-install it with Yarn 3 |
 
-CLI commands: `init`, `run`, `extend` (deprecated), `validate`, `validate-semantic`.
+CLI commands: `init`, `run`, `validate`, `validate-semantic`.
 
 Published package version **1.1.1** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`).
 

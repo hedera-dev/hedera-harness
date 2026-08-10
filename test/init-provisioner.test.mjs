@@ -77,7 +77,7 @@ test("seedProjectForInit refuses non-empty target", async () => {
   );
 });
 
-test("seedProjectForInit clones into empty dir and keeps .git", async () => {
+test("seedProjectForInit clones into empty dir and creates a fresh git repo", async () => {
   const parent = await makeTestTempDir("init-clone-");
   const target = path.join(parent, "app");
   await mkdir(target, { recursive: true });
@@ -94,4 +94,10 @@ test("seedProjectForInit clones into empty dir and keeps .git", async () => {
   assert.equal(await pathExists(path.join(target, ".git")), true);
   assert.ok(result.commitSha.length >= 7);
   assert.equal(result.preflight.length, 0);
+  assert.equal(git(target, ["branch", "--show-current"]), "main");
+  assert.equal(git(target, ["rev-list", "--count", "HEAD"]), "1");
+  assert.match(git(target, ["log", "-1", "--pretty=%s"]), /Initial scaffold from scaffold-hbar/);
+  // No inherited remote from the seed clone.
+  const remotes = spawnSync("git", ["remote"], { cwd: target, encoding: "utf8" });
+  assert.equal((remotes.stdout || "").trim(), "");
 });

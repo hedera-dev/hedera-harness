@@ -1,7 +1,7 @@
 {
   "name": "hedera-harness",
   "version": "1.1.1",
-  "description": "Agentic harness for scaffolding and iteratively extending scaffold-hbar projects (init + run).",
+  "description": "Agentic harness for scaffolding and iteratively developing hedera dapps projects (init + run).",
   "type": "module",
   "bin": {
     "hedera-harness": "./dist/index.js"

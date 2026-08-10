@@ -1,7 +1,11 @@
-/** Primary branch prefix for project-centric `run`. */
+/** Primary branch prefix for project-centric `run`. New branches always use this. */
 export const HARNESS_RUN_BRANCH_PREFIX = "harness/run-";
 
-/** Legacy prefix from `extend` — still recognized for continue. */
+/**
+ * Legacy prefix from the removed `extend` command.
+ * Read-only: still recognized for continue / smart branch detection.
+ * Never used when creating new branches.
+ */
 export const HARNESS_EXTEND_BRANCH_PREFIX = "harness/extend-";
 
 export function slugifyForBranch(value: string): string {

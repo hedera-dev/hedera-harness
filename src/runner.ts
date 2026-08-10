@@ -17,12 +17,12 @@ import {
 } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
 import {
-  runExtend,
-  type ExtendRunResult,
-  type RunExtendOptions,
-} from "./extendRunner.js";
+  runSession,
+  type SessionRunResult,
+  type RunSessionOptions,
+} from "./sessionRunner.js";
 
-export interface ProjectRunResult extends ExtendRunResult {}
+export interface ProjectRunResult extends SessionRunResult {}
 
 /**
  * Project-centric harness entrypoint (formerly isolated greenfield `run`).
@@ -37,18 +37,18 @@ export async function runHarness(options: CliOptions): Promise<ProjectRunResult>
 }
 
 /** Full project-centric run including session/cleanup metadata. */
-export async function runProjectHarness(options: RunExtendOptions): Promise<ProjectRunResult> {
-  return runExtend(options);
+export async function runProjectHarness(options: RunSessionOptions): Promise<ProjectRunResult> {
+  return runSession(options);
 }
 
 export async function validateWorkspace(options: CliOptions) {
-  if (!options.workspacePath) {
-    throw new Error('Expected --workspace <path> for validate command.');
-  }
+  // Project-centric default: validate the current project (cwd), like `run`.
+  const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
+  await access(workspacePath);
 
   // Project-centric recipes omit `seed`; validate only needs deterministic gates.
   const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
-  return runDeterministicValidation(options.workspacePath, loaded.spec);
+  return runDeterministicValidation(workspacePath, loaded.spec);
 }
 
 /**
@@ -57,11 +57,8 @@ export async function validateWorkspace(options: CliOptions) {
  * so older runs pick up current harness tooling.
  */
 export async function validateSemanticWorkspace(options: CliOptions): Promise<SemanticValidationResult> {
-  if (!options.workspacePath) {
-    throw new Error('Expected --workspace <path> for validate-semantic command.');
-  }
-
-  const workspacePath = path.resolve(options.workspacePath);
+  // Project-centric default: validate the current project (cwd), like `run`.
+  const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   await access(workspacePath);
 
   const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });

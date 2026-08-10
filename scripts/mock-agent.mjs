@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Deterministic generator for extend e2e smoke.
- * MOCK_EXTEND_MODE=fail|pass (default pass)
- * Last argv is the prompt (unused); workspace comes from MOCK_EXTEND_WORKSPACE or cwd.
+ * Deterministic generator for run e2e smoke.
+ * MOCK_HARNESS_MODE=fail|pass (default pass)
+ * Last argv is the prompt (unused); workspace comes from MOCK_HARNESS_WORKSPACE or cwd.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const mode = (process.env.MOCK_EXTEND_MODE || "pass").toLowerCase();
-const workspace = process.env.MOCK_EXTEND_WORKSPACE || process.cwd();
+const mode = (process.env.MOCK_HARNESS_MODE || "pass").toLowerCase();
+const workspace = process.env.MOCK_HARNESS_WORKSPACE || process.cwd();
 const headerPath = path.join(workspace, "packages/nextjs/components/Header.tsx");
 const learnPath = path.join(workspace, "packages/nextjs/app/learn/page.tsx");
 
@@ -79,5 +79,5 @@ export default function LearnPage() {
 
 await ensureLearnNav();
 await writeLearnPage(mode !== "fail");
-console.log(`mock-extend-agent: mode=${mode} workspace=${workspace}`);
+console.log(`mock-agent: mode=${mode} workspace=${workspace}`);
 process.exit(0);

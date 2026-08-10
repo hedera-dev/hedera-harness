@@ -1,11 +1,11 @@
-import type { ExtendCleanupResult } from "./extendCleanup.js";
-import type { ExtendSessionMetadata } from "./extendSession.js";
+import type { CleanupResult } from "./runCleanup.js";
+import type { SessionMetadata } from "./session.js";
 import type { RunReport } from "./types.js";
 
-export interface ExtendOutroInput {
+export interface OutroInput {
   report: RunReport;
-  session: ExtendSessionMetadata;
-  cleanup: ExtendCleanupResult;
+  session: SessionMetadata;
+  cleanup: CleanupResult;
   specPath: string;
 }
 
@@ -13,7 +13,7 @@ export interface ExtendOutroInput {
  * Human-readable success/failure outro. Never implies the harness pushed,
  * opened a PR, merged, deleted a branch, or switched away from the harness branch.
  */
-export function formatExtendOutro(input: ExtendOutroInput): string[] {
+export function formatRunOutro(input: OutroInput): string[] {
   const { report, session, cleanup, specPath } = input;
   const infraAbort = Boolean(report.semanticValidation?.infrastructureFailure);
   const status = report.passed ? "PASSED" : infraAbort ? "ABORTED" : "FAILED";

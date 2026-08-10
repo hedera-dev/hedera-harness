@@ -1,9 +1,8 @@
-import { runExtend } from "./extendRunner.js";
 import { runInit } from "./initRunner.js";
 import { runHarness, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["init", "run", "extend", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>(["init", "run", "validate", "validate-semantic"]);
 const DEFAULT_RUN_SPEC = ".harness/spec.yaml";
 
 export function parseCliArgs(argv: string[]): ParsedCli {
@@ -11,7 +10,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
     throw new Error(
-      `Expected command "init", "run", "extend", "validate", or "validate-semantic".`,
+      `Expected command "init", "run", "validate", or "validate-semantic".`,
     );
   }
 
@@ -37,9 +36,8 @@ export function printHelp(): void {
 Usage:
   hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <branch>] [--skip-install]
   hedera-harness run [spec] [--max-attempts <count>] [--new] [--continue <branch>]
-  hedera-harness extend [spec] [--max-attempts <count>] [--new] [--continue <branch>]
-  hedera-harness validate <spec> --workspace <path>
-  hedera-harness validate-semantic <spec> --workspace <path>
+  hedera-harness validate [spec] [--workspace <path>]
+  hedera-harness validate-semantic [spec] [--workspace <path>]
 
 Examples:
   hedera-harness init my-app
@@ -48,18 +46,16 @@ Examples:
   hedera-harness run .harness/spec.yaml --max-attempts 3
   hedera-harness run .harness/spec.yaml --new
   hedera-harness run .harness/spec.yaml --continue harness/run-my-feature-abc123
-  hedera-harness validate .harness/spec.yaml --workspace .
-  hedera-harness validate-semantic .harness/spec.yaml --workspace .
+  hedera-harness validate
+  hedera-harness validate .harness/spec.yaml
+  hedera-harness validate-semantic .harness/spec.yaml
 
 Project-centric run notes:
   - Workspace is the current directory (cwd). Bootstrap with \`init\` first (or use an existing app with .harness/).
   - On a matching harness/run-* (or legacy harness/extend-*) branch + same spec, continues automatically.
   - On a normal branch, or when the spec differs, creates harness/run-<slug>-<id>.
   - --new forces a fresh harness branch; --continue <branch> checks out that branch and resumes.
-  - Does not auto-stash, push, open a PR, merge, or delete branches.
-
-Deprecated:
-  - \`extend\` is an alias for \`run\` (prints a warning). Prefer \`hedera-harness run\`.`);
+  - Does not auto-stash, push, open a PR, merge, or delete branches.`);
 }
 
 export async function runCli(parsed: ParsedCli): Promise<void> {
@@ -69,8 +65,9 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
       [
         "Harness project initialized",
         `target=${result.targetDir}`,
-        `seed=${result.repo}@${result.ref} (${result.commitSha.slice(0, 8)})`,
-        `harness=${result.harnessDir}`,
+        `seed=${result.repo}@${result.ref}`,
+        `git=${result.commitSha.slice(0, 8)} (fresh repo on main, no remote)`,
+        `recipe=${result.harnessDir}/  (prd.md, spec.yaml, validators/)`,
         `skillsVendored=${result.vendoredSkillCount}`,
         `filesWritten=${result.writtenFiles.length}`,
         "",
@@ -132,13 +129,6 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     return;
   }
 
-  if (parsed.command === "extend") {
-    console.warn(
-      'Warning: `extend` is deprecated; use `hedera-harness run` (same project-centric behavior).',
-    );
-  }
-
-  // `run` and deprecated `extend` share the project-centric in-place loop.
   const { report, outroLines } = await runHarness(parsed.options);
   const lines = [...outroLines];
 
@@ -165,7 +155,7 @@ function takeSpecPath(
     return { specPath: first, flagArgs: args.slice(1) };
   }
 
-  if (command === "run" || command === "extend") {
+  if (command === "run" || command === "validate" || command === "validate-semantic") {
     return { specPath: DEFAULT_RUN_SPEC, flagArgs: args };
   }
 
@@ -225,14 +215,14 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
         options.workspacePath = readValue(args, ++index, arg);
         break;
       case "--new":
-        if (command !== "run" && command !== "extend") {
-          throw new Error(`${arg} is only valid for run/extend.`);
+        if (command !== "run") {
+          throw new Error(`${arg} is only valid for run.`);
         }
         options.forceNew = true;
         break;
       case "--continue": {
-        if (command !== "run" && command !== "extend") {
-          throw new Error(`${arg} is only valid for run/extend.`);
+        if (command !== "run") {
+          throw new Error(`${arg} is only valid for run.`);
         }
         const value = readValue(args, ++index, arg);
         // Branch-based continue (project-centric). Directory paths still accepted
@@ -269,23 +259,19 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
 
 function readValue(args: string[], index: number, flag: string): string {
   const value = args[index];
-
   if (!value || value.startsWith("-")) {
     throw new Error(`Expected a value after ${flag}.`);
   }
-
   return value;
 }
 
 function readPositiveInteger(args: string[], index: number, flag: string): number {
-  const value = readValue(args, index, flag);
-  const parsed = Number.parseInt(value, 10);
-
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed.toString() !== value) {
-    throw new Error(`Expected ${flag} to be a positive integer.`);
+  const raw = readValue(args, index, flag);
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Expected a positive integer after ${flag}.`);
   }
-
-  return parsed;
+  return value;
 }
 
 function isHarnessCommand(value: string): value is HarnessCommand {
