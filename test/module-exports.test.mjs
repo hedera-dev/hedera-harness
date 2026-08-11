@@ -16,13 +16,10 @@ test("refactored modules export the shared attempt loop and both runners", async
   const provisioner = await import(pathToFileURL(path.resolve("dist/harnessProvisioner.js")).href);
 
   assert.equal(typeof attemptLoop.runAttemptLoop, "function");
-  assert.equal(typeof attemptLoop.runIsolatedAttemptLoop, "function");
   assert.equal(typeof attemptLoop.runSessionAttemptLoop, "function");
-  assert.equal(typeof attemptLoop.createIsolatedPromptStrategy, "function");
   assert.equal(typeof attemptLoop.createSessionPromptStrategy, "function");
   assert.equal(typeof attemptLoop.runAttemptValidation, "function");
   assert.equal(typeof runner.runHarness, "function");
-  assert.equal(typeof runner.runProjectHarness, "function");
   assert.equal(typeof runner.validateWorkspace, "function");
   assert.equal(typeof runner.validateSemanticWorkspace, "function");
   assert.equal(typeof sessionRunner.runSession, "function");

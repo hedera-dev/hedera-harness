@@ -1,17 +1,13 @@
 import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
 import {
-  buildContinuePrompt,
   buildSessionContinuePrompt,
   buildSessionPrompt,
   buildSessionRepairPrompt,
-  buildGeneratorPrompt,
-  buildRepairPrompt,
 } from "./promptBuilder.js";
 import {
   appendHarnessLog,
   appendHarnessNote,
-  LAYOUT_MODE_IN_PLACE_RUN,
   type RunLayout,
   writeJsonFile,
   writePromptFile,
@@ -29,10 +25,7 @@ import type {
   ValidationResult,
 } from "./types.js";
 import { auditOracleAccess } from "./oracleAudit.js";
-import {
-  commitWorkspaceAttempt,
-  type WorkspaceGitCommitResult,
-} from "./workspaceGit.js";
+import type { CheckpointCommitResult } from "./harnessGit.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
@@ -60,7 +53,7 @@ export interface SessionContext {
   chainSigner?: ChainSigner;
 }
 
-/** Mode-specific prompt + MCP wiring (isolated `run` vs in-place `extend`). */
+/** Prompt + Playwright MCP wiring for the in-place run loop. */
 export interface AttemptPromptStrategy {
   playwrightMcpMode: "workspace" | "snapshot-restore";
   buildInitialPrompt(isContinue: boolean, cycle: number | undefined): Promise<string>;
@@ -81,35 +74,15 @@ export interface AttemptLoopInput {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
-  /**
-   * Optional commit hook (extend uses exclusion-safe checkpoints).
-   * Defaults to isolated-workspace `commitWorkspaceAttempt`.
-   */
-  commitAttempt?: (
+  /** Exclusion-safe checkpoint commit hook (never stages runtime or secret paths). */
+  commitAttempt: (
     workspacePath: string,
     attempt: number,
     passed: boolean,
     findings: ValidationFinding[],
-  ) => Promise<WorkspaceGitCommitResult>;
-  /** Override prompt strategy (defaults from layout mode). */
+  ) => Promise<CheckpointCommitResult>;
+  /** Override the default session prompt strategy (tests). */
   promptStrategy?: AttemptPromptStrategy;
-}
-
-export function createIsolatedPromptStrategy(
-  session: Pick<SessionContext, "spec" | "vendoredSkills" | "vendoredContext">,
-): AttemptPromptStrategy {
-  const { spec, vendoredSkills, vendoredContext } = session;
-  return {
-    playwrightMcpMode: "workspace",
-    async buildInitialPrompt(isContinue, cycle) {
-      return isContinue
-        ? buildContinuePrompt(spec, cycle!, vendoredSkills)
-        : buildGeneratorPrompt(spec, 1, vendoredSkills);
-    },
-    async buildRepairPrompt(findings, nextAttempt) {
-      return buildRepairPrompt(spec, findings, nextAttempt);
-    },
-  };
 }
 
 export function createSessionPromptStrategy(
@@ -129,27 +102,7 @@ export function createSessionPromptStrategy(
   };
 }
 
-function resolvePromptStrategy(input: AttemptLoopInput): AttemptPromptStrategy {
-  if (input.promptStrategy) return input.promptStrategy;
-  const session = {
-    spec: input.spec,
-    vendoredSkills: input.vendoredSkills,
-    vendoredContext: input.vendoredContext,
-  };
-  return input.layout.mode === LAYOUT_MODE_IN_PLACE_RUN
-    ? createSessionPromptStrategy(session)
-    : createIsolatedPromptStrategy(session);
-}
-
-/** Isolated greenfield `run` attempt loop. */
-export async function runIsolatedAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
-  return runAttemptLoop({
-    ...input,
-    promptStrategy: input.promptStrategy ?? createIsolatedPromptStrategy(input),
-  });
-}
-
-/** In-place `extend` attempt loop. */
+/** In-place project-centric `run` attempt loop. */
 export async function runSessionAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
   return runAttemptLoop({
     ...input,
@@ -173,11 +126,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
   } = input;
 
   const generator = new CommandAgentProvider(spec.generator);
-  const commitAttempt =
-    input.commitAttempt ??
-    (async (workspacePath, attempt, passed, findings) =>
-      commitWorkspaceAttempt(workspacePath, attempt, passed, findings.length));
-  const promptStrategy = resolvePromptStrategy(input);
+  const commitAttempt = input.commitAttempt;
+  const promptStrategy = input.promptStrategy ?? createSessionPromptStrategy(input);
 
   let attempts = input.startingAttempt - 1;
   let attemptsThisCycle = 0;

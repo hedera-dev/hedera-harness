@@ -2,12 +2,10 @@ import { appendFile, access, mkdir, readdir, readFile, writeFile } from "node:fs
 import path from "node:path";
 import type { HarnessLogEvent } from "./types.js";
 
-/** Artifact layout for an isolated seed-and-run session under `runs/<id>/`. */
-export const LAYOUT_MODE_ISOLATED_RUN = "isolated-run" as const;
 /** Artifact layout for project-centric run: code stays in cwd, runtime under `.harness/runs/<id>/`. */
 export const LAYOUT_MODE_IN_PLACE_RUN = "in-place-run" as const;
 
-export type RunLayoutMode = typeof LAYOUT_MODE_ISOLATED_RUN | typeof LAYOUT_MODE_IN_PLACE_RUN;
+export type RunLayoutMode = typeof LAYOUT_MODE_IN_PLACE_RUN;
 
 const LAYOUT_META_FILENAME = "layout.json";
 const LAYOUT_META_SCHEMA_VERSION = 1;
@@ -38,22 +36,6 @@ export interface WorkspaceArtifactDirs {
   promptsDirectory: string;
 }
 
-export async function createRunLayout(
-  projectRoot: string,
-  specName: string,
-  logging: { jsonlPath: string; notesPath: string },
-): Promise<RunLayout> {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const runDirectory = path.join(projectRoot, "runs", `${timestamp}-${specName}`);
-  const workspacePath = path.join(runDirectory, "workspace");
-  return createLayoutDirectories({
-    mode: LAYOUT_MODE_ISOLATED_RUN,
-    runDirectory,
-    workspacePath,
-    logging,
-  });
-}
-
 /**
  * Project-centric run layout: generated code lives in `workspacePath` (typically cwd);
  * prompts, logs, reports, cache, and status live under `.harness/runs/<id>/`.
@@ -81,12 +63,9 @@ export async function openRunLayout(
 ): Promise<RunLayout> {
   const absoluteRunDirectory = path.resolve(runDirectory);
   const meta = await readLayoutMeta(absoluteRunDirectory);
-  const mode = meta?.mode ?? LAYOUT_MODE_ISOLATED_RUN;
+  const mode = meta?.mode ?? LAYOUT_MODE_IN_PLACE_RUN;
   const workspacePath =
-    meta?.workspacePath ??
-    (mode === LAYOUT_MODE_IN_PLACE_RUN
-      ? resolveWorkspaceFromRunDirectory(absoluteRunDirectory)
-      : path.join(absoluteRunDirectory, "workspace"));
+    meta?.workspacePath ?? resolveWorkspaceFromRunDirectory(absoluteRunDirectory);
 
   await access(workspacePath);
 
@@ -106,10 +85,7 @@ export async function readLayoutMeta(runDirectory: string): Promise<RunLayoutMet
     const rawMode = parsed.mode as string | undefined;
     const normalizedMode =
       rawMode === "in-place-extend" ? LAYOUT_MODE_IN_PLACE_RUN : parsed.mode;
-    if (
-      normalizedMode !== LAYOUT_MODE_ISOLATED_RUN &&
-      normalizedMode !== LAYOUT_MODE_IN_PLACE_RUN
-    ) {
+    if (normalizedMode !== LAYOUT_MODE_IN_PLACE_RUN) {
       return null;
     }
     if (typeof parsed.workspacePath !== "string" || !parsed.workspacePath) {
@@ -140,27 +116,9 @@ export async function resolveArtifactDirsForWorkspace(
     return fromParent;
   }
 
-  const fromExtendRuns = await findHarnessArtifactDirs(resolvedWorkspace);
-  if (fromExtendRuns) {
-    return fromExtendRuns;
-  }
-
-  // Legacy isolated runs written before layout.json existed.
-  if (path.basename(resolvedWorkspace) === "workspace") {
-    const siblingLogs = path.join(parent, "logs");
-    try {
-      await access(siblingLogs);
-      const promptsDirectory = path.join(parent, "prompts");
-      await mkdir(promptsDirectory, { recursive: true });
-      return {
-        mode: LAYOUT_MODE_ISOLATED_RUN,
-        runDirectory: parent,
-        logsDirectory: siblingLogs,
-        promptsDirectory,
-      };
-    } catch {
-      // fall through
-    }
+  const fromHarnessRuns = await findHarnessArtifactDirs(resolvedWorkspace);
+  if (fromHarnessRuns) {
+    return fromHarnessRuns;
   }
 
   const logsDirectory = path.join(resolvedWorkspace, ".harness-semantic", "logs");
@@ -182,28 +140,6 @@ export async function resolveRunDirectoryForWorkspace(workspacePath: string): Pr
     return dirs.runDirectory;
   }
   return path.resolve(workspacePath);
-}
-
-/**
- * Resolve `--continue` target from CLI options.
- * Prefer an explicit run directory; otherwise map an isolated `.../workspace` path to its parent.
- */
-export function resolveContinueRunDirectory(options: {
-  continueRunDirectory?: string;
-  workspacePath?: string;
-}): string | undefined {
-  if (options.continueRunDirectory) {
-    return path.resolve(options.continueRunDirectory);
-  }
-
-  if (options.workspacePath) {
-    const resolved = path.resolve(options.workspacePath);
-    if (path.basename(resolved) === "workspace") {
-      return path.dirname(resolved);
-    }
-  }
-
-  return undefined;
 }
 
 /** Highest attempt number seen in logs/*-attempt-N.* filenames. */

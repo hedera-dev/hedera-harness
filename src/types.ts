@@ -20,11 +20,6 @@ export interface CliOptions {
   specPath: string;
   maxAttempts?: number;
   workspacePath?: string;
-  /**
-   * @deprecated Isolated-run continue directory. Project-centric `run` uses
-   * `--continue <branch>` (`continueBranch`) instead.
-   */
-  continueRunDirectory?: string;
   /** Force a new `harness/run-*` branch even when current branch matches the spec. */
   forceNew?: boolean;
   /** Explicit harness branch to checkout and continue. */

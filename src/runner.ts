@@ -25,19 +25,14 @@ import {
 export interface ProjectRunResult extends SessionRunResult {}
 
 /**
- * Project-centric harness entrypoint (formerly isolated greenfield `run`).
+ * Project-centric harness entrypoint.
  *
  * Operates on the project cwd (or `--workspace`), creates/continues
  * `harness/run-*` branches, and stores artifacts under `.harness/runs/`.
  *
  * Bootstrap a project first with `hedera-harness init`.
  */
-export async function runHarness(options: CliOptions): Promise<ProjectRunResult> {
-  return runProjectHarness(options);
-}
-
-/** Full project-centric run including session/cleanup metadata. */
-export async function runProjectHarness(options: RunSessionOptions): Promise<ProjectRunResult> {
+export async function runHarness(options: RunSessionOptions): Promise<ProjectRunResult> {
   return runSession(options);
 }
 

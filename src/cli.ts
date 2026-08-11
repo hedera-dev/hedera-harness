@@ -220,26 +220,12 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
         }
         options.forceNew = true;
         break;
-      case "--continue": {
+      case "--continue":
         if (command !== "run") {
           throw new Error(`${arg} is only valid for run.`);
         }
-        const value = readValue(args, ++index, arg);
-        // Branch-based continue (project-centric). Directory paths still accepted
-        // for validate tooling / legacy isolated layouts via continueRunDirectory.
-        if (value.includes("/") && !value.startsWith("harness/")) {
-          // Could be a run directory (legacy) or a branch like feature/foo.
-          // Prefer branch when it looks like harness/*; otherwise keep legacy dir.
-          if (value.startsWith("runs/") || value.includes("/workspace") || value.startsWith(".")) {
-            options.continueRunDirectory = value;
-          } else {
-            options.continueBranch = value;
-          }
-        } else {
-          options.continueBranch = value;
-        }
+        options.continueBranch = readValue(args, ++index, arg);
         break;
-      }
       case "--help":
       case "-h":
         printHelp();
