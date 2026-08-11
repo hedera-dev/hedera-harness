@@ -1,16 +1,22 @@
 # hedera-harness — implementation plan
 
-**Status:** Phases 0–1 complete; Phase 2 next
+**Status:** Phases 0–2 complete; e2e verification outstanding
 **Date:** 2026-08-11
 **Baseline:** v1.1.2 (`28e36f9`), 9,400 source lines, 73 tests passing
-**Current:** branch `feat/harness-phase-0-1-bulletproof`, 8,558 source lines, 76 tests passing
+**Current:** branch `feat/harness-phase-0-1-bulletproof`, 8,875 source lines, 83 tests passing
 
 | Phase | Status |
 |---|---|
 | 0 — delete the retired product | ✅ complete |
-| 1 — stabilise the live path | ✅ complete (e2e gate not yet run) |
-| 2 — stages + findings lifecycle | next |
-| 3–7 | not started |
+| 1 — stabilise the live path | ✅ complete |
+| 2 — stages + findings lifecycle | ✅ complete |
+| **e2e verification** | ⬜ **outstanding — blocks Phase 3** |
+| 3 — manifest redesign | next, after e2e |
+| 4–7 | not started |
+
+**The e2e gate now covers Phases 1 and 2 together.** Phase 1 changed process-kill
+semantics and spawn flags; Phase 2 restructured the loop those fixes live in. Nothing
+so far has driven a real agent — everything is typecheck plus unit tests.
 
 ---
 
@@ -163,7 +169,9 @@ makes tree-kill possible at all — but it is the change most worth exercising o
 
 ---
 
-## Phase 2 — Stage extraction + findings lifecycle
+## Phase 2 — Stage extraction + findings lifecycle ✅
+
+Commits `a7cea30`, `03ca247`.
 
 The "cluttered architecture" fix.
 
@@ -184,9 +192,42 @@ failures into the findings stream as synthetic findings; ours distinguishes "the
 broken" from "the harness is broken" and aborts the repair loop accordingly. That is the
 better behaviour — do not collapse it.
 
-**Exit criteria**
-- `attemptLoop.ts` under ~300 lines
-- each stage testable in isolation
+### Outcome
+
+The four stages already existed in the control flow; they were only visible as nested
+conditionals inside `runAttemptValidation`. Making them named functions with explicit
+short-circuits also made the cost ordering legible — ASSERT is cheap and deterministic,
+so a failing build never pays for a dev server boot or an evaluator pass.
+
+| Module | Lines | Job |
+|---|---|---|
+| `attemptStages.ts` | 379 | the four stages + chain deploy |
+| `attemptReporting.ts` | 300 | artifacts, status, notes, report |
+| `attemptLoop.ts` | **224** | orchestration only (was 826) |
+| `findingsLifecycle.ts` | 76 | delta computation |
+
+`runAttemptValidation` became `runValidationStages` in `attemptStages.ts` rather than
+moving under `validation/`: it orchestrates stages, and `validation/` holds the gate
+implementations those stages call.
+
+SMOKE and EVALUATE share one dev server per attempt. That constraint was previously
+implied by nesting and is now stated — booting a Next app twice per attempt is the most
+expensive thing the loop could do.
+
+**Findings lifecycle.** Findings carry `status: open | fixed`; each attempt computes
+open / fixed / introduced against the previous one and surfaces it in the console, the
+`validation_finished` event, `status.json`, the report, and the outro. Repair prompts are
+built from **open findings only**, so a finding carried forward for reporting is never fed
+back to the agent as work to redo. `openFindingIds` persists on the session so a
+`--continue` cycle reports what it closed instead of restarting the delta from zero
+(optional field — no schema bump).
+
+**Exit criteria** — all met
+- ✅ `attemptLoop.ts` under ~300 lines (224)
+- ✅ each stage exported and independently callable; lifecycle covered by unit tests
+- ✅ `noUnusedLocals` / `noUnusedParameters` permanent in `tsconfig.json`
+- ✅ `HARNESS_CONTEXT_DIR` collision resolved — `contextVendor`'s copy is now
+  `LEGACY_CONTEXT_DIR`, carrying a comment explaining why it must not share the name
 
 **Size:** L.
 
