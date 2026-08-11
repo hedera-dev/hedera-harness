@@ -156,7 +156,7 @@ spec = spec.replace(
 extend:
   baseline:
     commands:
-      - name: noop
+      - name: install
         command: "true"
         timeoutMs: 10000
 
