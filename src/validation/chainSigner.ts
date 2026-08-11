@@ -96,7 +96,11 @@ async function createFundedSigner(
       createdAt: new Date().toISOString(),
     };
 
-    await writeFile(persistPath, `${JSON.stringify(signer, null, 2)}\n`, "utf8");
+    // 0600: the file holds a live (funded) testnet private key.
+    await writeFile(persistPath, `${JSON.stringify(signer, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     return toPublicSigner(signer);
   } finally {
     client.close();

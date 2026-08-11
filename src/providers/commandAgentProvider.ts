@@ -74,7 +74,13 @@ export class CommandAgentProvider implements AgentProvider {
       let idleTimer: NodeJS.Timeout | undefined;
       let hardKillTimer: NodeJS.Timeout | undefined;
 
-      void initializeAgentLog(input.logPath, this.config.command, args, timeoutMs, idleTimeoutMs);
+      void initializeAgentLog(
+        input.logPath,
+        this.config.command,
+        redactPromptArgs(args, input.prompt),
+        timeoutMs,
+        idleTimeoutMs,
+      );
       void streamLogger?.initialize();
 
       const settleAgent = (reason: "wall-clock" | "idle") => {
@@ -168,6 +174,18 @@ export class CommandAgentProvider implements AgentProvider {
   }
 }
 
+/**
+ * Replace the prompt wherever it appears in argv.
+ *
+ * Prompts can carry the ephemeral chain signer's private key, so they must
+ * never reach the log. Slicing off the last argument only worked when the
+ * prompt was appended; configs using the {prompt} placeholder put it in the
+ * middle, which logged the key verbatim and dropped an unrelated flag.
+ */
+function redactPromptArgs(args: string[], prompt: string): string[] {
+  return args.map(arg => (arg.includes(prompt) ? "<prompt redacted>" : arg));
+}
+
 async function initializeAgentLog(
   logPath: string | undefined,
   command: string,
@@ -182,7 +200,7 @@ async function initializeAgentLog(
     [
       "# agent raw stream log",
       `command=${command}`,
-      `args=${JSON.stringify(args.slice(0, -1))}`,
+      `args=${JSON.stringify(args)}`,
       `timeoutMs=${timeoutMs}`,
       `idleTimeoutMs=${idleTimeoutMs}`,
       "",

@@ -94,7 +94,7 @@ export async function runSemanticValidation(input: {
       `validator-attempt-${input.attempt}.activity.log`,
     );
 
-    await writePromptFile(promptPath, prompt);
+    await writePromptFile(promptPath, prompt, [input.chainSigner?.privateKeyHex]);
 
     const validator = new CommandAgentProvider(validatorConfig);
     const agentResult = await validator.run({

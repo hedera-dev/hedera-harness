@@ -193,8 +193,25 @@ export async function appendHarnessNote(
   await appendFile(notesLogPath, entry, "utf8");
 }
 
-export async function writePromptFile(promptPath: string, prompt: string): Promise<void> {
-  await writeFile(promptPath, `${prompt.trim()}\n`, "utf8");
+/**
+ * Persist a prompt for inspection.
+ *
+ * `secrets` are replaced in the on-disk copy only — the agent still receives
+ * the real prompt. Validator prompts embed the ephemeral signer's private key,
+ * and run artifacts outlive the sweep that deletes the key elsewhere.
+ */
+export async function writePromptFile(
+  promptPath: string,
+  prompt: string,
+  secrets: Array<string | undefined> = [],
+): Promise<void> {
+  let persisted = prompt.trim();
+  for (const secret of secrets) {
+    if (secret && secret.length > 0) {
+      persisted = persisted.split(secret).join("<redacted by hedera-harness>");
+    }
+  }
+  await writeFile(promptPath, `${persisted}\n`, "utf8");
 }
 
 export async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
