@@ -7,6 +7,7 @@ import {
 } from "./runArtifacts.js";
 import { logPhase, runSessionAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
+import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { resolveSkillPaths } from "./skillResolver.js";
@@ -64,7 +65,8 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
 
   const loaded = await loadTemplateSpec(options.specPath);
   const { spec, projectRoot } = loaded;
-  const maxAttempts = options.maxAttempts ?? spec.maxAttempts;
+  // CLI flag > environment > recipe.
+  const maxAttempts = options.maxAttempts ?? envMaxAttempts() ?? spec.maxAttempts;
 
   logPhase("Preparing harness session", `${spec.name} @ ${workspacePath}`);
   const prepared = await prepareSession({

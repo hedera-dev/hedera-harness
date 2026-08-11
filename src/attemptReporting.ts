@@ -33,8 +33,9 @@ export async function announceAttempt(input: {
   cycle?: number;
   attemptsThisCycle: number;
   prompt: string;
+  model?: { model: string; reason: string };
 }): Promise<void> {
-  const { layout, kind, attempt, cycle, attemptsThisCycle, prompt } = input;
+  const { layout, kind, attempt, cycle, attemptsThisCycle, prompt, model } = input;
   const fileName =
     kind === "generate"
       ? `generator-attempt-${attempt}.txt`
@@ -70,13 +71,16 @@ export async function announceAttempt(input: {
     promptPath,
   });
 
+  const modelNote = model
+    ? ` [${model.model}${model.reason === "escalated" ? ", escalated — last attempt fixed nothing" : ""}]`
+    : "";
   logStage(
     "GENERATE",
-    kind === "continue"
+    (kind === "continue"
       ? `continue cycle ${cycle}, attempt ${attempt}`
       : kind === "repair"
         ? `repair, attempt ${attempt}`
-        : `attempt ${attempt}`,
+        : `attempt ${attempt}`) + modelNote,
   );
 }
 
