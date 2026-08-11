@@ -1,22 +1,55 @@
 # hedera-harness — implementation plan
 
-**Status:** Phases 0–2 complete; e2e verification outstanding
+**Status:** Phases 0–2 complete and verified; Phase 3 next
 **Date:** 2026-08-11
 **Baseline:** v1.1.2 (`28e36f9`), 9,400 source lines, 73 tests passing
-**Current:** branch `feat/harness-phase-0-1-bulletproof`, 8,875 source lines, 83 tests passing
+**Current:** branch `feat/harness-phase-0-1-bulletproof`, 8,875 source lines, 87 tests passing
 
 | Phase | Status |
 |---|---|
 | 0 — delete the retired product | ✅ complete |
 | 1 — stabilise the live path | ✅ complete |
 | 2 — stages + findings lifecycle | ✅ complete |
-| **e2e verification** | ⬜ **outstanding — blocks Phase 3** |
-| 3 — manifest redesign | next, after e2e |
+| e2e verification | ✅ green (`smoke-run-e2e OK`) |
+| 3 — manifest redesign | next |
 | 4–7 | not started |
 
-**The e2e gate now covers Phases 1 and 2 together.** Phase 1 changed process-kill
-semantics and spawn flags; Phase 2 restructured the loop those fixes live in. Nothing
-so far has driven a real agent — everything is typecheck plus unit tests.
+### e2e verification
+
+`scripts/smoke-run-e2e.sh` passes: scaffold `hedera-demo` via `create-hbar` against a
+local `scaffold-hbar` mirror, install the packed tarball, run (fail across 3 attempts),
+`--continue` (pass on attempt 4), then hygiene-check the branch. No orphaned processes.
+
+Stage output and the findings delta both behave as designed on a real project:
+
+```
+Stage 3/4 SMOKE — skipped — deterministic gates are not clean
+Attempt 1 FAILED — 3 open, 3 new
+Attempt 2 FAILED — 3 open
+Attempt 3 FAILED — 3 open
+Attempt 4 PASSED — deterministic gates passed
+```
+
+Attempts 2 and 3 report open findings with **no fixed and no new** — the loop stating
+that two repair attempts achieved nothing. That is the signal the old
+`3 finding(s)` output could not express.
+
+**The script had been red before this branch.** It patched baseline to a command named
+`noop` while the loader requires one literally named `install` — a requirement that
+predates Phase 0. CI only runs `smoke:pack`, never this script, so it rotted unnoticed.
+Three staleness bugs fixed: a hardcoded `1.1.0` version pin, an unconditional
+`package.json` rewrite that dirtied the tree by one byte (the scaffolded file has no
+trailing newline) and tripped the script's own clean-tree assertion, and the baseline
+command name. **Phase 6's per-template matrix should subsume this script and actually
+run in CI.**
+
+### Still unexercised end-to-end
+
+SMOKE and EVALUATE never ran: the template recipe configures neither `validator` nor
+`validators.playwright`, so `usesSharedDevServer` is false and the runtime stages are
+skipped. Dev-server teardown, the Playwright gate, and semantic validation are covered
+only by unit and integration tests. Phase 6 should include one template whose recipe
+enables the higher tiers.
 
 ---
 
@@ -154,16 +187,19 @@ running half-blind. Confirm whether convergence improves before Phase 2 changes 
 ### Exit criteria
 
 - ✅ grepping run artifacts for key material returns nothing
-- ⬜ **e2e smoke passes with no orphaned processes** — not yet run. Needs a real agent
-  run (40 min – 2.5 hrs per the run logs). Do this before Phase 2, since Phase 2
-  restructures the loop these fixes live in.
+- ✅ **e2e smoke passes with no orphaned processes** — `smoke-run-e2e.sh` green; see
+  the e2e section at the top. The process-kill fixes are additionally covered by
+  integration tests that drive real children and assert the OS reaped them
+  (`test/process-lifecycle.test.mjs`): a SIGTERM-ignoring shell, a background
+  grandchild, and a dev server whose readiness probe fails.
 
 ### Behaviour change to exercise
 
 Children now spawn `detached` (POSIX) so timeouts can signal the whole process group.
 The trade: they no longer die with the terminal, so a `SIGKILL`ed harness leaves them
 running. This is the same trade the dev server already made deliberately, and it is what
-makes tree-kill possible at all — but it is the change most worth exercising on a real run.
+makes tree-kill possible at all. Exercised: the e2e left no orphans, and the integration
+tests confirm the group is reaped on timeout.
 
 **Size:** M.
 
