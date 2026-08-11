@@ -1,9 +1,9 @@
 # hedera-harness — implementation plan
 
-**Status:** Phases 0–2 complete and verified; Phase 3 next
+**Status:** Phases 0–3 complete and verified; Phase 4 next
 **Date:** 2026-08-11
 **Baseline:** v1.1.2 (`28e36f9`), 9,400 source lines, 73 tests passing
-**Current:** branch `feat/harness-phase-0-1-bulletproof`, 8,875 source lines, 87 tests passing
+**Current:** branch `feat/harness-phase-0-1-bulletproof`, 9,100 source lines, 98 tests passing
 
 | Phase | Status |
 |---|---|
@@ -11,8 +11,9 @@
 | 1 — stabilise the live path | ✅ complete |
 | 2 — stages + findings lifecycle | ✅ complete |
 | e2e verification | ✅ green (`smoke-run-e2e OK`) |
-| 3 — manifest redesign | next |
-| 4–7 | not started |
+| 3 — manifest redesign | ✅ complete |
+| 4 — prompts, MCP, models, knobs | next |
+| 5–7 | not started |
 
 ### e2e verification
 
@@ -269,9 +270,9 @@ back to the agent as work to redo. `openFindingIds` persists on the session so a
 
 ---
 
-## Phase 3 — Manifest redesign
+## Phase 3 — Manifest redesign ✅
 
-Requires D1, D2, D3.
+Commits `ea2f42c`, `104e31e`. Requires D1, D2, D3.
 
 **Add**
 - `schemaVersion` — missing → treat as 1; above max supported → hard error naming both
@@ -307,9 +308,34 @@ exist; the harness just read them
 **Generated file shape** — ~5 active lines plus commented defaults. Commented defaults
 cannot drift; stale config can.
 
-**Exit criteria**
-- skeleton manifest under 10 active lines
-- an old-format recipe still loads, with a deprecation warning
+**Exit criteria** — all met
+- ✅ skeleton manifest at 9 active lines (was ~90), defaults present but commented
+- ✅ an old-format recipe still loads, with deprecation warnings, asserted by the e2e
+
+### Two bugs found while verifying this phase
+
+Neither was the thing being looked for, and both meant the e2e was not testing what
+it appeared to test.
+
+**`dist/` was never cleaned.** `tsc` does not remove outputs whose source is gone, so
+`oracleAudit.js` and `workspaceSeeder.js` — deleted in Phase 0 — were still present, and
+`files: ["dist"]` means they would have been **published to npm**. Dead code with no
+corresponding source, past a CI step that already runs `npm pack --dry-run`. `build` now
+cleans first.
+
+**The e2e installed a stale build.** Yarn caches `file:` dependencies by locator, and the
+tarball path never varied, so it reused the zip cached during the Phase 2 run. The version
+assertion passed because both report `1.1.2`; the installed package had `attemptStages.js`
+but no `specDefaults.js`. **Every Phase 3 e2e run was exercising Phase 2 code.** The
+tarball now gets a unique path per run, and freshness is asserted against the file list the
+source tree just produced rather than the version number, which cannot distinguish a fresh
+build from a cached one.
+
+The lesson worth keeping: the first conclusion — "the warning does not appear but the
+behaviour is right, so it is an observability gap" — was wrong, and Phase 3 would have
+shipped on it. Writing the assertion into the e2e instead of trusting that inference is
+what caught it. Two script affordances made it findable and should stay: run #1's output
+is captured, and `HARNESS_E2E_KEEP=1` preserves the workspace on failure.
 
 **Size:** M.
 
