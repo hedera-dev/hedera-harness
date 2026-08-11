@@ -1,8 +1,16 @@
 # hedera-harness — implementation plan
 
-**Status:** approved, not started
+**Status:** Phases 0–1 complete; Phase 2 next
 **Date:** 2026-08-11
 **Baseline:** v1.1.2 (`28e36f9`), 9,400 source lines, 73 tests passing
+**Current:** branch `feat/harness-phase-0-1-bulletproof`, 8,558 source lines, 76 tests passing
+
+| Phase | Status |
+|---|---|
+| 0 — delete the retired product | ✅ complete |
+| 1 — stabilise the live path | ✅ complete (e2e gate not yet run) |
+| 2 — stages + findings lifecycle | next |
+| 3–7 | not started |
 
 ---
 
@@ -42,7 +50,7 @@ came to exist.
 | | Decision | Outcome | Rationale |
 |---|---|---|---|
 | **D1** | Recipe ownership | **Harness package** | Per-branch footprint collapses to dependency + script + README + identity marker — one PR per branch, never revisited. Alternative was committing a recipe to 8+ `templates/*` branches, each hand-maintained and subject to rebase conflicts from `main`. |
-| **D2** | Manifest shape | **Programme with ordered slices** | "Build my dapp idea" decomposes badly into one PRD with 3 attempts and well into N accumulating slices on one branch. Largest change on the list; changes manifest shape, so it precedes Phase 3. |
+| **D2** | Manifest shape | **Ordered slices; minimal sequential runner in scope** | "Build my dapp idea" decomposes badly into one PRD with 3 attempts and well into N accumulating slices on one branch. Run logs support this: 3 of 11 recorded runs died at exactly `maxAttempts: 3`, and the two 4-attempt passes were both `--continue` rescues. Originally sized L by importing the reference harness's full programme/slice/pass state model; rescoped to M by building on the existing session + cycle machinery instead. See Phase 7 for what is in and out. |
 | **D3** | Vocabulary | **Keep `spec.yaml` / `prd.md`** | Declined the rename to manifest/spec. Note the collision: in the stakeholder's harness, `specs/*.md` are feature descriptions and `programmes/*.yaml` is config — the word "spec" means the opposite thing there. Expect friction in cross-team discussion. |
 | **D4** | Convergence scope | **Architecture, not code shape** | Adopt stages, findings contract, prompts-as-files, slim config. Do not pursue line-count parity: the reference harness has no chain provisioning, tiered validators, init/scaffolding, or skills vendoring. |
 
@@ -54,7 +62,9 @@ and `prd.md` per D3; only the cardinality changes.
 
 ---
 
-## Phase 0 — Delete the retired product
+## Phase 0 — Delete the retired product ✅
+
+Commits `1f49211`, `1c09933`, `0f6e6b2`, `a3f7a62`. 2,754 deletions / 438 insertions.
 
 No decisions required. First, because it removes the seams that make everything else
 confusing.
@@ -86,17 +96,27 @@ templates. Not a head start on the overlays.
 
 **Also** — fold `runner.ts` into its callers.
 
-**Exit criteria**
-- `loadTemplateSpec` has no `requireSeed` fork
-- `attemptLoop` has no layout-mode branching
-- typecheck clean, tests green
-- `.tmp-test/` cleanup added to the test harness (637 stale directories today)
+**Exit criteria** — all met
+- ✅ `loadTemplateSpec` has no `requireSeed` fork
+- ✅ `attemptLoop` has no layout-mode branching
+- ✅ typecheck clean, tests green
+- ✅ `.tmp-test/` cleared by a `pretest` step (637 stale directories removed)
 
-**Size:** M — mechanical, wide blast radius.
+**Notes**
+- `buildRepairPrompt` looked isolated-only but is shared with
+  `buildSessionRepairPrompt`; only `buildGeneratorPrompt` and `buildContinuePrompt`
+  were removed.
+- `commitAttempt` became a required input on the attempt loop rather than defaulting
+  to the isolated `git add -A` committer, so checkpoints always take the
+  exclusion-safe path.
+- A post-phase review under `--noUnusedLocals --noUnusedParameters` found dead locals
+  left by the deletions plus one pre-existing bug (folded into Phase 1).
 
 ---
 
-## Phase 1 — Stabilise the live path
+## Phase 1 — Stabilise the live path ✅
+
+Commits `ddc71e2`, `fbbd7f9`, `888b29c`.
 
 Correctness bugs in the path everything else builds on. Before refactoring, so we are
 not debugging new structure and old bugs at once.
@@ -112,9 +132,32 @@ not debugging new structure and old bugs at once.
 | Secret scanner walks `.harness/` — reads the harness's own `chain-signer.json` | `validation/index.ts:309` |
 | Unguarded `JSON.parse` on workspace files — malformed app JSON crashes the run instead of producing a finding | `validation/index.ts:145` |
 
-**Exit criteria**
-- e2e smoke passes with no orphaned processes
-- grepping run artifacts for key material returns nothing
+### Added during the phase
+
+**Repair prompts pointed at files that do not exist.** Two different constants are both
+named `HARNESS_CONTEXT_DIR` — `.harness/runtime/context` in `runtimePaths.ts` (where the
+run actually vendors) and `.harness-context` in `contextVendor.ts`. `promptBuilder.ts`
+imports both. `buildSessionRepairPrompt` accepted a `VendoredContext` and never forwarded
+it, so every repair attempt fell through to the `.harness-context/` defaults and told the
+agent to read a PRD and acceptance contract at paths a project run never creates. Only
+the initial and continue prompts used the real ones.
+
+Worth watching: 3 of 11 recorded runs exhausted their attempt budget, and repair was
+running half-blind. Confirm whether convergence improves before Phase 2 changes the loop.
+
+### Exit criteria
+
+- ✅ grepping run artifacts for key material returns nothing
+- ⬜ **e2e smoke passes with no orphaned processes** — not yet run. Needs a real agent
+  run (40 min – 2.5 hrs per the run logs). Do this before Phase 2, since Phase 2
+  restructures the loop these fixes live in.
+
+### Behaviour change to exercise
+
+Children now spawn `detached` (POSIX) so timeouts can signal the whole process group.
+The trade: they no longer die with the terminal, so a `SIGKILL`ed harness leaves them
+running. This is the same trade the dev server already made deliberately, and it is what
+makes tree-kill possible at all — but it is the change most worth exercising on a real run.
 
 **Size:** M.
 
@@ -131,6 +174,10 @@ The "cluttered architecture" fix.
   in session state, so a run reports *convergence* rather than only pass/fail
 - Stage names in console output (`Stage 2/4 ASSERT` reads better than
   `Attempt 3 deterministic validation`)
+- Add `noUnusedLocals` / `noUnusedParameters` to `tsconfig.json`. Run manually after
+  Phase 0, they surfaced both the dead locals and the repair-prompt bug; they should be
+  permanent rather than a thing someone remembers to run.
+- Resolve the duplicate `HARNESS_CONTEXT_DIR` naming collision that caused that bug.
 
 **Keep `infrastructureFailure` as a distinct channel.** The reference harness folds env
 failures into the findings stream as synthetic findings; ours distinguishes "the app is
@@ -228,6 +275,12 @@ Requires D1.
 - Template identity detection + overlay selection; refuse rather than guess when the
   template cannot be identified
 - Base manifest + 8 template overlays (each needs a real PRD set)
+- **Rewrite the authoring docs rather than delete them.** `docs/authoring-a-template.md`,
+  `docs/prds/README.md`, and `skeletons/new-template/` all target the directories Phase 0
+  removed (`specs/`, `contracts/`, `validators/`, `playwright/`), so they are broken as
+  written. The tier strategy and validator guidance in them is still valid — only the
+  destinations changed. They become the overlay-authoring guide. (Decided rather than
+  deleting in Phase 0; the skeleton is marked stale in the README tree meanwhile.)
 - Fix `--template`: `initRunner.ts:23` maps it straight to a git ref, so
   `--template hedera-demo` fails against the `templates/hedera-demo` branch naming.
   Prefix `templates/` and validate against the known set.
@@ -263,17 +316,31 @@ section per template, and `create-hbar`'s "next steps" output.
 
 ## Phase 7 — Slices
 
-Requires D2. Deferrable past Phase 6.
+Requires D2 and the `prd:` list from Phase 3. Can ship after Phase 6.
 
-- Programme with ordered slices, delivered sequentially onto one branch
-- Per-slice state and resume
-- `/create-harness-spec` emits a programme with N slices instead of one PRD
+**In scope — a minimal sequential runner** built on the existing session and cycle
+machinery rather than a new state model:
+
+- the `prd:` list drives an ordered set of slices
+- vendor the right PRD per slice (`vendorHarnessContext` already takes a `prdPath`)
+- wrap the attempt-loop call in a loop over slices in `sessionRunner`
+- slice index on `SessionMetadata` (already versioned) for resume
+- per-slice pass/fail in the report; the prompt states "increment 2 of 4, increment 1 done"
+- stop on the first failing slice
+- `/create-harness-spec` emits N ordered PRDs instead of one
+
+No new branch model (one branch already), no new commit model (checkpoints already
+accumulate), no new state store.
+
+**Deferred until real usage** — per-slice retry policy, cross-slice rollback, and
+slice-level reporting beyond pass/fail. These need evidence to design well, and are
+additive once the format is in place.
 
 **Exit criteria**
 - a multi-slice programme delivers incrementally
 - a failed slice 3 does not discard slices 1–2
 
-**Size:** L.
+**Size:** M.
 
 ---
 
@@ -315,7 +382,7 @@ files, they get their first real tests.
 
 | Source | Phases |
 |---|---|
-| Code review (2026-08-11) — bugs, secret handling, dead code | 0, 1 |
+| Code review (2026-08-11) — bugs, secret handling, dead code | 0, 1 ✅ |
 | Stakeholder review — "overcomplicated, cluttered from iterative WIP" | 0, 1 |
 | Stakeholder review — adoptable ideas for UX/DX | 2, 3, 4, 7 |
 | Product plan — two delivery flows | 3, 5, 6 |
