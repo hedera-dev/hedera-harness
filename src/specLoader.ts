@@ -4,24 +4,11 @@ import { parse as parseYaml } from "yaml";
 import type {
   ChainValidationConfig,
   ExtendConfig,
-  SeedConfig,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
 
-export interface LoadTemplateSpecOptions {
-  /**
-   * When true (default), `seed` is required — used by isolated `run`.
-   * When false, `seed` is optional — used by project-centric `run`.
-   */
-  requireSeed?: boolean;
-}
-
-export async function loadTemplateSpec(
-  specPath: string,
-  options: LoadTemplateSpecOptions = {},
-): Promise<LoadedTemplateSpec> {
-  const requireSeed = options.requireSeed !== false;
+export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
   const absoluteSpecPath = path.resolve(specPath);
   const raw = await readFile(absoluteSpecPath, "utf8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
@@ -35,7 +22,6 @@ export async function loadTemplateSpec(
     description: readOptionalString(parsed, "description"),
     prdPath: resolveProjectPath(projectRoot, readString(parsed, "prd")),
     contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
-    seed: requireSeed ? readSeed(parsed) : readOptionalSeed(parsed),
     generator: readGenerator(parsed),
     validator: readOptionalValidator(parsed),
     // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
@@ -62,13 +48,7 @@ export async function loadTemplateSpec(
     },
   };
 
-  // Project-centric layout (no seed) requires baseline install. Isolated specs
-  // may omit `extend` entirely; validate/validate-semantic also use requireSeed:false.
-  if (!requireSeed && !spec.seed) {
-    assertExtendBaselineHasInstall(spec);
-  } else {
-    assertBaselineInstallNameWhenPresent(spec);
-  }
+  assertExtendBaselineHasInstall(spec);
 
   return {
     spec,
@@ -111,23 +91,6 @@ function readOptionalValidatorPath(
     throw new Error(`Expected optional non-empty string "validators.${key}" in template spec.`);
   }
   return resolveProjectPath(projectRoot, candidate);
-}
-
-function readSeed(parsed: Record<string, unknown>): SeedConfig {
-  const seed = readObject(parsed, "seed");
-  return {
-    repo: readString(seed, "repo"),
-    ref: readString(seed, "ref"),
-    preflight: readOptionalPreflight(seed),
-    isolation: readOptionalIsolation(seed),
-  };
-}
-
-function readOptionalSeed(parsed: Record<string, unknown>): SeedConfig | undefined {
-  if (parsed.seed === undefined) {
-    return undefined;
-  }
-  return readSeed(parsed);
 }
 
 function readGenerator(parsed: Record<string, unknown>) {
@@ -226,32 +189,7 @@ function readOptionalStringRecord(
   );
 }
 
-function readOptionalPreflight(seed: Record<string, unknown>) {
-  const preflight = seed.preflight;
-  if (!preflight || typeof preflight !== "object" || Array.isArray(preflight)) {
-    return undefined;
-  }
-  const commands = (preflight as Record<string, unknown>).commands;
-  if (!Array.isArray(commands)) return undefined;
-  return {
-    commands: commands as Array<string | { name?: string; command: string; timeoutMs?: number }>,
-  };
-}
 
-function readOptionalIsolation(seed: Record<string, unknown>) {
-  const isolation = seed.isolation;
-  if (!isolation || typeof isolation !== "object" || Array.isArray(isolation)) {
-    return undefined;
-  }
-  const record = isolation as Record<string, unknown>;
-  return {
-    neverModifySeedRepo: record.neverModifySeedRepo === true,
-    separateFolder: record.separateFolder === true,
-    excludeFromArtifact: Array.isArray(record.excludeFromArtifact)
-      ? (record.excludeFromArtifact as string[])
-      : undefined,
-  };
-}
 
 function readConstraints(parsed: Record<string, unknown>) {
   const constraints = parsed.constraints;
@@ -340,12 +278,6 @@ function readExtendConfig(parsed: Record<string, unknown>): ExtendConfig | undef
   };
 }
 
-/** Isolated greenfield specs may omit extend; if baseline commands are listed, one must be named install. */
-function assertBaselineInstallNameWhenPresent(spec: TemplateSpec): void {
-  const commands = spec.extend?.baseline?.commands;
-  if (!commands) return;
-  assertCommandsIncludeInstall(commands);
-}
 
 /** Project-centric `run` requires extend.baseline.commands with a literal install name. */
 function assertExtendBaselineHasInstall(spec: TemplateSpec): void {

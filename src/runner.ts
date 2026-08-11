@@ -42,7 +42,7 @@ export async function validateWorkspace(options: CliOptions) {
   await access(workspacePath);
 
   // Project-centric recipes omit `seed`; validate only needs deterministic gates.
-  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
+  const loaded = await loadTemplateSpec(options.specPath);
   return runDeterministicValidation(workspacePath, loaded.spec);
 }
 
@@ -56,7 +56,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   await access(workspacePath);
 
-  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
+  const loaded = await loadTemplateSpec(options.specPath);
   const { spec } = loaded;
 
   if (!isValidatorEnabled(spec)) {

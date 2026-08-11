@@ -32,20 +32,14 @@ import { createDevServerSession, loadDevServerConfig } from "./validation/devSer
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
 import { WorkspaceWatcher } from "./workspaceWatcher.js";
 
-export interface AttemptLoopSeedInfo {
-  workspacePath: string;
-  repo: string;
-  ref: string;
-  commitSha: string;
-}
-
-/** Shared per-run / per-extend session metadata passed through the attempt loop. */
+/** Shared per-run session metadata passed through the attempt loop. */
 export interface SessionContext {
   layout: RunLayout;
   spec: TemplateSpec;
   specPath: string;
   projectRoot: string;
-  seedResult: AttemptLoopSeedInfo;
+  /** The project directory the agent edits in place. */
+  workspacePath: string;
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
@@ -68,7 +62,8 @@ export interface AttemptLoopInput {
   cycle?: number;
   startingAttempt: number;
   startedAt: Date;
-  seedResult: AttemptLoopSeedInfo;
+  /** The project directory the agent edits in place. */
+  workspacePath: string;
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
@@ -118,7 +113,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     isContinue,
     cycle,
     startedAt,
-    seedResult,
+    workspacePath,
     vendoredContext,
     chainSigner,
   } = input;
@@ -204,7 +199,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     };
 
     const workspaceWatcher = new WorkspaceWatcher(
-      seedResult.workspacePath,
+      workspacePath,
       workspaceActivityLogPath,
       async summary => {
         latestProgress = { ...latestProgress, lastActivity: summary };
@@ -235,7 +230,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     let agentResult;
     try {
       agentResult = await generator.run({
-        workspacePath: seedResult.workspacePath,
+        workspacePath,
         prompt: latestPrompt,
         attempt: attempts,
         role: "generator",
@@ -289,7 +284,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         details: truncate(agentResult.stderr || agentResult.stdout),
       };
       validation = await runAttemptValidation({
-        workspacePath: seedResult.workspacePath,
+        workspacePath,
         spec,
         runDirectory: layout.runDirectory,
         cacheDirectory: layout.cacheDirectory,
@@ -302,7 +297,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       });
     } else {
       validation = await runAttemptValidation({
-        workspacePath: seedResult.workspacePath,
+        workspacePath,
         spec,
         runDirectory: layout.runDirectory,
         cacheDirectory: layout.cacheDirectory,
@@ -391,7 +386,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       );
 
       const gitCommit = await commitAttempt(
-        seedResult.workspacePath,
+        workspacePath,
         attempts,
         false,
         validation.findings,
@@ -418,7 +413,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     );
 
     const gitCommit = await commitAttempt(
-      seedResult.workspacePath,
+      workspacePath,
       attempts,
       validation.passed,
       validation.findings,
@@ -451,10 +446,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     specName: spec.name,
     specPath,
     runDirectory: layout.runDirectory,
-    workspacePath: seedResult.workspacePath,
-    seedRepo: seedResult.repo,
-    seedRef: seedResult.ref,
-    seedCommitSha: seedResult.commitSha,
+    workspacePath,
     attempts,
     maxAttempts,
     cycle,

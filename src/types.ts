@@ -91,38 +91,6 @@ export interface PreflightCommandConfig {
   timeoutMs?: number;
 }
 
-export interface SeedConfig {
-  repo: string;
-  ref: string;
-  mode?: "clone-ref-to-run-workspace" | "copy-local-ref";
-  workspace?: string;
-  preflight?: {
-    commands?: Array<string | PreflightCommandConfig>;
-  };
-  isolation?: {
-    separateFolder?: boolean;
-    neverModifySeedRepo?: boolean;
-    excludeFromArtifact?: string[];
-  };
-}
-
-export interface WorkspaceSeedInput {
-  seed: SeedConfig;
-  runDirectory: string;
-  workspacePath?: string;
-  fetchLatest?: boolean;
-  runPreflight?: boolean;
-}
-
-export interface WorkspaceSeedResult {
-  workspacePath: string;
-  repo: string;
-  ref: string;
-  commitSha: string;
-  fetchedLatest: boolean;
-  preflight: CommandExecutionResult[];
-}
-
 export interface TemplateConstraints {
   packageManager?: string;
   workspaces?: string[];
@@ -217,8 +185,6 @@ export interface TemplateSpec {
   description?: string;
   prdPath: string;
   contractPath?: string;
-  /** Required for isolated `run`; optional for in-place `extend`. */
-  seed?: SeedConfig;
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   skills?: string[];
@@ -319,9 +285,6 @@ export interface RunReport {
   specPath: string;
   runDirectory: string;
   workspacePath: string;
-  seedRepo: string;
-  seedRef: string;
-  seedCommitSha: string;
   attempts: number;
   maxAttempts: number;
   /** Set when this kick was a --continue cycle (1-based). */
@@ -368,12 +331,6 @@ export type HarnessLogEvent =
       promptPath: string;
     }
   | {
-      type: "workspace_seeded";
-      timestamp: string;
-      seedCommitSha: string;
-      workspacePath: string;
-    }
-  | {
       type: "skills_vendored";
       timestamp: string;
       count: number;
@@ -400,11 +357,6 @@ export type HarnessLogEvent =
       accountId: string;
       success: boolean;
       error?: string;
-    }
-  | {
-      type: "workspace_git_initialized";
-      timestamp: string;
-      commitSha: string;
     }
   | {
       type: "workspace_git_committed";

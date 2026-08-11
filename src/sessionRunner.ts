@@ -62,7 +62,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   await access(workspacePath);
 
-  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
+  const loaded = await loadTemplateSpec(options.specPath);
   const { spec, projectRoot } = loaded;
   const maxAttempts = options.maxAttempts ?? spec.maxAttempts;
 
@@ -153,24 +153,19 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       .join("\n"),
   );
 
-  const seedResult = {
-    workspacePath: layout.workspacePath,
-    repo: "local-workspace",
-    ref: session.branch,
-    commitSha: session.lastCheckpointSha,
-  };
-  logPhase("Using in-place workspace (no seed clone)", seedResult.workspacePath);
+  const workspaceRoot = layout.workspacePath;
+  logPhase("Using in-place workspace", workspaceRoot);
 
   try {
     const resolvedSkillPaths = await resolveSkillPaths(spec.skills ?? [], projectRoot);
-    const vendoredSkills = await vendorSkills(seedResult.workspacePath, resolvedSkillPaths, {
+    const vendoredSkills = await vendorSkills(workspaceRoot, resolvedSkillPaths, {
       skillsDir: HARNESS_SKILLS_DIR,
     });
     await appendHarnessLog(layout.jsonlLogPath, {
       type: "skills_vendored",
       timestamp: new Date().toISOString(),
       count: vendoredSkills.length,
-      workspaceSkillsDir: path.join(seedResult.workspacePath, HARNESS_SKILLS_DIR),
+      workspaceSkillsDir: path.join(workspaceRoot, HARNESS_SKILLS_DIR),
     });
     logPhase(
       "Skills vendored into ignored runtime",
@@ -179,7 +174,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
 
     // Context under .harness/runtime/; do not permanently mutate tracked .cursor/mcp.json.
     const vendoredContext = await vendorHarnessContext(
-      seedResult.workspacePath,
+      workspaceRoot,
       {
         prdPath: spec.prdPath,
         contractPath: spec.contractPath,
@@ -194,7 +189,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       timestamp: new Date().toISOString(),
       prdPath: vendoredContext.prdRelativePath,
       contractPath: vendoredContext.contractRelativePath,
-      workspaceContextDir: path.join(seedResult.workspacePath, HARNESS_CONTEXT_DIR),
+      workspaceContextDir: path.join(workspaceRoot, HARNESS_CONTEXT_DIR),
     });
     logPhase(
       "Harness context vendored into ignored runtime",
@@ -233,7 +228,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       cycle,
       startingAttempt,
       startedAt,
-      seedResult,
+      workspacePath: workspaceRoot,
       vendoredSkills,
       vendoredContext,
       chainSigner,
