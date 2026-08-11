@@ -152,7 +152,6 @@ test("formatRunOutro success prints push/PR instructions without implying execut
       maxAttempts: 3,
       attemptsThisCycle: 2,
       validation: { findings: [] },
-      blindIntegrity: { passed: true },
     },
     session: {
       branch: "harness/run-demo-abc123",
@@ -186,7 +185,6 @@ test("formatRunOutro failure prints continue/abandon and stays on harness branch
       validation: {
         findings: [{ id: "x", category: "deterministic", message: "broken" }],
       },
-      blindIntegrity: { passed: true },
     },
     session: {
       branch: "harness/run-demo-abc123",

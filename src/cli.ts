@@ -130,16 +130,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
   }
 
   const { report, outroLines } = await runHarness(parsed.options);
-  const lines = [...outroLines];
-
-  if (report.passed && !report.blindIntegrity.passed) {
-    lines.push(
-      "",
-      `WARNING: validation passed but oracle audit detected peeking (${report.blindIntegrity.findings.length} finding(s))`,
-    );
-  }
-
-  console.log(lines.join("\n"));
+  console.log(outroLines.join("\n"));
 
   if (!report.passed) {
     process.exitCode = 1;

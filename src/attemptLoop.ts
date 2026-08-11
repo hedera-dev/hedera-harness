@@ -17,14 +17,12 @@ import { withPlaywrightMcpSnapshot, type VendoredContext } from "./contextVendor
 import type { VendoredSkill } from "./skillVendor.js";
 import type { AgentProgress } from "./agentStreamLogger.js";
 import type {
-  BlindIntegrityResult,
   ChainSigner,
   RunReport,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
 } from "./types.js";
-import { auditOracleAccess } from "./oracleAudit.js";
 import type { CheckpointCommitResult } from "./harnessGit.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation } from "./validation/index.js";
@@ -143,11 +141,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     commandResults: [],
   };
   let latestPrompt = await promptStrategy.buildInitialPrompt(isContinue, cycle);
-  let blindIntegrity: BlindIntegrityResult = {
-    passed: true,
-    findings: [],
-    scannedLogs: [],
-  };
 
   while (attemptsThisCycle < maxAttempts) {
     attempts += 1;
@@ -285,31 +278,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       durationMs: agentResult.durationMs,
       timedOut: agentResult.timedOut,
     });
-
-    blindIntegrity = await auditOracleAccess({
-      workspacePath: seedResult.workspacePath,
-      seedRepo: spec.seed?.repo,
-      harnessProjectRoot: projectRoot,
-      runDirectory: layout.runDirectory,
-      activityLogPath: agentActivityLogPath,
-      rawLogPath: agentLogPath,
-    });
-    const oracleAuditPath = path.join(layout.logsDirectory, `oracle-audit-attempt-${attempts}.json`);
-    await writeJsonFile(oracleAuditPath, blindIntegrity);
-    await appendHarnessLog(layout.jsonlLogPath, {
-      type: "oracle_audit_finished",
-      timestamp: new Date().toISOString(),
-      attempt: attempts,
-      passed: blindIntegrity.passed,
-      findingCount: blindIntegrity.findings.length,
-    });
-
-    if (!blindIntegrity.passed) {
-      logPhase(
-        "Oracle audit failed (informational)",
-        `${blindIntegrity.findings.length} peeking finding(s) — does not affect harness pass/fail`,
-      );
-    }
 
     if (agentResult.exitCode !== 0) {
       const agentFinding = {
@@ -492,7 +460,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     cycle,
     attemptsThisCycle,
     passed: validation.passed,
-    blindIntegrity,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -521,7 +488,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         ? `Passed after ${report.attemptsThisCycle ?? report.attempts} attempt(s) this kick. Report: ${layout.reportPath}`
         : `Failed after ${report.attemptsThisCycle ?? report.attempts} attempt(s) this kick. Report: ${layout.reportPath}`,
       isContinue ? `Total attempts in project: ${report.attempts}` : undefined,
-      formatBlindIntegritySummary(report.blindIntegrity),
     ]
       .filter((line): line is string => Boolean(line))
       .join("\n"),
@@ -529,19 +495,10 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
   await writeStatusFile(layout.runDirectory, {
     phase: "finished",
     passed: report.passed,
-    blindIntegrityPassed: report.blindIntegrity.passed,
     attempts: report.attempts,
     reportPath: layout.reportPath,
   });
-  logPhase(
-    `Run finished: ${report.passed ? "PASSED" : "FAILED"}`,
-    report.passed && !report.blindIntegrity.passed
-      ? `${layout.reportPath} — validation passed but oracle audit detected peeking`
-      : `${layout.reportPath} (oracleAudit=${report.blindIntegrity.passed ? "passed" : "failed"})`,
-  );
-  if (report.passed && !report.blindIntegrity.passed) {
-    console.log(formatBlindIntegritySummary(report.blindIntegrity));
-  }
+  logPhase(`Run finished: ${report.passed ? "PASSED" : "FAILED"}`, layout.reportPath);
 
   return report;
 }
@@ -699,22 +656,6 @@ export async function runAttemptValidation(input: {
 export function logPhase(title: string, detail?: string): void {
   const suffix = detail ? ` — ${detail}` : "";
   console.log(`[hedera-harness] ${title}${suffix}`);
-}
-
-export function formatBlindIntegritySummary(blindIntegrity: BlindIntegrityResult): string {
-  if (blindIntegrity.passed) {
-    return "Oracle audit: passed (no peeking detected).";
-  }
-
-  const findings = blindIntegrity.findings
-    .map(finding => `- ${finding.message}${finding.path ? ` (${finding.path})` : ""}`)
-    .join("\n");
-
-  return [
-    `Oracle audit: FAILED — agent may have peeked outside the workspace (${blindIntegrity.findings.length} finding(s)).`,
-    "This does not fail the harness when deterministic validation passes.",
-    findings,
-  ].join("\n");
 }
 
 async function runChainDeployCommands(

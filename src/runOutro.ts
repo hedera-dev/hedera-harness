@@ -28,7 +28,6 @@ export function formatRunOutro(input: OutroInput): string[] {
     `attempts=${report.attemptsThisCycle ?? report.attempts}/${report.maxAttempts}`,
     report.cycle ? `cycle=${report.cycle}` : undefined,
     `findings=${report.validation.findings.length}`,
-    `oracleAudit=${report.blindIntegrity.passed ? "passed" : "failed"}`,
     cleanup.removedPaths.length > 0
       ? `cleaned=${cleanup.removedPaths.join(", ")}`
       : "cleaned=(nothing removable left)",

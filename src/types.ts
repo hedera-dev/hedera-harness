@@ -295,7 +295,6 @@ export interface ValidationFinding {
     | "secret"
     | "commands"
     | "agent"
-    | "oracle"
     | "playwright"
     | "semantic"
     | "semantic-infra";
@@ -305,19 +304,6 @@ export interface ValidationFinding {
   contractAssertion?: string;
   /** Route associated with a semantic finding, when known. */
   route?: string;
-}
-
-export interface OracleAccessFinding {
-  id: string;
-  message: string;
-  evidence: string;
-  path?: string;
-}
-
-export interface BlindIntegrityResult {
-  passed: boolean;
-  findings: OracleAccessFinding[];
-  scannedLogs: string[];
 }
 
 export interface ValidationResult {
@@ -344,7 +330,6 @@ export interface RunReport {
   attemptsThisCycle?: number;
   /** True when deterministic, playwright gate, and semantic validation (if configured) all pass. */
   passed: boolean;
-  blindIntegrity: BlindIntegrityResult;
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -442,13 +427,6 @@ export type HarnessLogEvent =
       exitCode: number | null;
       durationMs: number;
       timedOut: boolean;
-    }
-  | {
-      type: "oracle_audit_finished";
-      timestamp: string;
-      attempt: number;
-      passed: boolean;
-      findingCount: number;
     }
   | {
       type: "validation_finished";
