@@ -303,6 +303,17 @@ export interface ValidationResult {
   semanticValidation?: SemanticValidationResult;
 }
 
+/** Outcome of one increment in an ordered `prd:` list. */
+export interface SliceReport {
+  /** Zero-based position in `prd:`. */
+  index: number;
+  prdPath: string;
+  passed: boolean;
+  /** Attempts consumed by this increment alone. */
+  attempts: number;
+  openFindingIds: string[];
+}
+
 export interface RunReport {
   specName: string;
   specPath: string;
@@ -320,6 +331,8 @@ export interface RunReport {
   openFindingIds: string[];
   /** Finding ids the final attempt closed. */
   fixedFindingIds: string[];
+  /** One entry per increment attempted this kick. Single-PRD recipes have one. */
+  slices?: SliceReport[];
   startedAt: string;
   finishedAt: string;
   durationMs: number;

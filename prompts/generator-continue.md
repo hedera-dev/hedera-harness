@@ -3,7 +3,14 @@ This is a fresh-context agent run on the same harness branch.
 
 Continue cycle: {{cycle}}
 
-## Read First (Updated Inputs)
+{{#hasSlices}}
+## Increment {{sliceNumber}} of {{sliceCount}}
+This project is being built in ordered increments. Deliver only this one.
+{{#hasCompletedSlices}}
+The first {{completedSlices}} increment(s) are already implemented and committed on this branch. Build on them — do not redo, rewrite, or second-guess that work.
+{{/hasCompletedSlices}}
+
+{{/hasSlices}}## Read First (Updated Inputs)
 The harness re-vendored the latest extension brief into ignored runtime paths:
 - `{{prdPath}}` — updated extension requirements
 {{#hasContract}}

@@ -8,7 +8,7 @@ import {
 import { logPhase, runSessionAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { envMaxAttempts } from "./env.js";
-import type { ChainSigner, CliOptions, RunReport } from "./types.js";
+import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { resolveSkillPaths } from "./skillResolver.js";
 import { vendorSkills } from "./skillVendor.js";
@@ -174,30 +174,6 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       `${HARNESS_SKILLS_DIR} (${vendoredSkills.length} files)`,
     );
 
-    // Context under .harness/runtime/; do not permanently mutate tracked .cursor/mcp.json.
-    const vendoredContext = await vendorHarnessContext(
-      workspaceRoot,
-      {
-        prdPath: spec.prdPaths[0],
-        contractPath: spec.contractPath,
-      },
-      {
-        contextDir: HARNESS_CONTEXT_DIR,
-        injectPlaywrightMcp: false,
-      },
-    );
-    await appendHarnessLog(layout.jsonlLogPath, {
-      type: "context_vendored",
-      timestamp: new Date().toISOString(),
-      prdPath: vendoredContext.prdRelativePath,
-      contractPath: vendoredContext.contractRelativePath,
-      workspaceContextDir: path.join(workspaceRoot, HARNESS_CONTEXT_DIR),
-    });
-    logPhase(
-      "Harness context vendored into ignored runtime",
-      `${HARNESS_CONTEXT_DIR}${vendoredContext.contractRelativePath ? " (prd + contract)" : " (prd)"}`,
-    );
-
     if (spec.chainValidation?.enabled) {
       const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory, {
         projectRoot: layout.workspacePath,
@@ -220,45 +196,108 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       );
     }
 
-    report = await runSessionAttemptLoop({
-      layout,
-      spec,
-      specPath: loaded.specPath,
-
-      maxAttempts,
-      isContinue,
-      cycle,
-      startingAttempt,
-      startedAt,
-      workspacePath: workspaceRoot,
-      vendoredSkills,
-      vendoredContext,
-      chainSigner,
-      previousOpenFindingIds: session.openFindingIds,
-      commitAttempt: async (workspace, attempt, passed, findings) => {
-        const commit: CheckpointCommitResult = await commitAttempt(
-          workspace,
-          attempt,
-          passed,
-          findings,
+    const makeCheckpoint = async (
+      workspace: string,
+      attempt: number,
+      passed: boolean,
+      findings: Parameters<typeof commitAttempt>[3],
+    ): Promise<CheckpointCommitResult> => {
+      const commit = await commitAttempt(workspace, attempt, passed, findings);
+      const checkpointSha = commit.commitSha ?? (await resolveHeadShaOrThrow(workspace));
+      await recordCheckpoint({
+        runDirectory: layout.runDirectory,
+        attempt,
+        checkpointSha,
+        gateStatus: passed ? "passed" : "failed",
+      });
+      if (commit.skippedSecrets.length > 0) {
+        await appendHarnessNote(
+          layout.notesLogPath,
+          `Attempt ${attempt} checkpoint skipped secrets`,
+          commit.skippedSecrets.map(filePath => `- ${filePath}`).join("\n"),
         );
-        const checkpointSha = commit.commitSha ?? (await resolveHeadShaOrThrow(workspace));
-        await recordCheckpoint({
-          runDirectory: layout.runDirectory,
-          attempt,
-          checkpointSha,
-          gateStatus: passed ? "passed" : "failed",
-        });
-        if (commit.skippedSecrets.length > 0) {
-          await appendHarnessNote(
-            layout.notesLogPath,
-            `Attempt ${attempt} checkpoint skipped secrets`,
-            commit.skippedSecrets.map(filePath => `- ${filePath}`).join("\n"),
+      }
+      return commit;
+    };
+
+    // Increments are delivered in order onto one branch, each with its own attempt
+    // budget. A continue resumes at the increment that stopped rather than redoing
+    // work already committed; a failure stops the sequence, because later increments
+    // are written assuming the earlier ones landed.
+    const sliceCount = spec.prdPaths.length;
+    const firstSlice = isContinue ? Math.min(session.sliceIndex ?? 0, sliceCount - 1) : 0;
+    const slices: SliceReport[] = [];
+    let attemptCursor = startingAttempt;
+
+    for (let sliceIndex = firstSlice; sliceIndex < sliceCount; sliceIndex += 1) {
+      const slice = { index: sliceIndex, count: sliceCount };
+
+      // Re-vendor per increment so the agent sees only the brief it is delivering.
+      const vendoredContext = await vendorHarnessContext(
+        workspaceRoot,
+        { prdPath: spec.prdPaths[sliceIndex], contractPath: spec.contractPath },
+        { contextDir: HARNESS_CONTEXT_DIR, injectPlaywrightMcp: false },
+      );
+      await appendHarnessLog(layout.jsonlLogPath, {
+        type: "context_vendored",
+        timestamp: new Date().toISOString(),
+        prdPath: vendoredContext.prdRelativePath,
+        contractPath: vendoredContext.contractRelativePath,
+        workspaceContextDir: path.join(workspaceRoot, HARNESS_CONTEXT_DIR),
+      });
+
+      if (sliceCount > 1) {
+        logPhase(
+          `Increment ${sliceIndex + 1}/${sliceCount}`,
+          path.relative(projectRoot, spec.prdPaths[sliceIndex]),
+        );
+      }
+
+      const sliceReport = await runSessionAttemptLoop({
+        layout,
+        spec,
+        specPath: loaded.specPath,
+        maxAttempts,
+        isContinue: isContinue && sliceIndex === firstSlice,
+        cycle,
+        startingAttempt: attemptCursor,
+        startedAt,
+        workspacePath: workspaceRoot,
+        vendoredSkills,
+        vendoredContext,
+        chainSigner,
+        slice,
+        previousOpenFindingIds: sliceIndex === firstSlice ? session.openFindingIds : [],
+        commitAttempt: makeCheckpoint,
+      });
+
+      slices.push({
+        index: sliceIndex,
+        prdPath: spec.prdPaths[sliceIndex],
+        passed: sliceReport.passed,
+        attempts: sliceReport.attemptsThisCycle ?? sliceReport.attempts,
+        openFindingIds: sliceReport.openFindingIds,
+      });
+      attemptCursor = sliceReport.attempts + 1;
+      report = { ...sliceReport, slices };
+
+      await updateSession(layout.runDirectory, { sliceIndex });
+
+      if (!sliceReport.passed) {
+        if (sliceCount > 1) {
+          logPhase(
+            `Stopping at increment ${sliceIndex + 1}/${sliceCount}`,
+            "later increments assume this one landed",
           );
         }
-        return commit;
-      },
-    });
+        break;
+      }
+    }
+
+    if (!report) {
+      throw new Error("Run produced no report (internal error).");
+    }
+    report = { ...report, passed: slices.every(entry => entry.passed) };
 
     await updateSession(layout.runDirectory, {
       lastAttempt: report.attempts,

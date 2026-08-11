@@ -159,25 +159,41 @@ logging:
   assert.ok(warnings.some(w => w.includes("logging")), warnings.join(" | "));
 });
 
-test("prd accepts a single-entry list but refuses multiple until slices land", async () => {
+test("prd accepts a scalar, a single-entry list, or an ordered list of increments", async () => {
   const single = await writeRecipe(`schemaVersion: 2
 name: one-prd
 prd:
   - .harness/prd.md
 ${MINIMAL_BASELINE}`);
-  const { spec } = await loadTemplateSpec(single.specPath);
-  assert.equal(spec.prdPaths.length, 1);
+  assert.equal((await loadTemplateSpec(single.specPath)).spec.prdPaths.length, 1);
 
   const many = await writeRecipe(`schemaVersion: 2
 name: many-prds
 prd:
-  - .harness/prd.md
-  - .harness/prd-2.md
+  - .harness/01-foundation.md
+  - .harness/02-ui.md
+  - .harness/03-onchain.md
 ${MINIMAL_BASELINE}`);
-  await assert.rejects(
-    () => loadTemplateSpec(many.specPath),
-    /sequential slice delivery is not implemented yet/,
-  );
+  const { spec } = await loadTemplateSpec(many.specPath);
+
+  assert.equal(spec.prdPaths.length, 3, "increments are delivered in listed order");
+  assert.match(spec.prdPaths[0], /01-foundation\.md$/);
+  assert.match(spec.prdPaths[2], /03-onchain\.md$/);
+});
+
+test("prd rejects an empty list and non-string entries", async () => {
+  const empty = await writeRecipe(`schemaVersion: 2
+name: empty-prd
+prd: []
+${MINIMAL_BASELINE}`);
+  await assert.rejects(() => loadTemplateSpec(empty.specPath), /at least one PRD/);
+
+  const bad = await writeRecipe(`schemaVersion: 2
+name: bad-prd
+prd:
+  - 42
+${MINIMAL_BASELINE}`);
+  await assert.rejects(() => loadTemplateSpec(bad.specPath), /path or a non-empty list/);
 });
 
 test("baseline without an install command is still rejected", async () => {

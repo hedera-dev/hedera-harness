@@ -149,9 +149,8 @@ function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): v
 }
 
 /**
- * `prd` accepts a path or an ordered list. The list is the slice format; sequential
- * delivery is not implemented yet, so more than one is refused rather than silently
- * running only the first.
+ * `prd` accepts a path or an ordered list of increments delivered in order onto
+ * one branch. A single path is the common case and behaves identically.
  */
 function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): string[] {
   const raw = parsed.prd;
@@ -174,15 +173,6 @@ function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): str
   if (raw.length === 0) {
     throw new Error('Expected "prd" to list at least one PRD path.');
   }
-  if (raw.length > 1) {
-    throw new Error(
-      [
-        `"prd" lists ${raw.length} PRDs, but sequential slice delivery is not implemented yet.`,
-        "Use a single PRD for now; the list form is accepted so recipes do not need to change later.",
-      ].join(" "),
-    );
-  }
-
   return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
 }
 
