@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
+import { killProcessTree } from "../command.js";
 import { parse as parseYaml } from "yaml";
 
 const LOCAL_URL_PATTERN = /Local:\s*(https?:\/\/[^\s-]+)/i;
@@ -32,8 +33,17 @@ export async function createDevServerSession(
   logPrefix = "dev",
 ): Promise<DevServerSession> {
   const handle = startDevServer(workspacePath, config.command, config.configuredUrl, logPrefix);
-  const url = await handle.detectedUrl;
-  await waitForServer(url, config.timeoutMs);
+
+  let url: string;
+  try {
+    url = await handle.detectedUrl;
+    await waitForServer(url, config.timeoutMs);
+  } catch (error) {
+    // The child leads a detached process group; without this it survives the
+    // failed startup and keeps the port held for the rest of the session.
+    await stopDevServer(handle);
+    throw error;
+  }
 
   if (url !== config.configuredUrl) {
     console.log(
@@ -201,32 +211,14 @@ export async function stopDevServer(target: DevServerHandle | ChildProcess | nul
     };
 
     const forceKill = setTimeout(() => {
-      signalProcessTree(child, "SIGKILL");
+      killProcessTree(child, "SIGKILL");
       // Don't hang forever if the process group is already gone.
       setTimeout(finish, 1_000);
     }, 5_000);
 
     child.once("close", finish);
-    signalProcessTree(child, "SIGTERM");
+    killProcessTree(child, "SIGTERM");
   });
-}
-
-/** Kill the shell and its yarn/next descendants (Unix process group). */
-function signalProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid) {
-    return;
-  }
-
-  try {
-    // Negative PID targets the process group created by detached: true.
-    process.kill(-child.pid, signal);
-  } catch {
-    try {
-      child.kill(signal);
-    } catch {
-      // Already exited.
-    }
-  }
 }
 
 function destroyStdio(child: ChildProcess): void {

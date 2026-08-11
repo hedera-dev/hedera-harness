@@ -1,5 +1,6 @@
 import { appendFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { BoundedOutput, killProcessTree } from "../command.js";
 import { AgentStreamLogger } from "../agentStreamLogger.js";
 import type { AgentProvider, AgentRunInput, AgentRunResult, CommandAgentConfig } from "../types.js";
 
@@ -59,10 +60,14 @@ export class CommandAgentProvider implements AgentProvider {
         },
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
+        // Lead a new process group so timeouts tear down agent subprocesses.
+        detached: process.platform !== "win32",
       });
 
-      const stdoutChunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
+      // The verdict JSON arrives at the end of the stream, so the tail is the
+      // part that must survive truncation on a very chatty run.
+      const stdout = new BoundedOutput(256 * 1024, 3 * 1024 * 1024);
+      const stderr = new BoundedOutput(128 * 1024, 512 * 1024);
       let timedOut = false;
       let idleTimedOut = false;
       let settled = false;
@@ -92,14 +97,8 @@ export class CommandAgentProvider implements AgentProvider {
             duration_ms: Date.now() - startedAt,
           })}\n`,
         );
-        child.kill("SIGTERM");
-        hardKillTimer = setTimeout(() => {
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            // Already exited.
-          }
-        }, 5_000);
+        killProcessTree(child, "SIGTERM");
+        hardKillTimer = setTimeout(() => killProcessTree(child, "SIGKILL"), 5_000);
       };
 
       const resetIdleTimer = () => {
@@ -114,7 +113,7 @@ export class CommandAgentProvider implements AgentProvider {
       child.stdout.on("data", chunk => {
         resetIdleTimer();
         const buffer = Buffer.from(chunk);
-        stdoutChunks.push(buffer);
+        stdout.push(buffer);
         const text = buffer.toString("utf8");
         void appendAgentLog(input.logPath, buffer);
         void streamLogger?.processChunk(text);
@@ -123,7 +122,7 @@ export class CommandAgentProvider implements AgentProvider {
       child.stderr.on("data", chunk => {
         resetIdleTimer();
         const buffer = Buffer.from(chunk);
-        stderrChunks.push(buffer);
+        stderr.push(buffer);
         const text = buffer.toString("utf8");
         void appendAgentLog(input.logPath, `\n## stderr\n${text}`);
         console.log(`[hedera-harness:agent:stderr] ${truncate(text, 300)}`);
@@ -147,9 +146,9 @@ export class CommandAgentProvider implements AgentProvider {
 
         const result: AgentRunResult = {
           exitCode,
-          stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+          stdout: stdout.toString(),
           stderr: [
-            Buffer.concat(stderrChunks).toString("utf8"),
+            stderr.toString(),
             idleTimedOut
               ? `\n[hedera-harness] Agent produced no output for ${idleTimeoutMs}ms; treating as failure.\n`
               : "",
