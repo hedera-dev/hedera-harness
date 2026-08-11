@@ -183,6 +183,11 @@ export interface TemplateSpec {
    */
   prdPaths: string[];
   contractPath?: string;
+  /**
+   * Which agent CLI family this run targets. Drives MCP delivery and model
+   * selection even when `generator:` overrides the invocation itself.
+   */
+  agent: "cursor" | "claude";
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   skills?: string[];

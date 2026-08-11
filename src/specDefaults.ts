@@ -34,13 +34,34 @@ export const HARNESS_NOTES_LOG_PATH = ".harness/runs/harness-notes.md";
 export type AgentPresetName = "cursor" | "claude";
 
 /**
+ * How an agent CLI is told about MCP servers.
+ *
+ * `config-flag` keeps the project untouched — the harness writes its own file
+ * and points the agent at it. `workspace-file` is for CLIs that only read a
+ * fixed path, which means writing into the project and restoring afterwards.
+ */
+export type McpDelivery =
+  | { kind: "config-flag"; flag: string }
+  | { kind: "workspace-file"; path: string };
+
+export interface AgentPreset extends CommandAgentConfig {
+  mcp: McpDelivery;
+  /** Flag that selects the model, so repair attempts can switch to a cheaper one. */
+  modelFlag: string;
+  /** Model for the first attempt of a cycle. */
+  defaultModel: string;
+  /** Model for repair attempts. Escalates back to `defaultModel` when stuck. */
+  repairModel: string;
+}
+
+/**
  * Generator wiring per agent CLI.
  *
  * A preset name in the recipe means flag changes ship with the harness instead of
  * needing an edit in every project and template branch. `generator:` remains as an
  * escape hatch for anything these do not cover.
  */
-export const AGENT_PRESETS: Record<AgentPresetName, CommandAgentConfig> = {
+export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
   cursor: {
     provider: "command",
     command: "agent",
@@ -51,14 +72,19 @@ export const AGENT_PRESETS: Record<AgentPresetName, CommandAgentConfig> = {
       "enabled",
       "--workspace",
       "{workspace}",
-      "--model",
-      "composer-2.5",
       "--force",
+      "--approve-mcps",
       "--output-format",
       "stream-json",
       "--stream-partial-output",
     ],
     timeoutMs: 3_600_000,
+    // The Cursor CLI has no flag to point at an MCP config; it reads the
+    // workspace file, so the harness must write it and restore it afterwards.
+    mcp: { kind: "workspace-file", path: ".cursor/mcp.json" },
+    modelFlag: "--model",
+    defaultModel: "composer-2.5",
+    repairModel: "composer-2.5",
   },
   claude: {
     provider: "command",
@@ -66,8 +92,6 @@ export const AGENT_PRESETS: Record<AgentPresetName, CommandAgentConfig> = {
     args: [
       "-p",
       "{prompt}",
-      "--model",
-      "sonnet",
       "--permission-mode",
       "acceptEdits",
       "--allowedTools",
@@ -77,6 +101,10 @@ export const AGENT_PRESETS: Record<AgentPresetName, CommandAgentConfig> = {
       "--verbose",
     ],
     timeoutMs: 3_600_000,
+    mcp: { kind: "config-flag", flag: "--mcp-config" },
+    modelFlag: "--model",
+    defaultModel: "opus",
+    repairModel: "sonnet",
   },
 };
 

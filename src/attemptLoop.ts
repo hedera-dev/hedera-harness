@@ -49,7 +49,6 @@ export interface SessionContext {
 
 /** Prompt + Playwright MCP wiring for the in-place run loop. */
 export interface AttemptPromptStrategy {
-  playwrightMcpMode: "workspace" | "snapshot-restore";
   buildInitialPrompt(isContinue: boolean, cycle: number | undefined): Promise<string>;
   buildRepairPrompt(findings: ValidationFinding[], nextAttempt: number): Promise<string>;
 }
@@ -86,7 +85,6 @@ export function createSessionPromptStrategy(
 ): AttemptPromptStrategy {
   const { spec, vendoredSkills, vendoredContext } = session;
   return {
-    playwrightMcpMode: "snapshot-restore",
     async buildInitialPrompt(isContinue, cycle) {
       return isContinue
         ? buildSessionContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
@@ -143,7 +141,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       layout,
       chainSigner,
       contractRelativePath: vendoredContext.contractRelativePath,
-      playwrightMcpMode: promptStrategy.playwrightMcpMode,
     };
 
     const kind = attemptKind(isContinue, attempts, attemptsThisCycle);
