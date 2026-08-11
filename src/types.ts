@@ -32,6 +32,8 @@ export interface CliOptions {
   continueBranch?: string;
   /** `migrate` only: report the rewrite without writing it. */
   dryRun?: boolean;
+  /** `doctor` only: check the recipe alone, skipping host and project checks. */
+  recipeOnly?: boolean;
 }
 
 export interface InitCliOptions {

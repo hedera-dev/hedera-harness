@@ -38,7 +38,7 @@ export function printHelp(): void {
 Usage:
   hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <name>] [--skip-install]
   hedera-harness run [spec] [--max-attempts <count>] [--new] [--continue <branch>]
-  hedera-harness doctor [spec] [--workspace <path>]
+  hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
   hedera-harness migrate [spec] [--dry-run]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
@@ -99,7 +99,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
   }
 
   if (parsed.command === "doctor") {
-    const report = await runDoctor(parsed.options);
+    const report = await runDoctor(parsed.options, { recipeOnly: parsed.options.recipeOnly });
     console.log(formatDoctorReport(report));
     if (!report.passed) {
       process.exitCode = 1;
@@ -240,6 +240,12 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
     switch (arg) {
       case "--max-attempts":
         options.maxAttempts = readPositiveInteger(args, ++index, arg);
+        break;
+      case "--recipe-only":
+        if (command !== "doctor") {
+          throw new Error(`${arg} is only valid for doctor.`);
+        }
+        options.recipeOnly = true;
         break;
       case "--dry-run":
         if (command !== "migrate") {

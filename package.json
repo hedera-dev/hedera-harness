@@ -23,7 +23,8 @@
     "pretest": "rm -rf .tmp-test",
     "test": "npm run build --silent && node --test test/*.test.mjs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "check:templates": "bash scripts/check-template-recipes.sh"
   },
   "engines": {
     "node": ">=20"

@@ -34,16 +34,28 @@ export interface DoctorReport {
  * starting baseline commands — and a real run costs 40 minutes to two hours.
  * Learning that the agent CLI is not on PATH should take two seconds.
  */
-export async function runDoctor(options: CliOptions): Promise<DoctorReport> {
+export async function runDoctor(
+  options: CliOptions,
+  mode: { recipeOnly?: boolean } = {},
+): Promise<DoctorReport> {
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   const checks: DoctorCheck[] = [];
-
-  checks.push(checkNodeVersion());
-  checks.push(await checkCommand("git", workspacePath, "git is required for branch and checkpoint handling."));
 
   const loaded = await loadRecipe(options.specPath, checks);
   const spec = loaded?.spec;
 
+  // CI checks recipes across template branches without building each app, so
+  // host and project checks would all fail for reasons unrelated to the recipe.
+  if (mode.recipeOnly) {
+    return { checks, passed: checks.every(check => check.status !== "fail") };
+  }
+
+  checks.unshift(checkNodeVersion());
+  checks.splice(
+    1,
+    0,
+    await checkCommand("git", workspacePath, "git is required for branch and checkpoint handling."),
+  );
   checks.push(await checkGitRepo(workspacePath));
 
   if (spec) {
