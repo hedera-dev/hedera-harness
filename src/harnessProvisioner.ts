@@ -19,6 +19,8 @@ export interface ProvisionHarnessInput {
 export interface ProvisionHarnessResult {
   harnessDir: string;
   writtenFiles: string[];
+  /** Recipe files already present and deliberately left alone. */
+  skippedFiles: string[];
   vendoredSkillFiles: string[];
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;
@@ -35,6 +37,7 @@ export async function provisionHarnessProject(
   const harnessDir = path.join(targetDir, ".harness");
   const skeletonRoot = resolveProjectHarnessSkeletonRoot();
   const writtenFiles: string[] = [];
+  const skippedFiles: string[] = [];
 
   await mkdir(path.join(harnessDir, "validators"), { recursive: true });
   await mkdir(path.join(harnessDir, "runs"), { recursive: true });
@@ -47,7 +50,10 @@ export async function provisionHarnessProject(
   ];
 
   for (const [relative, dest] of copies) {
+    // Never overwrite: a scaffold-hbar template ships its own recipe, and
+    // clobbering it would discard the template author's work.
     if (await pathExists(dest)) {
+      skippedFiles.push(path.relative(targetDir, dest));
       continue;
     }
     await copyFile(path.join(skeletonRoot, relative), dest);
@@ -90,6 +96,7 @@ export async function provisionHarnessProject(
   return {
     harnessDir,
     writtenFiles,
+    skippedFiles,
     vendoredSkillFiles,
     gitignoreUpdated,
     packageJsonUpdated,

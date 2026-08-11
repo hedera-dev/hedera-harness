@@ -45,12 +45,17 @@ export interface InitCliOptions {
 }
 
 export interface InitResult {
+  /** `seeded` cloned a scaffold; `in-place` adopted the project already present. */
+  mode: "seeded" | "in-place";
   targetDir: string;
-  repo: string;
-  ref: string;
-  commitSha: string;
+  /** Absent when adopting an existing project — nothing was cloned. */
+  repo?: string;
+  ref?: string;
+  commitSha?: string;
   harnessDir: string;
   writtenFiles: string[];
+  /** Recipe files already present and left untouched. */
+  skippedFiles: string[];
   vendoredSkillCount: number;
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;

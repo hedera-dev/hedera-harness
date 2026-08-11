@@ -36,7 +36,7 @@ export function printHelp(): void {
   console.log(`hedera-harness
 
 Usage:
-  hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <branch>] [--skip-install]
+  hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <name>] [--skip-install]
   hedera-harness run [spec] [--max-attempts <count>] [--new] [--continue <branch>]
   hedera-harness doctor [spec] [--workspace <path>]
   hedera-harness migrate [spec] [--dry-run]
@@ -45,7 +45,8 @@ Usage:
 
 Examples:
   hedera-harness init my-app
-  hedera-harness init my-app --ref main
+  hedera-harness init my-app --template hedera-demo
+  hedera-harness init                    # adopt the harness in the current project
   hedera-harness run
   hedera-harness run .harness/spec.yaml --max-attempts 3
   hedera-harness run .harness/spec.yaml --new
@@ -69,13 +70,20 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     const result = await runInit(parsed.initOptions ?? {});
     console.log(
       [
-        "Harness project initialized",
+        result.mode === "seeded"
+          ? "Harness project initialized"
+          : "Harness adopted in existing project",
         `target=${result.targetDir}`,
-        `seed=${result.repo}@${result.ref}`,
-        `git=${result.commitSha.slice(0, 8)} (fresh repo on main, no remote)`,
-        `recipe=${result.harnessDir}/  (prd.md, spec.yaml, validators/)`,
-        `skillsVendored=${result.vendoredSkillCount}`,
+        result.mode === "seeded" ? `seed=${result.repo}@${result.ref}` : undefined,
+        result.mode === "seeded" && result.commitSha
+          ? `git=${result.commitSha.slice(0, 8)} (fresh repo on main, no remote)`
+          : undefined,
+        `recipe=${result.harnessDir}/`,
         `filesWritten=${result.writtenFiles.length}`,
+        result.skippedFiles.length > 0
+          ? `filesKept=${result.skippedFiles.length} (${result.skippedFiles.join(", ")})`
+          : undefined,
+        `skillsVendored=${result.vendoredSkillCount}`,
         "",
         "Next steps:",
         ...result.nextSteps.map(step => `  ${step}`),
@@ -83,7 +91,9 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         "Tip: authoring skills (create/review harness-spec) ship via the hedera-skills",
         "marketplace plugin — they are not copied into the project. Generator skills for",
         "`run` are still vendored under .harness/skills/ from skills-index.json.",
-      ].join("\n"),
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join("\n"),
     );
     return;
   }
