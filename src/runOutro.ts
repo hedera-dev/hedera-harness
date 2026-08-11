@@ -27,7 +27,11 @@ export function formatRunOutro(input: OutroInput): string[] {
     `session=${report.runDirectory}/session.json`,
     `attempts=${report.attemptsThisCycle ?? report.attempts}/${report.maxAttempts}`,
     report.cycle ? `cycle=${report.cycle}` : undefined,
-    `findings=${report.validation.findings.length}`,
+    // Reports written before the findings lifecycle landed have neither field.
+    `findings=${(report.openFindingIds ?? []).length} open` +
+      ((report.fixedFindingIds ?? []).length > 0
+        ? `, ${report.fixedFindingIds.length} fixed`
+        : ""),
     cleanup.removedPaths.length > 0
       ? `cleaned=${cleanup.removedPaths.join(", ")}`
       : "cleaned=(nothing removable left)",
@@ -78,13 +82,23 @@ export function formatRunOutro(input: OutroInput): string[] {
     );
   }
 
-  if (!report.passed && report.validation.findings.length > 0) {
-    lines.push("", "Findings:");
+  const openFindings = report.validation.findings.filter(finding => finding.status !== "fixed");
+  if (!report.passed && openFindings.length > 0) {
+    lines.push("", "Open findings:");
     lines.push(
-      ...report.validation.findings
+      ...openFindings
         .slice(0, 20)
         .map(finding => `- [${finding.category}] ${finding.id}: ${finding.message}`),
     );
+    if (openFindings.length > 20) {
+      lines.push(`  …and ${openFindings.length - 20} more`);
+    }
+  }
+
+  const fixedFindings = report.validation.findings.filter(finding => finding.status === "fixed");
+  if (fixedFindings.length > 0) {
+    lines.push("", `Closed by the last attempt (${fixedFindings.length}):`);
+    lines.push(...fixedFindings.slice(0, 10).map(finding => `- ${finding.id}`));
   }
 
   return lines;

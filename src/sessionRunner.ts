@@ -232,6 +232,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       vendoredSkills,
       vendoredContext,
       chainSigner,
+      previousOpenFindingIds: session.openFindingIds,
       commitAttempt: async (workspace, attempt, passed, findings) => {
         const commit: CheckpointCommitResult = await commitAttempt(
           workspace,
@@ -261,6 +262,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       lastAttempt: report.attempts,
       lastCheckpointSha: await resolveHeadShaOrThrow(layout.workspacePath),
       cycle: report.cycle ?? session.cycle,
+      openFindingIds: report.openFindingIds,
       gateStatus: report.passed
         ? "passed"
         : report.semanticValidation?.infrastructureFailure

@@ -151,7 +151,13 @@ test("formatRunOutro success prints push/PR instructions without implying execut
       attempts: 2,
       maxAttempts: 3,
       attemptsThisCycle: 2,
-      validation: { findings: [] },
+      openFindingIds: [],
+      fixedFindingIds: ["static:missing-page"],
+      validation: {
+        findings: [
+          { id: "static:missing-page", category: "static", message: "was missing", status: "fixed" },
+        ],
+      },
     },
     session: {
       branch: "harness/run-demo-abc123",
@@ -182,8 +188,10 @@ test("formatRunOutro failure prints continue/abandon and stays on harness branch
       runDirectory: "/tmp/app/.harness/runs/abc",
       attempts: 3,
       maxAttempts: 3,
+      openFindingIds: ["x"],
+      fixedFindingIds: [],
       validation: {
-        findings: [{ id: "x", category: "deterministic", message: "broken" }],
+        findings: [{ id: "x", category: "deterministic", message: "broken", status: "open" }],
       },
     },
     session: {
