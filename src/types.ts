@@ -1,6 +1,12 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "init" | "run" | "doctor" | "validate" | "validate-semantic";
+export type HarnessCommand =
+  | "init"
+  | "run"
+  | "doctor"
+  | "migrate"
+  | "validate"
+  | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -24,6 +30,8 @@ export interface CliOptions {
   forceNew?: boolean;
   /** Explicit harness branch to checkout and continue. */
   continueBranch?: string;
+  /** `migrate` only: report the rewrite without writing it. */
+  dryRun?: boolean;
 }
 
 export interface InitCliOptions {
