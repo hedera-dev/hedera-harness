@@ -1,89 +1,77 @@
+schemaVersion: 2
+
 name: my-feature
-description: >
-  Project-centric harness recipe. Edit this PRD/spec for the feature you want the
-  agent to implement in this scaffold-hbar project, then run: hedera-harness run
+description: What you want the agent to build in this project.
 
-# Paths are relative to the project root (parent of .harness/).
-prd: .harness/prd.md
+baseline:
+  commands:
+    - name: install          # required — also used for install fingerprinting
+      command: yarn install
+    - name: build
+      command: yarn next:build
 
-# No seed — `run` operates on the project cwd (created by `hedera-harness init`).
-
-generator:
-  provider: command
-  command: agent
-  args:
-    - -p
-    - --trust
-    - --sandbox
-    - enabled
-    - --workspace
-    - "{workspace}"
-    - --model
-    - composer-2.5
-    - --force
-    - --output-format
-    - stream-json
-    - --stream-partial-output
-  timeoutMs: 3600000
-
-skills:
-  - project-scaffolding
-  - quality-gates
-
-constraints:
-  packageManager: yarn@3.2.3
-  workspaces:
-    - packages/nextjs
-  forbiddenCommands:
-    - npm install
-    - npm run
-    - pnpm install
-    - pnpm run
-
-templateMetadata:
-  name: scaffold-hbar
-  frontend: nextjs-app
-
-# Baseline = existing project health before the agent implements the feature.
-extend:
-  baseline:
-    commands:
-      - name: install
-        command: yarn install
-        timeoutMs: 300000
-      - name: lint
-        command: yarn lint
-        timeoutMs: 180000
-      - name: build
-        command: yarn next:build
-        timeoutMs: 300000
-
-validators:
-  static: .harness/validators/static.json
-  commands: .harness/validators/yarn.json
-
-requiredFiles:
-  - README.md
-  - AGENTS.md
-  - package.json
-  - packages/nextjs/package.json
-  - .harness/spec.yaml
-  - .harness/prd.md
-
-forbiddenFiles:
-  - .env
-  - packages/nextjs/.env
-
-secretScan:
-  failOnFiles:
-    - .env
-    - packages/nextjs/.env
-  patterns:
-    - name: private-key-assignment
-      pattern: "(PRIVATE_KEY|OPERATOR_KEY|HEDERA_OPERATOR_PRIVATE_KEY)\\s*=\\s*(0x)?[0-9a-fA-F]{32,}"
-
-maxAttempts: 3
-
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
+# ─────────────────────────────────────────────────────────────────────────────
+# Everything below is the harness default. Uncomment only to override.
+# These comments cannot drift: changing a default here changes nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Which coding agent runs the generator. Presets ship with the harness, so flag
+# and model changes arrive with an upgrade instead of an edit here.
+# agent: cursor              # or: claude
+#
+# Feature description. A list is accepted so recipes need not change when
+# sequential slice delivery lands; more than one is refused for now.
+# prd: .harness/prd.md
+#
+# maxAttempts: 3             # repair attempts per run before stopping
+#
+# Each baseline command may set timeoutMs; the default is 10 minutes.
+#
+# validators:
+#   static: .harness/validators/static.json
+#   commands: .harness/validators/yarn.json
+#
+# Detected from the project when omitted: packageManager comes from
+# package.json / lockfiles, and forbiddenCommands is every manager that is not
+# the one in use.
+# constraints:
+#   packageManager: yarn@3.2.3
+#   workspaces:
+#     - packages/nextjs
+#
+# Defaults to .env plus one per workspace, for both the file check and the
+# content scan.
+# forbiddenFiles:
+#   - .env
+# secretScan:
+#   failOnFiles:
+#     - .env
+#   patterns:
+#     - name: private-key-assignment
+#       pattern: "(PRIVATE_KEY|OPERATOR_KEY)\\s*=\\s*(0x)?[0-9a-fA-F]{32,}"
+#
+# Files the run must produce. Empty by default — the validators are the gate.
+# requiredFiles:
+#   - packages/nextjs/app/my-feature/page.tsx
+#
+# ── Higher tiers (opt-in) ────────────────────────────────────────────────────
+#
+# Tier 2 boots the app and walks its routes.
+# validators:
+#   playwright: .harness/validators/playwright-smoke.yaml
+#
+# Tier 3 grades the running app against an acceptance contract.
+# contract: .harness/acceptance-contract.json
+# validator:
+#   enabled: true
+#   command: agent
+#
+# Tier 3.5 provisions a funded ephemeral testnet account. Testnet only.
+# chainValidation:
+#   enabled: true
+#   network: testnet
+#   operator:
+#     accountIdEnv: HEDERA_OPERATOR_ID
+#     privateKeyEnv: HEDERA_OPERATOR_KEY
+#
+# Note: harness logs always live under .harness/runs/ and are not configurable.

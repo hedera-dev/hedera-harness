@@ -507,11 +507,16 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
 }
 
 async function assertRecipeFilesExist(spec: TemplateSpec): Promise<void> {
-  const required = [
-    ["prd", spec.prdPath],
+  const required: Array<[string, string]> = [
+    ...spec.prdPaths.map(
+      (prdPath, index): [string, string] => [
+        spec.prdPaths.length > 1 ? `prd[${index}]` : "prd",
+        prdPath,
+      ],
+    ),
     ["validators.static", spec.validators.staticPath],
     ["validators.commands", spec.validators.commandsPath],
-  ] as const;
+  ];
 
   for (const [label, filePath] of required) {
     await assertPathExists(filePath, label);
@@ -539,7 +544,7 @@ async function runBaseline(
   workspacePath: string,
   spec: TemplateSpec,
 ): Promise<BaselineResult> {
-  const commands = spec.extend?.baseline?.commands ?? [];
+  const commands = spec.baseline?.commands ?? [];
   if (commands.length === 0) {
     return { passed: true, commands: [] };
   }

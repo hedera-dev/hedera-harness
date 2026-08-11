@@ -172,18 +172,16 @@ export interface BaselineConfig {
   commands?: BaselineCommandConfig[];
 }
 
-/**
- * Host baseline config for project-centric `run`.
- * YAML key remains `extend.baseline` for compatibility with existing recipes.
- */
-export interface ExtendConfig {
-  baseline?: BaselineConfig;
-}
-
 export interface TemplateSpec {
+  /** Recipe schema version. Absent in the file means 1 (the original schema). */
+  schemaVersion: number;
   name: string;
   description?: string;
-  prdPath: string;
+  /**
+   * Ordered feature descriptions. The list form is the slice format; sequential
+   * delivery is not implemented yet, so exactly one entry is accepted today.
+   */
+  prdPaths: string[];
   contractPath?: string;
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
@@ -199,8 +197,8 @@ export interface TemplateSpec {
   forbiddenFiles: string[];
   secretScan?: SecretScanConfig;
   chainValidation?: ChainValidationConfig;
-  /** Optional in-place extension configuration. */
-  extend?: ExtendConfig;
+  /** Host-app health commands run once before generation. */
+  baseline?: BaselineConfig;
   maxAttempts: number;
   logging: {
     jsonlPath: string;

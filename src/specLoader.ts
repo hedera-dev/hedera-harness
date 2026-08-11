@@ -2,57 +2,92 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import type {
+  BaselineConfig,
   ChainValidationConfig,
-  ExtendConfig,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
+import {
+  AGENT_PRESETS,
+  ASSUMED_SCHEMA_VERSION,
+  DEFAULT_AGENT_PRESET,
+  DEFAULT_COMMANDS_VALIDATOR_PATH,
+  DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_PRD_PATH,
+  DEFAULT_SECRET_PATTERNS,
+  DEFAULT_STATIC_VALIDATOR_PATH,
+  HARNESS_JSONL_LOG_PATH,
+  HARNESS_NOTES_LOG_PATH,
+  KNOWN_SPEC_KEYS,
+  MIN_SUPPORTED_SCHEMA_VERSION,
+  SPEC_SCHEMA_VERSION,
+  defaultForbiddenCommands,
+  defaultSecretFiles,
+  isAgentPresetName,
+} from "./specDefaults.js";
 
 export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
   const absoluteSpecPath = path.resolve(specPath);
   const raw = await readFile(absoluteSpecPath, "utf8");
-  const parsed = parseYaml(raw) as Record<string, unknown>;
+  const parsed = (parseYaml(raw) ?? {}) as Record<string, unknown>;
   const specDirectory = path.dirname(absoluteSpecPath);
   // Parent of the spec directory is the consumer project root (`.harness/spec.yaml`).
   const projectRoot = path.resolve(specDirectory, "..");
+  const warnings: string[] = [];
+
+  const schemaVersion = readSchemaVersion(parsed, absoluteSpecPath);
+  warnUnknownKeys(parsed, warnings);
+
+  const constraints = readConstraints(parsed);
+  const workspaces = constraints?.workspaces ?? [];
 
   const spec: TemplateSpec = {
+    schemaVersion,
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
-    prdPath: resolveProjectPath(projectRoot, readString(parsed, "prd")),
+    prdPaths: readPrdPaths(parsed, projectRoot, warnings),
     contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
     generator: readGenerator(parsed),
     validator: readOptionalValidator(parsed),
     // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
     skills: readOptionalStringArray(parsed, "skills"),
-    constraints: readConstraints(parsed),
-    templateMetadata: readTemplateMetadata(parsed),
-    validators: {
-      staticPath: resolveProjectPath(projectRoot, readString(readObject(parsed, "validators"), "static")),
-      commandsPath: resolveProjectPath(
-        projectRoot,
-        readString(readObject(parsed, "validators"), "commands"),
-      ),
-      playwrightPath: readOptionalValidatorPath(projectRoot, readObject(parsed, "validators"), "playwright"),
+    constraints: {
+      ...constraints,
+      forbiddenCommands:
+        constraints?.forbiddenCommands ?? defaultForbiddenCommands(constraints?.packageManager),
     },
-    requiredFiles: readStringArray(parsed, "requiredFiles"),
-    forbiddenFiles: readStringArray(parsed, "forbiddenFiles"),
-    secretScan: readSecretScan(parsed),
+    templateMetadata: readTemplateMetadata(parsed),
+    validators: readValidators(parsed, projectRoot),
+    requiredFiles: readOptionalStringArray(parsed, "requiredFiles") ?? [],
+    forbiddenFiles: readOptionalStringArray(parsed, "forbiddenFiles") ?? defaultSecretFiles(workspaces),
+    secretScan: readSecretScan(parsed, workspaces),
     chainValidation: readChainValidation(parsed),
-    extend: readExtendConfig(parsed),
-    maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? 3,
+    baseline: readBaseline(parsed, warnings),
+    maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? DEFAULT_MAX_ATTEMPTS,
     logging: {
-      jsonlPath: resolveProjectPath(projectRoot, readString(readObject(parsed, "logging"), "jsonl")),
-      notesPath: resolveProjectPath(projectRoot, readString(readObject(parsed, "logging"), "notes")),
+      jsonlPath: resolveProjectPath(projectRoot, HARNESS_JSONL_LOG_PATH),
+      notesPath: resolveProjectPath(projectRoot, HARNESS_NOTES_LOG_PATH),
     },
   };
 
-  assertExtendBaselineHasInstall(spec);
+  if (parsed.logging !== undefined) {
+    warnings.push(
+      "`logging` is ignored — harness logs always live under `.harness/runs/`. " +
+        "Pointing them elsewhere left untracked files that failed the next run's clean-tree check.",
+    );
+  }
+
+  assertBaselineHasInstall(spec);
+
+  for (const warning of warnings) {
+    console.warn(`[hedera-harness] ${path.basename(absoluteSpecPath)}: ${warning}`);
+  }
 
   return {
     spec,
     specPath: absoluteSpecPath,
     projectRoot,
+    warnings,
   };
 }
 
@@ -60,6 +95,114 @@ export interface LoadedTemplateSpec {
   spec: TemplateSpec;
   specPath: string;
   projectRoot: string;
+  /** Deprecations and unknown keys, already logged. Returned for tests and reports. */
+  warnings: string[];
+}
+
+function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): number {
+  const raw = parsed.schemaVersion;
+  if (raw === undefined) return ASSUMED_SCHEMA_VERSION;
+
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
+    throw new Error(`"schemaVersion" must be a positive integer in ${specPath} (got ${JSON.stringify(raw)}).`);
+  }
+
+  if (raw > SPEC_SCHEMA_VERSION) {
+    throw new Error(
+      [
+        `${specPath} declares schemaVersion ${raw}, but this harness understands up to ${SPEC_SCHEMA_VERSION}.`,
+        `Upgrade the harness: npm install hedera-harness@latest`,
+      ].join(" "),
+    );
+  }
+
+  if (raw < MIN_SUPPORTED_SCHEMA_VERSION) {
+    throw new Error(
+      [
+        `${specPath} declares schemaVersion ${raw}, which this harness no longer supports`,
+        `(minimum ${MIN_SUPPORTED_SCHEMA_VERSION}).`,
+        "Regenerate the recipe with `hedera-harness init` and reapply your edits.",
+      ].join(" "),
+    );
+  }
+
+  return raw;
+}
+
+/**
+ * Unknown keys were silently ignored, so a recipe written for a newer harness could
+ * lose an entire block — a renamed `baseline` would simply not run — with no error.
+ */
+function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): void {
+  const unknown = Object.keys(parsed).filter(key => !KNOWN_SPEC_KEYS.has(key));
+  if (unknown.length > 0) {
+    warnings.push(
+      `ignoring unknown key(s): ${unknown.join(", ")}. ` +
+        "If these come from a newer recipe, upgrade the harness.",
+    );
+  }
+}
+
+/**
+ * `prd` accepts a path or an ordered list. The list is the slice format; sequential
+ * delivery is not implemented yet, so more than one is refused rather than silently
+ * running only the first.
+ */
+function readPrdPaths(
+  parsed: Record<string, unknown>,
+  projectRoot: string,
+  warnings: string[],
+): string[] {
+  const raw = parsed.prd;
+
+  if (raw === undefined) {
+    warnings.push(`no "prd" declared — defaulting to ${DEFAULT_PRD_PATH}`);
+    return [resolveProjectPath(projectRoot, DEFAULT_PRD_PATH)];
+  }
+
+  if (typeof raw === "string") {
+    if (!raw.trim()) throw new Error('Expected non-empty string "prd" in template spec.');
+    return [resolveProjectPath(projectRoot, raw)];
+  }
+
+  if (!Array.isArray(raw) || raw.some(item => typeof item !== "string" || !item.trim())) {
+    throw new Error('Expected "prd" to be a path or a non-empty list of paths.');
+  }
+  if (raw.length === 0) {
+    throw new Error('Expected "prd" to list at least one PRD path.');
+  }
+  if (raw.length > 1) {
+    throw new Error(
+      [
+        `"prd" lists ${raw.length} PRDs, but sequential slice delivery is not implemented yet.`,
+        "Use a single PRD for now; the list form is accepted so recipes do not need to change later.",
+      ].join(" "),
+    );
+  }
+
+  return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
+}
+
+function readValidators(
+  parsed: Record<string, unknown>,
+  projectRoot: string,
+): TemplateSpec["validators"] {
+  const validators =
+    parsed.validators && typeof parsed.validators === "object" && !Array.isArray(parsed.validators)
+      ? (parsed.validators as Record<string, unknown>)
+      : {};
+
+  return {
+    staticPath: resolveProjectPath(
+      projectRoot,
+      readOptionalString(validators, "static") ?? DEFAULT_STATIC_VALIDATOR_PATH,
+    ),
+    commandsPath: resolveProjectPath(
+      projectRoot,
+      readOptionalString(validators, "commands") ?? DEFAULT_COMMANDS_VALIDATOR_PATH,
+    ),
+    playwrightPath: readOptionalValidatorPath(projectRoot, validators, "playwright"),
+  };
 }
 
 function resolveProjectPath(projectRoot: string, value: string): string {
@@ -92,15 +235,39 @@ function readOptionalValidatorPath(
   return resolveProjectPath(projectRoot, candidate);
 }
 
+/**
+ * Generator wiring, from an `agent:` preset or an explicit `generator:` block.
+ *
+ * The preset exists so flag and model changes ship with the harness rather than
+ * needing an edit in every project and template branch. An explicit block still
+ * wins for anything the presets do not cover.
+ */
 function readGenerator(parsed: Record<string, unknown>) {
-  const generator = readObject(parsed, "generator");
-  return {
-    provider: "command" as const,
-    command: readString(generator, "command"),
-    args: readOptionalStringArray(generator, "args"),
-    env: readOptionalStringRecord(generator, "env"),
-    timeoutMs: readOptionalNumber(generator, "timeoutMs"),
-  };
+  if (parsed.generator !== undefined) {
+    const generator = readObject(parsed, "generator");
+    return {
+      provider: "command" as const,
+      command: readString(generator, "command"),
+      args: readOptionalStringArray(generator, "args"),
+      env: readOptionalStringRecord(generator, "env"),
+      timeoutMs: readOptionalNumber(generator, "timeoutMs"),
+    };
+  }
+
+  const requested = readOptionalString(parsed, "agent")?.trim() || DEFAULT_AGENT_PRESET;
+  if (!isAgentPresetName(requested)) {
+    throw new Error(
+      [
+        `Unknown agent preset ${JSON.stringify(requested)}.`,
+        `Available: ${Object.keys(AGENT_PRESETS).join(", ")}.`,
+        "Or supply an explicit `generator:` block.",
+      ].join(" "),
+    );
+  }
+
+  // Copy: presets are module-level and must not be mutated by a caller.
+  const preset = AGENT_PRESETS[requested];
+  return { ...preset, args: [...(preset.args ?? [])] };
 }
 
 function readOptionalValidator(parsed: Record<string, unknown>) {
@@ -217,73 +384,93 @@ function readTemplateMetadata(parsed: Record<string, unknown>) {
   };
 }
 
-function readSecretScan(parsed: Record<string, unknown>): SecretScanConfig | undefined {
+/**
+ * Secret scanning defaults to the same file list as `forbiddenFiles` — every recipe
+ * previously restated both, which drifts.
+ */
+function readSecretScan(
+  parsed: Record<string, unknown>,
+  workspaces: string[],
+): SecretScanConfig {
   const secretScan = parsed.secretScan;
   if (!secretScan || typeof secretScan !== "object" || Array.isArray(secretScan)) {
-    return undefined;
+    return {
+      failOnFiles: defaultSecretFiles(workspaces),
+      patterns: [...DEFAULT_SECRET_PATTERNS],
+    };
   }
+
   const record = secretScan as Record<string, unknown>;
   const patterns = record.patterns;
   return {
-    failOnFiles: Array.isArray(record.failOnFiles) ? (record.failOnFiles as string[]) : [],
+    failOnFiles: Array.isArray(record.failOnFiles)
+      ? (record.failOnFiles as string[])
+      : defaultSecretFiles(workspaces),
     patterns: Array.isArray(patterns)
       ? (patterns as Array<{ name: string; pattern: string; allowIn?: string[] }>)
-      : [],
+      : [...DEFAULT_SECRET_PATTERNS],
   };
 }
 
-function readExtendConfig(parsed: Record<string, unknown>): ExtendConfig | undefined {
-  const extend = parsed.extend;
-  if (extend === undefined) return undefined;
-  if (!extend || typeof extend !== "object" || Array.isArray(extend)) {
-    throw new Error('Expected object "extend" in template spec.');
+/**
+ * Host-app health commands run once before generation.
+ *
+ * `baseline:` is the current key. `extend.baseline:` is the original spelling, kept
+ * working with a deprecation warning — it named a command (`extend`) that no longer
+ * exists, and it is already committed into template branches and users' projects.
+ */
+function readBaseline(
+  parsed: Record<string, unknown>,
+  warnings: string[],
+): BaselineConfig | undefined {
+  let record: unknown = parsed.baseline;
+
+  if (record === undefined && parsed.extend !== undefined) {
+    const extend = parsed.extend;
+    if (!extend || typeof extend !== "object" || Array.isArray(extend)) {
+      throw new Error('Expected object "extend" in template spec.');
+    }
+    warnings.push('`extend.baseline` is deprecated — rename it to a top-level `baseline`.');
+    record = (extend as Record<string, unknown>).baseline;
   }
 
-  const record = extend as Record<string, unknown>;
-  const baselineRecord =
-    record.baseline && typeof record.baseline === "object" && !Array.isArray(record.baseline)
-      ? (record.baseline as Record<string, unknown>)
-      : undefined;
-
-  if (!baselineRecord) {
-    return {};
+  if (record === undefined) return undefined;
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    throw new Error('Expected object "baseline" in template spec.');
   }
 
-  const commandsRaw = baselineRecord.commands;
-  if (commandsRaw === undefined) {
-    return { baseline: {} };
-  }
+  const commandsRaw = (record as Record<string, unknown>).commands;
+  if (commandsRaw === undefined) return {};
   if (!Array.isArray(commandsRaw)) {
-    throw new Error('Expected array "extend.baseline.commands" in template spec.');
+    throw new Error('Expected array "baseline.commands" in template spec.');
   }
 
   return {
-    baseline: {
-      commands: commandsRaw.map((item, index) => {
-        if (typeof item === "string") {
-          return { command: item };
-        }
-        if (!item || typeof item !== "object" || Array.isArray(item)) {
-          throw new Error(`Expected string or object at extend.baseline.commands[${index}].`);
-        }
-        const cmd = item as Record<string, unknown>;
-        return {
-          name: readOptionalString(cmd, "name"),
-          command: readString(cmd, "command"),
-          timeoutMs: readOptionalNumber(cmd, "timeoutMs"),
-        };
-      }),
-    },
+    commands: commandsRaw.map((item, index) => {
+      if (typeof item === "string") {
+        return { command: item };
+      }
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        throw new Error(`Expected string or object at baseline.commands[${index}].`);
+      }
+      const cmd = item as Record<string, unknown>;
+      return {
+        name: readOptionalString(cmd, "name"),
+        command: readString(cmd, "command"),
+        timeoutMs: readOptionalNumber(cmd, "timeoutMs"),
+      };
+    }),
   };
 }
 
 
-/** Project-centric `run` requires extend.baseline.commands with a literal install name. */
-function assertExtendBaselineHasInstall(spec: TemplateSpec): void {
-  const commands = spec.extend?.baseline?.commands;
+/** `run` requires baseline.commands with a command literally named "install". */
+function assertBaselineHasInstall(spec: TemplateSpec): void {
+  const commands = spec.baseline?.commands;
   if (!commands || commands.length === 0) {
     throw new Error(
-      'project-centric run requires extend.baseline.commands including a command literally named "install".',
+      'run requires baseline.commands including a command literally named "install" '
+        + '(used for host-health checks and install fingerprinting).',
     );
   }
   assertCommandsIncludeInstall(commands);

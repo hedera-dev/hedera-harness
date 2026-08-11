@@ -31,7 +31,7 @@ export async function buildSessionPrompt(
   vendoredSkills: VendoredSkill[] = [],
   vendoredContext?: VendoredContext,
 ): Promise<string> {
-  const prd = await readFile(spec.prdPath, "utf8");
+  const prd = await readFile(spec.prdPaths[0], "utf8");
   const skillSummaries = formatSkillSummaries(vendoredSkills);
   const prdPath = vendoredContext?.prdRelativePath ?? `${HARNESS_CONTEXT_DIR}/prd.md`;
   const contractPath =
