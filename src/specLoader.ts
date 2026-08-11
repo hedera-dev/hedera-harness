@@ -48,7 +48,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     schemaVersion,
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
-    prdPaths: readPrdPaths(parsed, projectRoot, warnings),
+    prdPaths: readPrdPaths(parsed, projectRoot),
     contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
     agent,
     generator: readGenerator(parsed, agent),
@@ -152,15 +152,13 @@ function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): v
  * delivery is not implemented yet, so more than one is refused rather than silently
  * running only the first.
  */
-function readPrdPaths(
-  parsed: Record<string, unknown>,
-  projectRoot: string,
-  warnings: string[],
-): string[] {
+function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): string[] {
   const raw = parsed.prd;
 
+  // No warning: the generated skeleton deliberately omits `prd`, so warning here
+  // would fire on every fresh recipe. A defaulted value is the happy path, and
+  // doctor reports the resolved path anyway.
   if (raw === undefined) {
-    warnings.push(`no "prd" declared — defaulting to ${DEFAULT_PRD_PATH}`);
     return [resolveProjectPath(projectRoot, DEFAULT_PRD_PATH)];
   }
 

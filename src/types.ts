@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "init" | "run" | "validate" | "validate-semantic";
+export type HarnessCommand = "init" | "run" | "doctor" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;

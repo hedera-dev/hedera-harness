@@ -1,8 +1,9 @@
 import { runInit } from "./initRunner.js";
+import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { runHarness, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["init", "run", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "validate", "validate-semantic"]);
 const DEFAULT_RUN_SPEC = ".harness/spec.yaml";
 
 export function parseCliArgs(argv: string[]): ParsedCli {
@@ -10,7 +11,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
     throw new Error(
-      `Expected command "init", "run", "validate", or "validate-semantic".`,
+      `Expected command "init", "run", "doctor", "validate", or "validate-semantic".`,
     );
   }
 
@@ -36,6 +37,7 @@ export function printHelp(): void {
 Usage:
   hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <branch>] [--skip-install]
   hedera-harness run [spec] [--max-attempts <count>] [--new] [--continue <branch>]
+  hedera-harness doctor [spec] [--workspace <path>]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
 
@@ -46,6 +48,7 @@ Examples:
   hedera-harness run .harness/spec.yaml --max-attempts 3
   hedera-harness run .harness/spec.yaml --new
   hedera-harness run .harness/spec.yaml --continue harness/run-my-feature-abc123
+  hedera-harness doctor
   hedera-harness validate
   hedera-harness validate .harness/spec.yaml
   hedera-harness validate-semantic .harness/spec.yaml
@@ -79,6 +82,15 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         "`run` are still vendored under .harness/skills/ from skills-index.json.",
       ].join("\n"),
     );
+    return;
+  }
+
+  if (parsed.command === "doctor") {
+    const report = await runDoctor(parsed.options);
+    console.log(formatDoctorReport(report));
+    if (!report.passed) {
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -146,7 +158,12 @@ function takeSpecPath(
     return { specPath: first, flagArgs: args.slice(1) };
   }
 
-  if (command === "run" || command === "validate" || command === "validate-semantic") {
+  if (
+    command === "run" ||
+    command === "doctor" ||
+    command === "validate" ||
+    command === "validate-semantic"
+  ) {
     return { specPath: DEFAULT_RUN_SPEC, flagArgs: args };
   }
 
