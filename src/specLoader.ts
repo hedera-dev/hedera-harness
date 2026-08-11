@@ -247,10 +247,15 @@ function readAgentPresetName(parsed: Record<string, unknown>): AgentPresetName {
   return requested;
 }
 
-/** Invocation for a preset, with the model flag applied. */
-function presetCommandConfig(agent: AgentPresetName, model?: string): CommandAgentConfig {
+/** Invocation for a preset and role, with the model flag applied. */
+function presetCommandConfig(
+  agent: AgentPresetName,
+  role: "generator" | "validator" = "generator",
+  model?: string,
+): CommandAgentConfig {
   const preset = AGENT_PRESETS[agent];
-  const args = [...(preset.args ?? [])];
+  const base = role === "validator" ? (preset.validatorArgs ?? preset.args) : preset.args;
+  const args = [...(base ?? [])];
   args.push(preset.modelFlag, model ?? preset.defaultModel);
   return {
     provider: "command",
@@ -303,7 +308,7 @@ function readOptionalValidator(parsed: Record<string, unknown>, agent: AgentPres
   }
 
   if (record.command === undefined) {
-    return { ...presetCommandConfig(agent), enabled: true };
+    return { ...presetCommandConfig(agent, "validator"), enabled: true };
   }
 
   return {

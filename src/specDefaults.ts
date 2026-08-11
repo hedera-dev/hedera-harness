@@ -46,6 +46,15 @@ export type McpDelivery =
 
 export interface AgentPreset extends CommandAgentConfig {
   mcp: McpDelivery;
+  /**
+   * Args for the read-only validator role.
+   *
+   * The generator invocation is the wrong shape for a validator: it grants
+   * file-editing tools the validator must not have, and withholds the browser
+   * tools it needs. Splitting them also enforces read-only at the permission
+   * layer rather than only in the prompt.
+   */
+  validatorArgs?: string[];
   /** Flag that selects the model, so repair attempts can switch to a cheaper one. */
   modelFlag: string;
   /** Model for the first attempt of a cycle. */
@@ -101,6 +110,18 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
       "--verbose",
     ],
     timeoutMs: 3_600_000,
+    // MCP tools must be named in --allowedTools: --permission-mode acceptEdits
+    // auto-accepts edits only, so browser calls are otherwise permission-denied
+    // in a non-interactive session even when the server is loaded.
+    validatorArgs: [
+      "-p",
+      "{prompt}",
+      "--allowedTools",
+      "mcp__playwright,Read,Grep,Glob",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+    ],
     mcp: { kind: "config-flag", flag: "--mcp-config" },
     modelFlag: "--model",
     defaultModel: "opus",

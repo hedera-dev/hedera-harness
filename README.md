@@ -338,9 +338,8 @@ Default spec for `run`: `.harness/spec.yaml`.
 ├── src/                      # Harness implementation
 ├── skeletons/
 │   ├── project-harness/      # Provisioned by `init` into consumer .harness/
-│   └── new-template/         # Stale: authoring stubs for the removed isolated flow
 ├── skills-index.json
-├── docs/
+├── docs/                     # authoring-a-recipe.md, prds/
 └── test/
 ```
 
