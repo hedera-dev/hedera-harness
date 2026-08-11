@@ -201,6 +201,7 @@ test("buildSessionPrompt preserves existing app and points at runtime paths", as
   const prompt = await prompts.buildSessionPrompt(
     {
       name: "demo",
+      projectRoot: dir,
       prdPaths: [prdPath],
       requiredFiles: ["packages/nextjs/app/page.tsx"],
       forbiddenFiles: [],

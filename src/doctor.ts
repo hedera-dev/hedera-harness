@@ -4,6 +4,11 @@ import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
 import { resolvePackageInstallTool } from "./optionalDeps.js";
+import {
+  PROJECT_PROMPTS_DIR,
+  PROMPT_TEMPLATE_NAMES,
+  resolvePromptTemplatePath,
+} from "./promptTemplates.js";
 import type { CliOptions, TemplateSpec } from "./types.js";
 
 export type CheckStatus = "ok" | "warn" | "fail";
@@ -45,6 +50,7 @@ export async function runDoctor(options: CliOptions): Promise<DoctorReport> {
     checks.push(await checkAgentCli(spec, workspacePath));
     checks.push(await checkPackageManager(spec, workspacePath));
     checks.push(...(await checkRecipeFiles(spec)));
+    checks.push(await checkPromptOverrides(spec.projectRoot));
     checks.push(...(await checkOptionalDeps(spec, workspacePath)));
     checks.push(...checkChainEnv(spec));
   }
@@ -209,6 +215,32 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<DoctorCheck[]> {
     }
   }
   return checks;
+}
+
+/**
+ * Report prompt overrides.
+ *
+ * An override is a copy, so it does not receive later changes to the bundled
+ * prompt — including new variables, which would render as empty. Worth stating
+ * plainly rather than leaving someone to discover it from a degraded prompt.
+ */
+async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
+  const overridden: string[] = [];
+  for (const name of PROMPT_TEMPLATE_NAMES) {
+    const resolved = await resolvePromptTemplatePath(projectRoot, name);
+    if (resolved.overridden) overridden.push(name);
+  }
+
+  if (overridden.length === 0) {
+    return { name: "prompts", status: "ok", detail: "using bundled prompts" };
+  }
+
+  return {
+    name: "prompts",
+    status: "warn",
+    detail: `${overridden.length} override(s): ${overridden.join(", ")}`,
+    fix: `Overrides in ${PROJECT_PROMPTS_DIR}/ do not track harness updates — re-check them after upgrading.`,
+  };
 }
 
 async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {

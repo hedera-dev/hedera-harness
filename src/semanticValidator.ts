@@ -88,7 +88,13 @@ export async function runSemanticValidation(input: {
 
     const browserKey =
       input.spec.chainValidation?.expose.browserLocalStorageKey ?? "burnerWallet.pk";
-    const prompt = buildValidatorPrompt(contract, serverUrl, input.chainSigner, browserKey);
+    const prompt = await buildValidatorPrompt(
+      input.spec,
+      contract,
+      serverUrl,
+      input.chainSigner,
+      browserKey,
+    );
     const promptPath = path.join(input.promptsDirectory, `validator-attempt-${input.attempt}.txt`);
     const agentLogPath = path.join(input.logsDirectory, `validator-attempt-${input.attempt}.log`);
     const agentActivityLogPath = path.join(

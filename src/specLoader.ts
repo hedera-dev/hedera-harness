@@ -46,6 +46,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
 
   const spec: TemplateSpec = {
     schemaVersion,
+    projectRoot,
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
     prdPaths: readPrdPaths(parsed, projectRoot),

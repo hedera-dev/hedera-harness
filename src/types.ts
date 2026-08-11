@@ -175,6 +175,8 @@ export interface BaselineConfig {
 export interface TemplateSpec {
   /** Recipe schema version. Absent in the file means 1 (the original schema). */
   schemaVersion: number;
+  /** Directory containing `.harness/`. Used to resolve prompt overrides. */
+  projectRoot: string;
   name: string;
   description?: string;
   /**
