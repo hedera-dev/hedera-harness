@@ -5,17 +5,27 @@ import {
   buildSessionPrompt,
   buildSessionRepairPrompt,
 } from "./promptBuilder.js";
+import { appendHarnessNote, type RunLayout } from "./runArtifacts.js";
+import { runGenerateStage, runValidationStages, type AttemptStageContext } from "./attemptStages.js";
 import {
-  appendHarnessLog,
-  appendHarnessNote,
-  type RunLayout,
-  writeJsonFile,
-  writePromptFile,
-  writeStatusFile,
-} from "./runArtifacts.js";
-import { withPlaywrightMcpSnapshot, type VendoredContext } from "./contextVendor.js";
+  announceAttempt,
+  attemptKind,
+  checkpoint,
+  abortOnInfrastructureFailure,
+  finishRun,
+  logPhase,
+  notRunYet,
+  recordAttemptResult,
+} from "./attemptReporting.js";
+import {
+  applyFindingStatus,
+  computeFindingDelta,
+  findingIds,
+  formatFindingDelta,
+  type FindingDelta,
+} from "./findingsLifecycle.js";
+import type { VendoredContext } from "./contextVendor.js";
 import type { VendoredSkill } from "./skillVendor.js";
-import type { AgentProgress } from "./agentStreamLogger.js";
 import type {
   ChainSigner,
   RunReport,
@@ -24,13 +34,6 @@ import type {
   ValidationResult,
 } from "./types.js";
 import type { CheckpointCommitResult } from "./harnessGit.js";
-import { executeCommand } from "./command.js";
-import { runDeterministicValidation } from "./validation/index.js";
-import { buildDeployEnv } from "./validation/chainSigner.js";
-import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
-import { createDevServerSession, loadDevServerConfig } from "./validation/devServer.js";
-import { runPlaywrightGate } from "./validation/playwrightGate.js";
-import { WorkspaceWatcher } from "./workspaceWatcher.js";
 
 /** Shared per-run session metadata passed through the attempt loop. */
 export interface SessionContext {
@@ -65,6 +68,8 @@ export interface AttemptLoopInput {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  /** Finding ids still open when the previous cycle stopped, for delta reporting. */
+  previousOpenFindingIds?: string[];
   /** Exclusion-safe checkpoint commit hook (never stages runtime or secret paths). */
   commitAttempt: (
     workspacePath: string,
@@ -113,289 +118,63 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     workspacePath,
     vendoredContext,
     chainSigner,
+    commitAttempt,
   } = input;
 
   const generator = new CommandAgentProvider(spec.generator);
-  const commitAttempt = input.commitAttempt;
   const promptStrategy = input.promptStrategy ?? createSessionPromptStrategy(input);
 
   let attempts = input.startingAttempt - 1;
   let attemptsThisCycle = 0;
-  let validation: ValidationResult = {
-    passed: false,
-    findings: [
-      {
-        id: "generator-not-run",
-        category: "agent",
-        message: "Generator did not complete a successful attempt.",
-      },
-    ],
-    commandResults: [],
-  };
+  let validation: ValidationResult = notRunYet();
   let latestPrompt = await promptStrategy.buildInitialPrompt(isContinue, cycle);
+  let openFindingIds = input.previousOpenFindingIds ?? [];
+  let previousFindings: ValidationFinding[] = [];
+  let delta: FindingDelta = { open: openFindingIds, fixed: [], introduced: [] };
 
   while (attemptsThisCycle < maxAttempts) {
     attempts += 1;
     attemptsThisCycle += 1;
-    const isFreshFirst = !isContinue && attempts === 1;
-    const isContinueFirst = isContinue && attemptsThisCycle === 1;
-    const promptFileName = isFreshFirst
-      ? `generator-attempt-${attempts}.txt`
-      : isContinueFirst
-        ? `continue-cycle-${cycle}-attempt-${attempts}.txt`
-        : `repair-attempt-${attempts}.txt`;
-    const promptPath = path.join(layout.promptsDirectory, promptFileName);
-    await writePromptFile(promptPath, latestPrompt);
 
-    if (isContinueFirst) {
-      await appendHarnessLog(layout.jsonlLogPath, {
-        type: "continue_started",
-        timestamp: new Date().toISOString(),
-        attempt: attempts,
-        cycle: cycle!,
-        promptPath,
-      });
-    } else {
-      await appendHarnessLog(layout.jsonlLogPath, {
-        type: isFreshFirst ? "generator_started" : "repair_started",
-        timestamp: new Date().toISOString(),
-        attempt: attempts,
-        promptPath,
-      });
-    }
-    await writeStatusFile(layout.runDirectory, {
-      phase: isFreshFirst || isContinueFirst ? "generator_running" : "repair_running",
+    const context: AttemptStageContext = {
       attempt: attempts,
-      cycle,
-      attemptsThisCycle,
-      promptPath,
-    });
-    logPhase(
-      isFreshFirst
-        ? `Generator attempt ${attempts} started`
-        : isContinueFirst
-          ? `Continue cycle ${cycle} attempt ${attempts} started`
-          : `Repair attempt ${attempts} started`,
-      "Tail logs/generator-attempt-N.activity.log and logs/workspace-activity.log",
-    );
-
-    const agentLogPath = path.join(layout.logsDirectory, `generator-attempt-${attempts}.log`);
-    const agentActivityLogPath = path.join(
-      layout.logsDirectory,
-      `generator-attempt-${attempts}.activity.log`,
-    );
-    const workspaceActivityLogPath = path.join(
-      layout.logsDirectory,
-      `workspace-attempt-${attempts}.activity.log`,
-    );
-    const agentStartedAt = Date.now();
-    let latestProgress: AgentProgress = {
-      lastActivity: "agent process spawned",
-      toolCallsStarted: 0,
-      toolCallsCompleted: 0,
+      spec,
+      workspacePath,
+      layout,
+      chainSigner,
+      contractRelativePath: vendoredContext.contractRelativePath,
+      playwrightMcpMode: promptStrategy.playwrightMcpMode,
     };
 
-    const workspaceWatcher = new WorkspaceWatcher(
-      workspacePath,
-      workspaceActivityLogPath,
-      async summary => {
-        latestProgress = { ...latestProgress, lastActivity: summary };
-        await writeStatusFile(
-          layout.runDirectory,
-          buildAgentStatus(attempts, agentStartedAt, latestProgress, {
-            activityLogPath: agentActivityLogPath,
-            workspaceActivityLogPath,
-          }),
-        );
-      },
-    );
-    await workspaceWatcher.start();
+    const kind = attemptKind(isContinue, attempts, attemptsThisCycle);
+    await announceAttempt({ layout, kind, attempt: attempts, cycle, attemptsThisCycle, prompt: latestPrompt });
 
-    const heartbeat = setInterval(() => {
-      void writeStatusFile(
-        layout.runDirectory,
-        buildAgentStatus(attempts, agentStartedAt, latestProgress, {
-          activityLogPath: agentActivityLogPath,
-          workspaceActivityLogPath,
-        }),
-      );
-      console.log(
-        `[hedera-harness] agent still running (${Math.round((Date.now() - agentStartedAt) / 1000)}s) — ${latestProgress.lastActivity}`,
-      );
-    }, 15_000);
-
-    let agentResult;
-    try {
-      agentResult = await generator.run({
-        workspacePath,
-        prompt: latestPrompt,
-        attempt: attempts,
-        role: "generator",
-        timeoutMs: spec.generator.timeoutMs,
-        logPath: agentLogPath,
-        activityLogPath: agentActivityLogPath,
-        onProgress: async progress => {
-          latestProgress = progress;
-          await writeStatusFile(
-            layout.runDirectory,
-            buildAgentStatus(attempts, agentStartedAt, progress, {
-              activityLogPath: agentActivityLogPath,
-              workspaceActivityLogPath,
-            }),
-          );
-        },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      agentResult = {
-        exitCode: 127,
-        stdout: "",
-        stderr: message,
-        durationMs: 0,
-        command: spec.generator.command,
-        args: spec.generator.args ?? [],
-        timedOut: false,
-        signal: null,
-      };
-    } finally {
-      clearInterval(heartbeat);
-      await workspaceWatcher.stop();
-    }
-
-    await appendHarnessLog(layout.jsonlLogPath, {
-      type: "generator_finished",
-      timestamp: new Date().toISOString(),
-      attempt: attempts,
-      exitCode: agentResult.exitCode,
-      durationMs: agentResult.durationMs,
-      timedOut: agentResult.timedOut,
-    });
-
-    if (agentResult.exitCode !== 0) {
-      const agentFinding = {
-        id: agentResult.timedOut ? `generator-timeout:${attempts}` : `generator-exit:${attempts}`,
-        category: "agent" as const,
-        message: agentResult.timedOut
-          ? `Generator agent timed out after ${Math.round(agentResult.durationMs / 1000)}s`
-          : `Generator agent exited with code ${agentResult.exitCode ?? "null"}`,
-        details: truncate(agentResult.stderr || agentResult.stdout),
-      };
-      validation = await runAttemptValidation({
-        workspacePath,
-        spec,
-        runDirectory: layout.runDirectory,
-        cacheDirectory: layout.cacheDirectory,
-        attempts,
-        agentFinding,
-        jsonlLogPath: layout.jsonlLogPath,
-        chainSigner,
-        contractRelativePath: vendoredContext.contractRelativePath,
-        playwrightMcpMode: promptStrategy.playwrightMcpMode,
-      });
-    } else {
-      validation = await runAttemptValidation({
-        workspacePath,
-        spec,
-        runDirectory: layout.runDirectory,
-        cacheDirectory: layout.cacheDirectory,
-        attempts,
-        logsDirectory: layout.logsDirectory,
-        promptsDirectory: layout.promptsDirectory,
-        jsonlLogPath: layout.jsonlLogPath,
-        chainSigner,
-        contractRelativePath: vendoredContext.contractRelativePath,
-        playwrightMcpMode: promptStrategy.playwrightMcpMode,
-      });
-    }
-
-    const validationLogPath = path.join(layout.logsDirectory, `validation-attempt-${attempts}.json`);
-    await writeJsonFile(validationLogPath, validation);
-    if (validation.playwrightGate) {
-      const playwrightGateLogPath = path.join(
+    const generate = await runGenerateStage(context, {
+      generator,
+      prompt: latestPrompt,
+      agentLogPath: path.join(layout.logsDirectory, `generator-attempt-${attempts}.log`),
+      agentActivityLogPath: path.join(
         layout.logsDirectory,
-        `playwright-gate-attempt-${attempts}.json`,
-      );
-      await writeJsonFile(playwrightGateLogPath, validation.playwrightGate);
-    }
-
-    await appendHarnessLog(layout.jsonlLogPath, {
-      type: "validation_finished",
-      timestamp: new Date().toISOString(),
-      attempt: attempts,
-      passed: validation.passed,
-      findingCount: validation.findings.length,
+        `generator-attempt-${attempts}.activity.log`,
+      ),
+      workspaceActivityLogPath: path.join(
+        layout.logsDirectory,
+        `workspace-attempt-${attempts}.activity.log`,
+      ),
     });
 
-    if (!(validation.passed && !validation.semanticValidation)) {
-      await writeStatusFile(layout.runDirectory, {
-        phase: "validated",
-        attempt: attempts,
-        passed: validation.passed,
-        findingCount: validation.findings.length,
-        semanticPassed: validation.semanticValidation?.passed,
-        infrastructureFailure: validation.semanticValidation?.infrastructureFailure ?? false,
-      });
-    }
+    validation = await runValidationStages(context, generate.finding);
 
-    if (validation.semanticValidation) {
-      logPhase(
-        `Attempt ${attempts} semantic validation ${validation.semanticValidation.passed ? "passed" : "failed"}`,
-        validation.semanticValidation.passed
-          ? validation.semanticValidation.verdict?.summary
-          : validation.semanticValidation.infrastructureFailure
-            ? `infrastructure: ${validation.semanticValidation.infrastructureFailureReason}`
-            : `${validation.semanticValidation.findings.length} finding(s)`,
-      );
-    } else {
-      logPhase(
-        `Attempt ${attempts} deterministic validation ${validation.passed ? "passed" : "failed"}`,
-        validation.passed
-          ? validation.playwrightGate
-            ? `playwright gate passed (${validation.playwrightGate.routes.length} routes)`
-            : undefined
-          : `${validation.findings.length} finding(s)`,
-      );
-    }
+    delta = computeFindingDelta(openFindingIds, validation.findings);
+    validation.findings = applyFindingStatus(validation.findings, delta, previousFindings);
+    previousFindings = validation.findings;
+    openFindingIds = delta.open;
+
+    await recordAttemptResult({ layout, attempt: attempts, validation, delta });
 
     if (validation.semanticValidation?.infrastructureFailure) {
-      await appendHarnessLog(layout.jsonlLogPath, {
-        type: "validator_infra_aborted",
-        timestamp: new Date().toISOString(),
-        attempt: attempts,
-        reason:
-          validation.semanticValidation.infrastructureFailureReason ??
-          "semantic infrastructure failure",
-      });
-      await appendHarnessNote(
-        layout.notesLogPath,
-        `Attempt ${attempts} semantic infrastructure abort`,
-        [
-          "Repair loop aborted: failure is harness/agent tooling, not the generated app.",
-          validation.semanticValidation.infrastructureFailureReason ?? "(no reason)",
-          ...validation.semanticValidation.findings.map(
-            finding => `- [${finding.category}] ${finding.message}`,
-          ),
-        ].join("\n"),
-      );
-      logPhase(
-        "Aborting repair loop after semantic infrastructure failure",
-        validation.semanticValidation.infrastructureFailureReason,
-      );
-
-      const gitCommit = await commitAttempt(
-        workspacePath,
-        attempts,
-        false,
-        validation.findings,
-      );
-      await appendHarnessLog(layout.jsonlLogPath, {
-        type: "workspace_git_committed",
-        timestamp: new Date().toISOString(),
-        attempt: attempts,
-        committed: gitCommit.committed,
-        commitSha: gitCommit.commitSha,
-        message: gitCommit.message,
-      });
+      await abortOnInfrastructureFailure({ layout, attempt: attempts, validation });
+      await checkpoint({ layout, commitAttempt, workspacePath, attempt: attempts, validation });
       break;
     }
 
@@ -406,301 +185,40 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         ? validation.semanticValidation
           ? "Deterministic, Playwright gate, and semantic validation passed."
           : "Deterministic validation passed."
-        : validation.findings.map(finding => `- [${finding.category}] ${finding.message}`).join("\n"),
+        : [
+            formatFindingDelta(delta),
+            ...validation.findings
+              .filter(finding => finding.status !== "fixed")
+              .map(finding => `- [${finding.category}] ${finding.message}`),
+          ].join("\n"),
     );
 
-    const gitCommit = await commitAttempt(
-      workspacePath,
-      attempts,
-      validation.passed,
-      validation.findings,
-    );
-    await appendHarnessLog(layout.jsonlLogPath, {
-      type: "workspace_git_committed",
-      timestamp: new Date().toISOString(),
-      attempt: attempts,
-      committed: gitCommit.committed,
-      commitSha: gitCommit.commitSha,
-      message: gitCommit.message,
-    });
-    if (gitCommit.committed && gitCommit.commitSha) {
-      logPhase(`Workspace committed`, `${gitCommit.message} @ ${gitCommit.commitSha.slice(0, 8)}`);
-    } else {
-      logPhase("Workspace unchanged", "no git commit needed for this attempt");
-    }
+    await checkpoint({ layout, commitAttempt, workspacePath, attempt: attempts, validation });
 
-    if (validation.passed) {
-      break;
-    }
+    if (validation.passed) break;
 
     if (attemptsThisCycle < maxAttempts) {
-      latestPrompt = await promptStrategy.buildRepairPrompt(validation.findings, attempts + 1);
+      latestPrompt = await promptStrategy.buildRepairPrompt(
+        validation.findings.filter(finding => finding.status !== "fixed"),
+        attempts + 1,
+      );
     }
   }
 
-  const finishedAt = new Date();
-  const report: RunReport = {
-    specName: spec.name,
+  return finishRun({
+    layout,
+    spec,
     specPath,
-    runDirectory: layout.runDirectory,
     workspacePath,
     attempts,
-    maxAttempts,
-    cycle,
     attemptsThisCycle,
-    passed: validation.passed,
-    startedAt: startedAt.toISOString(),
-    finishedAt: finishedAt.toISOString(),
-    durationMs: finishedAt.getTime() - startedAt.getTime(),
+    maxAttempts,
+    isContinue,
+    cycle,
+    startedAt,
     validation,
-    semanticValidation: validation.semanticValidation,
-  };
-
-  await writeJsonFile(layout.reportPath, report);
-  if (isContinue && cycle !== undefined) {
-    await writeJsonFile(path.join(layout.reportsDirectory, `cycle-${cycle}.json`), report);
-  }
-
-  await appendHarnessLog(layout.jsonlLogPath, {
-    type: "run_finished",
-    timestamp: finishedAt.toISOString(),
-    passed: report.passed,
-    attempts: report.attempts,
-    reportPath: layout.reportPath,
+    delta,
   });
-
-  await appendHarnessNote(
-    layout.notesLogPath,
-    isContinue ? `Run continued finished: ${spec.name} (cycle ${cycle})` : `Run finished: ${spec.name}`,
-    [
-      report.passed
-        ? `Passed after ${report.attemptsThisCycle ?? report.attempts} attempt(s) this kick. Report: ${layout.reportPath}`
-        : `Failed after ${report.attemptsThisCycle ?? report.attempts} attempt(s) this kick. Report: ${layout.reportPath}`,
-      isContinue ? `Total attempts in project: ${report.attempts}` : undefined,
-    ]
-      .filter((line): line is string => Boolean(line))
-      .join("\n"),
-  );
-  await writeStatusFile(layout.runDirectory, {
-    phase: "finished",
-    passed: report.passed,
-    attempts: report.attempts,
-    reportPath: layout.reportPath,
-  });
-  logPhase(`Run finished: ${report.passed ? "PASSED" : "FAILED"}`, layout.reportPath);
-
-  return report;
 }
 
-export async function runAttemptValidation(input: {
-  workspacePath: string;
-  spec: TemplateSpec;
-  runDirectory: string;
-  cacheDirectory?: string;
-  attempts: number;
-  logsDirectory?: string;
-  promptsDirectory?: string;
-  jsonlLogPath?: string;
-  agentFinding?: ValidationFinding;
-  chainSigner?: ChainSigner;
-  contractRelativePath?: string;
-  playwrightMcpMode?: "workspace" | "snapshot-restore";
-}): Promise<ValidationResult> {
-  const installCachePath = path.join(
-    input.cacheDirectory ?? path.join(input.runDirectory, "cache"),
-    "install-fingerprint.txt",
-  );
-  const useSharedDevServer =
-    isValidatorEnabled(input.spec) && Boolean(input.spec.validators.playwrightPath);
-
-  const detOptions = {
-    skipPlaywrightGate: useSharedDevServer,
-    installCachePath,
-  };
-
-  let validation: ValidationResult;
-  if (input.agentFinding) {
-    const deterministic = await runDeterministicValidation(input.workspacePath, input.spec, detOptions);
-    validation = {
-      passed: false,
-      findings: [input.agentFinding, ...deterministic.findings],
-      commandResults: deterministic.commandResults,
-      playwrightGate: deterministic.playwrightGate,
-    };
-  } else {
-    validation = await runDeterministicValidation(input.workspacePath, input.spec, detOptions);
-  }
-
-  const tier01Passed = validation.findings.filter(finding => finding.category !== "agent").length === 0;
-  if (!useSharedDevServer || !tier01Passed || input.agentFinding) {
-    return validation;
-  }
-
-  // Optional on-chain deploy hook (Solidity templates) before starting the app.
-  if (input.chainSigner && input.spec.chainValidation?.deploy?.commands.length) {
-    const deployFindings = await runChainDeployCommands(
-      input.workspacePath,
-      input.spec,
-      input.chainSigner,
-    );
-    if (deployFindings.length > 0) {
-      validation = {
-        ...validation,
-        passed: false,
-        findings: [...validation.findings, ...deployFindings],
-      };
-      return validation;
-    }
-  }
-
-  const runPlaywrightAndSemantic = async (): Promise<ValidationResult> => {
-    const playwrightPath = input.spec.validators.playwrightPath!;
-    let devSession = null;
-    let nextValidation = validation;
-    try {
-      const serverConfig = await loadDevServerConfig(playwrightPath);
-      devSession = await createDevServerSession(input.workspacePath, serverConfig, "runtime");
-
-      console.log("[hedera-harness] Running thin Playwright gate (shared dev server)...");
-      const gate = await runPlaywrightGate(input.workspacePath, playwrightPath, devSession);
-      nextValidation.playwrightGate = gate.result;
-      nextValidation.findings.push(...gate.findings);
-      nextValidation.passed =
-        nextValidation.findings.filter(finding => finding.category !== "agent").length === 0;
-
-      if (!nextValidation.passed || !input.logsDirectory || !input.promptsDirectory) {
-        return nextValidation;
-      }
-
-      const validatorPromptPath = path.join(
-        input.promptsDirectory,
-        `validator-attempt-${input.attempts}.txt`,
-      );
-      if (input.jsonlLogPath) {
-        await appendHarnessLog(input.jsonlLogPath, {
-          type: "validator_started",
-          timestamp: new Date().toISOString(),
-          attempt: input.attempts,
-          promptPath: validatorPromptPath,
-          serverUrl: devSession.url,
-        });
-      }
-      logPhase(`Validator attempt ${input.attempts} started`, devSession.url);
-
-      const semanticValidation = await runSemanticValidation({
-        workspacePath: input.workspacePath,
-        spec: input.spec,
-        attempt: input.attempts,
-        logsDirectory: input.logsDirectory,
-        promptsDirectory: input.promptsDirectory,
-        devServer: devSession,
-        chainSigner: input.chainSigner,
-        contractRelativePath: input.contractRelativePath,
-      });
-
-      const semanticLogPath = path.join(
-        input.logsDirectory,
-        `semantic-validation-attempt-${input.attempts}.json`,
-      );
-      await writeJsonFile(semanticLogPath, semanticValidation);
-
-      if (input.jsonlLogPath) {
-        await appendHarnessLog(input.jsonlLogPath, {
-          type: "validator_finished",
-          timestamp: new Date().toISOString(),
-          attempt: input.attempts,
-          passed: semanticValidation.passed,
-          findingCount: semanticValidation.findings.length,
-          durationMs: semanticValidation.durationMs,
-          infrastructureFailure: semanticValidation.infrastructureFailure,
-          infrastructureFailureReason: semanticValidation.infrastructureFailureReason,
-        });
-      }
-
-      if (!semanticValidation.passed) {
-        nextValidation = {
-          ...nextValidation,
-          passed: false,
-          findings: [...nextValidation.findings, ...semanticValidation.findings],
-          semanticValidation,
-        };
-      } else {
-        nextValidation = {
-          ...nextValidation,
-          semanticValidation,
-        };
-      }
-      return nextValidation;
-    } finally {
-      await devSession?.stop();
-    }
-  };
-
-  if (input.playwrightMcpMode === "snapshot-restore") {
-    return withPlaywrightMcpSnapshot(input.workspacePath, runPlaywrightAndSemantic);
-  }
-  return runPlaywrightAndSemantic();
-}
-
-export function logPhase(title: string, detail?: string): void {
-  const suffix = detail ? ` — ${detail}` : "";
-  console.log(`[hedera-harness] ${title}${suffix}`);
-}
-
-async function runChainDeployCommands(
-  workspacePath: string,
-  spec: TemplateSpec,
-  chainSigner: ChainSigner,
-): Promise<ValidationFinding[]> {
-  const commands = spec.chainValidation?.deploy?.commands ?? [];
-  if (commands.length === 0) return [];
-
-  const env = buildDeployEnv(chainSigner, spec.chainValidation?.expose.envVars ?? []);
-  const findings: ValidationFinding[] = [];
-
-  for (const commandConfig of commands) {
-    logPhase(`Chain deploy: ${commandConfig.name}`, commandConfig.command);
-    const result = await executeCommand({
-      command: commandConfig.command,
-      cwd: workspacePath,
-      env,
-      timeoutMs: commandConfig.timeoutMs,
-      shell: true,
-    });
-    if (result.exitCode !== 0) {
-      findings.push({
-        id: `chain-deploy:${commandConfig.name}`,
-        category: "commands",
-        message: `Chain deploy command failed: ${commandConfig.name}`,
-        details: truncate(result.stderr || result.stdout),
-      });
-    }
-  }
-
-  return findings;
-}
-
-function truncate(value: string, maxLength = 1200): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxLength) return trimmed;
-  return `${trimmed.slice(0, maxLength)}...`;
-}
-
-function buildAgentStatus(
-  attempt: number,
-  startedAtMs: number,
-  progress: AgentProgress,
-  logs: { activityLogPath: string; workspaceActivityLogPath: string },
-): Record<string, unknown> {
-  return {
-    phase: "generator_running",
-    attempt,
-    elapsedSeconds: Math.round((Date.now() - startedAtMs) / 1000),
-    lastActivity: progress.lastActivity,
-    toolCallsStarted: progress.toolCallsStarted,
-    toolCallsCompleted: progress.toolCallsCompleted,
-    sessionId: progress.sessionId,
-    activityLogPath: logs.activityLogPath,
-    workspaceActivityLogPath: logs.workspaceActivityLogPath,
-  };
-}
+export { findingIds, logPhase };

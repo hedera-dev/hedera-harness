@@ -5,9 +5,17 @@ import { ISOLATED_CONTEXT_DIR } from "./runtimePaths.js";
 
 export { pathExists } from "./fsUtils.js";
 
-export const HARNESS_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
-export const VENDORED_PRD_PATH = `${HARNESS_CONTEXT_DIR}/prd.md`;
-export const VENDORED_CONTRACT_PATH = `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`;
+/**
+ * Legacy vendor root, used by `validate-semantic` against older layouts.
+ *
+ * Deliberately NOT named HARNESS_CONTEXT_DIR: runtimePaths exports a constant by
+ * that name pointing at `.harness/runtime/context`, where a project run actually
+ * vendors. Two same-named constants with different values previously let repair
+ * prompts fall back to a directory the run never creates.
+ */
+export const LEGACY_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
+export const VENDORED_PRD_PATH = `${LEGACY_CONTEXT_DIR}/prd.md`;
+export const VENDORED_CONTRACT_PATH = `${LEGACY_CONTEXT_DIR}/acceptance-contract.json`;
 
 /** Playwright MCP config merged into the seeded workspace so the validator agent can drive the live app. */
 export const PLAYWRIGHT_MCP_SERVER = {
@@ -38,7 +46,7 @@ export async function vendorHarnessContext(
   input: { prdPath: string; contractPath?: string },
   options: VendorContextOptions = {},
 ): Promise<VendoredContext> {
-  const contextDir = normalizeRelativeDir(options.contextDir ?? HARNESS_CONTEXT_DIR);
+  const contextDir = normalizeRelativeDir(options.contextDir ?? LEGACY_CONTEXT_DIR);
   const contextRoot = path.join(workspacePath, ...contextDir.split("/"));
   await mkdir(contextRoot, { recursive: true });
 

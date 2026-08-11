@@ -266,6 +266,11 @@ export interface ValidationFinding {
     | "semantic-infra";
   message: string;
   details?: string;
+  /**
+   * Lifecycle across attempts. `fixed` findings are carried forward from a prior
+   * attempt to show what the last repair closed; they are not failures.
+   */
+  status?: "open" | "fixed";
   /** Acceptance-contract assertion id when category is semantic (e.g. C7). */
   contractAssertion?: string;
   /** Route associated with a semantic finding, when known. */
@@ -293,6 +298,10 @@ export interface RunReport {
   attemptsThisCycle?: number;
   /** True when deterministic, playwright gate, and semantic validation (if configured) all pass. */
   passed: boolean;
+  /** Finding ids still failing when the run stopped. */
+  openFindingIds: string[];
+  /** Finding ids the final attempt closed. */
+  fixedFindingIds: string[];
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -386,6 +395,9 @@ export type HarnessLogEvent =
       attempt: number;
       passed: boolean;
       findingCount: number;
+      openFindingIds?: string[];
+      fixedFindingIds?: string[];
+      introducedFindingIds?: string[];
     }
   | {
       type: "validator_started";
