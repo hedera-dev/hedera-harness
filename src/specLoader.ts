@@ -13,8 +13,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
   const raw = await readFile(absoluteSpecPath, "utf8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
   const specDirectory = path.dirname(absoluteSpecPath);
-  // Parent of the spec directory is the consumer/harness project root
-  // (works for both `specs/*.yaml` and `.harness/spec.yaml`).
+  // Parent of the spec directory is the consumer project root (`.harness/spec.yaml`).
   const projectRoot = path.resolve(specDirectory, "..");
 
   const spec: TemplateSpec = {
