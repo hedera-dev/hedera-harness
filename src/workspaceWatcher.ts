@@ -1,6 +1,5 @@
 import { appendFile, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
-import path from "node:path";
 
 const IGNORED_SEGMENTS = new Set([
   "node_modules",

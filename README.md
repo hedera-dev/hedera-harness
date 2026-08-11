@@ -17,8 +17,7 @@ The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validato
 4. **Runs a generator agent** (Cursor CLI or Claude Code CLI — see [generator config](#configure-a-project-centric-spec)) against your PRD
 5. **Validates** in layers you enable in the spec (see below)
 6. **Repairs** on failure with focused prompts, up to `maxAttempts`
-7. **Audits** agent logs for oracle peeking (informational — does not fail the run)
-8. **Writes artifacts** under `.harness/runs/` for inspection
+7. **Writes artifacts** under `.harness/runs/` for inspection
 
 **Pass condition:** every validation tier enabled in the spec must pass. Oracle audit never blocks a pass.
 
@@ -163,7 +162,7 @@ Prefer an AI coding agent with the **hedera-harness** plugin from [hedera-skills
 /review-harness-spec
 ```
 
-Optional inspiration: three **example** PRDs + greenfield specs ship in this repo under `specs/` / `docs/prds/` (historical isolated-run shape). For project-centric work, start from `.harness/` after `init`.
+Optional inspiration: example PRDs ship in this repo under `docs/prds/`. For project work, start from `.harness/` after `init`.
 
 ### If you enable Tier 2 (`validators.playwright`)
 
@@ -193,7 +192,7 @@ See [`.env.example`](.env.example). The harness does not auto-load `.env`.
 ```
 my-app/
 ├── .harness/
-│   ├── spec.yaml              # no seed; paths relative to project root
+│   ├── spec.yaml              # paths relative to project root
 │   ├── prd.md
 │   ├── validators/
 │   │   ├── static.json
@@ -208,7 +207,6 @@ my-app/
 
 Required in the **spec file**:
 
-- Omit `seed` — workspace is the project cwd
 - `extend.baseline` — host-app health checks before generation (YAML key name kept for compatibility; must include a command literally named `install`)
 - Validators / PRD under `.harness/…`
 
@@ -340,9 +338,8 @@ Default spec for `run`: `.harness/spec.yaml`.
 ├── src/                      # Harness implementation
 ├── skeletons/
 │   ├── project-harness/      # Provisioned by `init` into consumer .harness/
-│   └── new-template/         # Legacy greenfield authoring stubs
+│   └── new-template/         # Stale: authoring stubs for the removed isolated flow
 ├── skills-index.json
-├── specs/                    # Example specs (historical / inspiration)
 ├── docs/
 └── test/
 ```

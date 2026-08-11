@@ -222,7 +222,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       layout,
       spec,
       specPath: loaded.specPath,
-      projectRoot,
+
       maxAttempts,
       isContinue,
       cycle,

@@ -311,7 +311,7 @@ async function collectTextFiles(workspacePath: string, current = ""): Promise<st
   let entries: string[] = [];
 
   try {
-    const { readdir, stat } = await import("node:fs/promises");
+    const { readdir } = await import("node:fs/promises");
     const dirEntries = await readdir(absoluteCurrent, { withFileTypes: true });
 
     for (const entry of dirEntries) {

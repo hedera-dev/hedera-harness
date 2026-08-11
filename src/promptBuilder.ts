@@ -144,7 +144,7 @@ export async function buildSessionRepairPrompt(
   attempt: number,
   vendoredContext?: VendoredContext,
 ): Promise<string> {
-  const prompt = await buildRepairPrompt(spec, findings, attempt);
+  const prompt = await buildRepairPrompt(spec, findings, attempt, vendoredContext);
   return [
     "You are repairing an in-place extension of an existing application.",
     "Preserve unrelated working features. Prefer the smallest fix that clears the findings.",

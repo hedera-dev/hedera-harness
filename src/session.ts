@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { logPhase } from "./attemptLoop.js";
 import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branchDetection.js";

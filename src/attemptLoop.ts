@@ -37,7 +37,6 @@ export interface SessionContext {
   layout: RunLayout;
   spec: TemplateSpec;
   specPath: string;
-  projectRoot: string;
   /** The project directory the agent edits in place. */
   workspacePath: string;
   vendoredSkills: VendoredSkill[];
@@ -56,7 +55,6 @@ export interface AttemptLoopInput {
   layout: RunLayout;
   spec: TemplateSpec;
   specPath: string;
-  projectRoot: string;
   maxAttempts: number;
   isContinue: boolean;
   cycle?: number;
@@ -108,7 +106,6 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     layout,
     spec,
     specPath,
-    projectRoot,
     maxAttempts,
     isContinue,
     cycle,
