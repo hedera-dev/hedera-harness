@@ -138,18 +138,28 @@ console.log("  summary:", sem?.verdict?.summary ?? "(none)");
 if (sem?.findings?.length) {
   for (const f of sem.findings) console.log("  finding:", f.message);
 }
-// Did the agent actually reach the browser?
+// Did the agent actually reach the browser? Tool names appear in the raw
+// stream log, not the activity summary — scanning only the latter reported a
+// false negative on a run that had genuinely driven Chromium.
 const logs = path.join(runDir, "logs");
-const activity = readdirSync(logs).filter(f => f.startsWith("validator-") && f.endsWith(".activity.log"));
-let browserCalls = 0;
-for (const f of activity) {
+const validatorLogs = readdirSync(logs).filter(f => f.startsWith("validator-attempt-"));
+let navigations = 0;
+let sawMarker = false;
+for (const f of validatorLogs) {
   const text = readFileSync(path.join(logs, f), "utf8");
-  browserCalls += (text.match(/browser_(navigate|snapshot|click|evaluate|take_screenshot)/g) || []).length;
+  navigations += (text.match(/mcp__playwright__browser_navigate/g) || []).length;
+  if (text.includes("HARNESS-TIER3-OK")) sawMarker = true;
 }
-console.log("  browser tool calls seen:", browserCalls);
-console.log(browserCalls > 0
-  ? "\n  MCP VERIFIED: the validator drove a real browser."
-  : "\n  MCP NOT VERIFIED: no browser tool calls found in the validator activity log.");
+console.log("  browser_navigate calls:", navigations);
+console.log("  page marker observed:", sawMarker);
+
+// A pass is only meaningful if the agent actually loaded the page: the marker
+// exists nowhere but the rendered HTML.
+const verified = navigations > 0 && sawMarker && sem?.passed === true;
+console.log(verified
+  ? "\n  MCP VERIFIED: the validator drove a real browser and read the page."
+  : "\n  MCP NOT VERIFIED: see the validator log under " + logs);
+process.exit(verified ? 0 : 1);
 ' "$RUN_DIR"
 
 echo
