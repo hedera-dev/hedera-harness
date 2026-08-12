@@ -16,8 +16,14 @@ HARNESS_VERSION="$(node -p "require('$HARNESS_ROOT/package.json').version")"
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hedera-run-e2e.XXXXXX")"
 TGZ_PATH=""
 cleanup() {
-  rm -rf "$SMOKE_DIR"
+  # Preserve the workspace when the run failed, so the failure can be inspected.
+  if [[ "${HARNESS_E2E_KEEP:-0}" == "1" ]]; then
+    echo "==> keeping smoke dir: $SMOKE_DIR"
+  else
+    rm -rf "$SMOKE_DIR"
+  fi
   rm -f "$HARNESS_ROOT"/hedera-harness-*.tgz 2>/dev/null || true
+  # TGZ_PATH lives under SMOKE_DIR and is removed with it.
 }
 trap cleanup EXIT
 
@@ -29,8 +35,14 @@ npm run build --silent
 
 echo "==> npm pack hedera-harness"
 PACK_LINE="$(npm pack --silent)"
-TGZ_PATH="$HARNESS_ROOT/$(basename "$PACK_LINE")"
-test -f "$TGZ_PATH"
+PACKED="$HARNESS_ROOT/$(basename "$PACK_LINE")"
+test -f "$PACKED"
+# Yarn caches file: dependencies by locator. The name and version never change
+# between runs, so a stable path made yarn reuse a stale cached zip and silently
+# install an older build — the e2e then validated code that was not under test.
+# A unique path per run forces a real fetch.
+TGZ_PATH="$SMOKE_DIR/hedera-harness-$(date +%s)-$$.tgz"
+cp "$PACKED" "$TGZ_PATH"
 echo "    tarball=$TGZ_PATH"
 
 echo "==> build create-scaffold-hbar"
@@ -120,8 +132,17 @@ const pkg = JSON.parse(readFileSync("package.json","utf8"));
 if (pkg.devDependencies["hedera-harness"] !== version) throw new Error("pin lost");
 const installed = JSON.parse(readFileSync("node_modules/hedera-harness/package.json","utf8"));
 if (installed.version !== version) throw new Error("installed version " + installed.version);
-console.log("    installed hedera-harness@" + installed.version);
-' "$HARNESS_VERSION"
+// Version alone cannot distinguish a fresh build from a stale cached one: both
+// report the same number. Assert against the source tree instead.
+const { readdirSync } = await import("node:fs");
+const shipped = new Set(readdirSync("node_modules/hedera-harness/dist"));
+const expected = process.argv[2].split(",").filter(Boolean);
+const missing = expected.filter((f) => !shipped.has(f));
+if (missing.length) {
+  throw new Error("installed build is stale; missing " + missing.join(", "));
+}
+console.log("    installed hedera-harness@" + installed.version + " (" + shipped.size + " dist files)");
+' "$HARNESS_VERSION" "$(ls "$HARNESS_ROOT/dist" | tr '\n' ',')"
 
 git add -A
 if ! git diff --cached --quiet; then
@@ -199,12 +220,29 @@ export HUSKY=0
 export MOCK_HARNESS_MODE=fail
 export MOCK_HARNESS_WORKSPACE="$APP_DIR"
 rm -f .env packages/nextjs/.env
+# Captured outside the app dir: a log inside it would dirty the tree and break
+# the clean-tree assertions below.
+RUN1_LOG="${HARNESS_E2E_RUN1_LOG:-$SMOKE_DIR/run1.log}"
 set +e
-yarn harness:run
-RUN1_EC=$?
+yarn harness:run 2>&1 | tee "$RUN1_LOG"
+RUN1_EC=${PIPESTATUS[0]}
 set -e
 echo "    run#1 exit=$RUN1_EC"
 test "$RUN1_EC" -ne 0
+
+# The scaffolded recipe is still schema v1 (extend.baseline, logging). Backward
+# compatibility is load-bearing until every template branch is regenerated, so
+# assert the deprecation path is actually taken rather than silently skipped.
+if ! grep -qF 'extend.baseline` is deprecated' "$RUN1_LOG"; then
+  echo "FAIL: legacy recipe did not emit the extend.baseline deprecation warning" >&2
+  echo "      (either the warning regressed, or the recipe is no longer v1)" >&2
+  exit 1
+fi
+if ! grep -qF '`logging` is ignored' "$RUN1_LOG"; then
+  echo "FAIL: legacy recipe did not warn that logging is ignored" >&2
+  exit 1
+fi
+echo "    schema v1 deprecation warnings present"
 
 EXT_BRANCH="$(git branch --show-current)"
 echo "    branch=$EXT_BRANCH"

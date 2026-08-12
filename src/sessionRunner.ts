@@ -39,7 +39,7 @@ import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 export interface RunSessionOptions extends CliOptions {
   /** Test seam: skip host tool PATH checks. */
   skipToolChecks?: boolean;
-  /** Test seam: skip host baseline (`extend.baseline`) commands. */
+  /** Test seam: skip host baseline commands. */
   skipBaseline?: boolean;
 }
 
@@ -176,7 +176,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     const vendoredContext = await vendorHarnessContext(
       workspaceRoot,
       {
-        prdPath: spec.prdPath,
+        prdPath: spec.prdPaths[0],
         contractPath: spec.contractPath,
       },
       {

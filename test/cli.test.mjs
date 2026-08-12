@@ -152,7 +152,7 @@ logging:
 
   const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
   assert.equal(loaded.spec.name, "no-seed-extend");
-  assert.equal(loaded.spec.extend?.baseline?.commands?.[0]?.name, "install");
+  assert.equal(loaded.spec.baseline?.commands?.[0]?.name, "install");
   assert.equal("seed" in loaded.spec, false);
 });
 
@@ -201,7 +201,7 @@ test("buildSessionPrompt preserves existing app and points at runtime paths", as
   const prompt = await prompts.buildSessionPrompt(
     {
       name: "demo",
-      prdPath,
+      prdPaths: [prdPath],
       requiredFiles: ["packages/nextjs/app/page.tsx"],
       forbiddenFiles: [],
       validators: {},

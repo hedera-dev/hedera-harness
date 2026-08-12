@@ -74,7 +74,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   }
 
   const vendored = await vendorHarnessContext(workspacePath, {
-    prdPath: spec.prdPath,
+    prdPath: spec.prdPaths[0],
     contractPath: spec.contractPath,
   });
   logPhase(
