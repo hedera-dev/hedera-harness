@@ -119,7 +119,7 @@ test("printHelp documents init and project-centric run", () => {
   assert.match(help, /Does not auto-stash/);
 });
 
-test("loadTemplateSpec allow missing seed for project-centric mode", async () => {
+test("loadTemplateSpec loads a project-centric recipe without a seed block", async () => {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const root = await makeTestTempDir("extend-spec-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
@@ -150,17 +150,10 @@ logging:
 `,
   );
 
-  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), {
-    requireSeed: false,
-  });
-  assert.equal(loaded.spec.seed, undefined);
+  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
   assert.equal(loaded.spec.name, "no-seed-extend");
   assert.equal(loaded.spec.extend?.baseline?.commands?.[0]?.name, "install");
-
-  await assert.rejects(
-    () => loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), { requireSeed: true }),
-    /seed/i,
-  );
+  assert.equal("seed" in loaded.spec, false);
 });
 
 test("loadTemplateSpec rejects project-centric mode without baseline install command", async () => {
@@ -194,7 +187,7 @@ logging:
   );
 
   await assert.rejects(
-    () => loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), { requireSeed: false }),
+    () => loadTemplateSpec(path.join(root, ".harness", "spec.yaml")),
     /named "install"/,
   );
 });

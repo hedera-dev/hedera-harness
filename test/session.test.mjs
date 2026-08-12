@@ -68,7 +68,7 @@ async function initExtendFixture() {
     git(root, ["checkout", "-b", "master"]);
   }
   const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), {
-    requireSeed: false,
+
   });
   return { root, loaded };
 }
@@ -252,7 +252,7 @@ constraints:
   git(root, ["commit", "-m", "switch to other-feature recipe"]);
 
   const other = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"), {
-    requireSeed: false,
+
   });
 
   const prepared = await sessionMod.prepareSession({

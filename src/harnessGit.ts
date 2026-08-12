@@ -10,7 +10,6 @@ import {
 } from "./branchDetection.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { ValidationFinding } from "./types.js";
-import type { WorkspaceGitCommitResult } from "./workspaceGit.js";
 
 export {
   HARNESS_EXTEND_BRANCH_PREFIX,
@@ -300,7 +299,10 @@ export async function createAndCheckoutHarnessBranch(
   return { branch, headSha };
 }
 
-export interface CheckpointCommitResult extends WorkspaceGitCommitResult {
+export interface CheckpointCommitResult {
+  committed: boolean;
+  commitSha?: string;
+  message: string;
   skippedSecrets: string[];
 }
 

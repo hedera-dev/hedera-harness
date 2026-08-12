@@ -55,6 +55,27 @@ interface CommandValidatorConfig {
   }>;
 }
 
+/**
+ * Directories the secret scan never walks.
+ *
+ * Harness runtime is excluded deliberately: `.harness/runs/<id>/` holds the
+ * ephemeral signer and run artifacts, so scanning it reports the harness's own
+ * material as a finding against the app under test.
+ */
+const SCAN_SKIP_DIRS = new Set([
+  "node_modules",
+  ".next",
+  ".git",
+  "dist",
+  "artifacts",
+  "cache",
+  ".harness",
+  ".harness-context",
+  ".harness-skills",
+  ".harness-semantic",
+  ".skill-cache",
+]);
+
 export async function runDeterministicValidation(
   workspacePath: string,
   spec: TemplateSpec,
@@ -142,7 +163,20 @@ async function validateStaticConfig(workspacePath: string, staticPath: string): 
     const filePath = path.join(workspacePath, assertion.file);
     if (!(await pathExists(filePath))) continue;
 
-    const content = JSON.parse(await readFile(filePath, "utf8")) as unknown;
+    // A generated file with broken JSON is an app defect, not a harness crash.
+    let content: unknown;
+    try {
+      content = JSON.parse(await readFile(filePath, "utf8")) as unknown;
+    } catch (error) {
+      findings.push({
+        id: `json-parse:${assertion.file}`,
+        category: "static",
+        message: `Could not parse ${assertion.file} as JSON`,
+        details: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+
     const actual = getByPath(content, assertion.path);
     if (!valuesEqual(actual, assertion.equals)) {
       findings.push({
@@ -311,13 +345,13 @@ async function collectTextFiles(workspacePath: string, current = ""): Promise<st
   let entries: string[] = [];
 
   try {
-    const { readdir, stat } = await import("node:fs/promises");
+    const { readdir } = await import("node:fs/promises");
     const dirEntries = await readdir(absoluteCurrent, { withFileTypes: true });
 
     for (const entry of dirEntries) {
       const relativePath = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (["node_modules", ".next", ".git", "dist", "artifacts", "cache"].includes(entry.name)) {
+        if (SCAN_SKIP_DIRS.has(entry.name)) {
           continue;
         }
         entries = entries.concat(await collectTextFiles(workspacePath, relativePath));

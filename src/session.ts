@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { logPhase } from "./attemptLoop.js";
 import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branchDetection.js";
@@ -56,6 +56,14 @@ export interface SessionMetadata {
   lastCheckpointSha: string;
   gateStatus: GateStatus;
   baselineResult?: BaselineResult;
+  /**
+   * Finding ids still failing when the last cycle stopped.
+   *
+   * Carried across `--continue` so the next cycle can report what it closed
+   * rather than restarting the delta from zero. Optional: sessions written
+   * before the findings lifecycle landed simply have no history.
+   */
+  openFindingIds?: string[];
 }
 
 export interface PrepareSessionInput {

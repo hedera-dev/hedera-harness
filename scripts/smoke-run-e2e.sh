@@ -10,6 +10,8 @@ HARNESS_ROOT="$ROOT"
 CREATE_ROOT="$WORK_ROOT/create-hbar"
 TEMPLATE_ROOT="$WORK_ROOT/scaffold-hbar"
 MOCK_AGENT="$HARNESS_ROOT/scripts/mock-agent.mjs"
+# Derive from package.json: hardcoding this broke the script at the 1.1.2 bump.
+HARNESS_VERSION="$(node -p "require('$HARNESS_ROOT/package.json').version")"
 
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hedera-run-e2e.XXXXXX")"
 TGZ_PATH=""
@@ -74,14 +76,22 @@ test -f .harness/prd.md
 test -f .harness/validators/static.json
 node --input-type=module -e '
 import { readFileSync, writeFileSync } from "node:fs";
-const pkg = JSON.parse(readFileSync("package.json","utf8"));
-pkg.scripts = { ...(pkg.scripts || {}), "harness:run": "hedera-harness run .harness/spec.yaml" };
-// Drop legacy template alias if present.
-delete pkg.scripts["harness:extend"];
-writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
-if (pkg.devDependencies?.["hedera-harness"] !== "1.1.0") {
-  throw new Error("expected exact hedera-harness@1.1.0 pin, got " + pkg.devDependencies?.["hedera-harness"]);
+const raw = readFileSync("package.json", "utf8");
+const pkg = JSON.parse(raw);
+const wanted = "hedera-harness run .harness/spec.yaml";
+// Only rewrite when something actually changes. The scaffolded package.json has
+// no trailing newline, so an unconditional write dirties the tree by one byte
+// and trips the clean-tree assertion below.
+if (pkg.scripts?.["harness:run"] !== wanted || pkg.scripts?.["harness:extend"]) {
+  pkg.scripts = { ...(pkg.scripts || {}), "harness:run": wanted };
+  delete pkg.scripts["harness:extend"];
+  writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+  console.log("    added harness:run script");
 }
+const pin = pkg.devDependencies?.["hedera-harness"];
+// The template pins whatever scaffold-hbar ships; the smoke overrides it below.
+if (!pin) throw new Error("template did not pin hedera-harness at all");
+console.log("    template pins hedera-harness@" + pin);
 '
 BRANCH="$(git branch --show-current)"
 test "$BRANCH" = "main"
@@ -95,22 +105,23 @@ fi
 yarn config set nodeLinker node-modules >/dev/null
 node --input-type=module -e '
 import { readFileSync, writeFileSync } from "node:fs";
-const tgz = process.argv[1];
+const [tgz, version] = process.argv.slice(1);
 const pkg = JSON.parse(readFileSync("package.json","utf8"));
-pkg.devDependencies = { ...pkg.devDependencies, "hedera-harness": "1.1.0" };
+pkg.devDependencies = { ...pkg.devDependencies, "hedera-harness": version };
 pkg.resolutions = { ...(pkg.resolutions || {}), "hedera-harness": `file:${tgz}` };
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
-' "$TGZ_PATH"
+' "$TGZ_PATH" "$HARNESS_VERSION"
 yarn install
 test -f node_modules/hedera-harness/package.json
 node --input-type=module -e '
 import { readFileSync } from "node:fs";
+const version = process.argv[1];
 const pkg = JSON.parse(readFileSync("package.json","utf8"));
-if (pkg.devDependencies["hedera-harness"] !== "1.1.0") throw new Error("pin lost");
+if (pkg.devDependencies["hedera-harness"] !== version) throw new Error("pin lost");
 const installed = JSON.parse(readFileSync("node_modules/hedera-harness/package.json","utf8"));
-if (installed.version !== "1.1.0") throw new Error("installed version " + installed.version);
+if (installed.version !== version) throw new Error("installed version " + installed.version);
 console.log("    installed hedera-harness@" + installed.version);
-'
+' "$HARNESS_VERSION"
 
 git add -A
 if ! git diff --cached --quiet; then
@@ -145,7 +156,7 @@ spec = spec.replace(
 extend:
   baseline:
     commands:
-      - name: noop
+      - name: install
         command: "true"
         timeoutMs: 10000
 

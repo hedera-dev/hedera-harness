@@ -1,5 +1,6 @@
 import { appendFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { BoundedOutput, killProcessTree } from "../command.js";
 import { AgentStreamLogger } from "../agentStreamLogger.js";
 import type { AgentProvider, AgentRunInput, AgentRunResult, CommandAgentConfig } from "../types.js";
 
@@ -59,17 +60,27 @@ export class CommandAgentProvider implements AgentProvider {
         },
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
+        // Lead a new process group so timeouts tear down agent subprocesses.
+        detached: process.platform !== "win32",
       });
 
-      const stdoutChunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
+      // The verdict JSON arrives at the end of the stream, so the tail is the
+      // part that must survive truncation on a very chatty run.
+      const stdout = new BoundedOutput(256 * 1024, 3 * 1024 * 1024);
+      const stderr = new BoundedOutput(128 * 1024, 512 * 1024);
       let timedOut = false;
       let idleTimedOut = false;
       let settled = false;
       let idleTimer: NodeJS.Timeout | undefined;
       let hardKillTimer: NodeJS.Timeout | undefined;
 
-      void initializeAgentLog(input.logPath, this.config.command, args, timeoutMs, idleTimeoutMs);
+      void initializeAgentLog(
+        input.logPath,
+        this.config.command,
+        redactPromptArgs(args, input.prompt),
+        timeoutMs,
+        idleTimeoutMs,
+      );
       void streamLogger?.initialize();
 
       const settleAgent = (reason: "wall-clock" | "idle") => {
@@ -92,14 +103,8 @@ export class CommandAgentProvider implements AgentProvider {
             duration_ms: Date.now() - startedAt,
           })}\n`,
         );
-        child.kill("SIGTERM");
-        hardKillTimer = setTimeout(() => {
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            // Already exited.
-          }
-        }, 5_000);
+        killProcessTree(child, "SIGTERM");
+        hardKillTimer = setTimeout(() => killProcessTree(child, "SIGKILL"), 5_000);
       };
 
       const resetIdleTimer = () => {
@@ -114,7 +119,7 @@ export class CommandAgentProvider implements AgentProvider {
       child.stdout.on("data", chunk => {
         resetIdleTimer();
         const buffer = Buffer.from(chunk);
-        stdoutChunks.push(buffer);
+        stdout.push(buffer);
         const text = buffer.toString("utf8");
         void appendAgentLog(input.logPath, buffer);
         void streamLogger?.processChunk(text);
@@ -123,7 +128,7 @@ export class CommandAgentProvider implements AgentProvider {
       child.stderr.on("data", chunk => {
         resetIdleTimer();
         const buffer = Buffer.from(chunk);
-        stderrChunks.push(buffer);
+        stderr.push(buffer);
         const text = buffer.toString("utf8");
         void appendAgentLog(input.logPath, `\n## stderr\n${text}`);
         console.log(`[hedera-harness:agent:stderr] ${truncate(text, 300)}`);
@@ -147,9 +152,9 @@ export class CommandAgentProvider implements AgentProvider {
 
         const result: AgentRunResult = {
           exitCode,
-          stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+          stdout: stdout.toString(),
           stderr: [
-            Buffer.concat(stderrChunks).toString("utf8"),
+            stderr.toString(),
             idleTimedOut
               ? `\n[hedera-harness] Agent produced no output for ${idleTimeoutMs}ms; treating as failure.\n`
               : "",
@@ -169,6 +174,18 @@ export class CommandAgentProvider implements AgentProvider {
   }
 }
 
+/**
+ * Replace the prompt wherever it appears in argv.
+ *
+ * Prompts can carry the ephemeral chain signer's private key, so they must
+ * never reach the log. Slicing off the last argument only worked when the
+ * prompt was appended; configs using the {prompt} placeholder put it in the
+ * middle, which logged the key verbatim and dropped an unrelated flag.
+ */
+function redactPromptArgs(args: string[], prompt: string): string[] {
+  return args.map(arg => (arg.includes(prompt) ? "<prompt redacted>" : arg));
+}
+
 async function initializeAgentLog(
   logPath: string | undefined,
   command: string,
@@ -183,7 +200,7 @@ async function initializeAgentLog(
     [
       "# agent raw stream log",
       `command=${command}`,
-      `args=${JSON.stringify(args.slice(0, -1))}`,
+      `args=${JSON.stringify(args)}`,
       `timeoutMs=${timeoutMs}`,
       `idleTimeoutMs=${idleTimeoutMs}`,
       "",

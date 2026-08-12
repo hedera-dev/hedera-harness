@@ -25,19 +25,14 @@ import {
 export interface ProjectRunResult extends SessionRunResult {}
 
 /**
- * Project-centric harness entrypoint (formerly isolated greenfield `run`).
+ * Project-centric harness entrypoint.
  *
  * Operates on the project cwd (or `--workspace`), creates/continues
  * `harness/run-*` branches, and stores artifacts under `.harness/runs/`.
  *
  * Bootstrap a project first with `hedera-harness init`.
  */
-export async function runHarness(options: CliOptions): Promise<ProjectRunResult> {
-  return runProjectHarness(options);
-}
-
-/** Full project-centric run including session/cleanup metadata. */
-export async function runProjectHarness(options: RunSessionOptions): Promise<ProjectRunResult> {
+export async function runHarness(options: RunSessionOptions): Promise<ProjectRunResult> {
   return runSession(options);
 }
 
@@ -47,7 +42,7 @@ export async function validateWorkspace(options: CliOptions) {
   await access(workspacePath);
 
   // Project-centric recipes omit `seed`; validate only needs deterministic gates.
-  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
+  const loaded = await loadTemplateSpec(options.specPath);
   return runDeterministicValidation(workspacePath, loaded.spec);
 }
 
@@ -61,7 +56,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   await access(workspacePath);
 
-  const loaded = await loadTemplateSpec(options.specPath, { requireSeed: false });
+  const loaded = await loadTemplateSpec(options.specPath);
   const { spec } = loaded;
 
   if (!isValidatorEnabled(spec)) {

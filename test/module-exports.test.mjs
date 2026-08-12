@@ -14,15 +14,18 @@ test("refactored modules export the shared attempt loop and both runners", async
   const initRunner = await import(pathToFileURL(path.resolve("dist/initRunner.js")).href);
   const branchDetection = await import(pathToFileURL(path.resolve("dist/branchDetection.js")).href);
   const provisioner = await import(pathToFileURL(path.resolve("dist/harnessProvisioner.js")).href);
+  const stages = await import(pathToFileURL(path.resolve("dist/attemptStages.js")).href);
+
+  assert.deepEqual(stages.STAGE_NAMES, ["GENERATE", "ASSERT", "SMOKE", "EVALUATE"]);
+  for (const stage of ["runGenerateStage", "runAssertStage", "runSmokeStage", "runEvaluateStage"]) {
+    assert.equal(typeof stages[stage], "function", `${stage} should be exported`);
+  }
+  assert.equal(typeof stages.runValidationStages, "function");
 
   assert.equal(typeof attemptLoop.runAttemptLoop, "function");
-  assert.equal(typeof attemptLoop.runIsolatedAttemptLoop, "function");
   assert.equal(typeof attemptLoop.runSessionAttemptLoop, "function");
-  assert.equal(typeof attemptLoop.createIsolatedPromptStrategy, "function");
   assert.equal(typeof attemptLoop.createSessionPromptStrategy, "function");
-  assert.equal(typeof attemptLoop.runAttemptValidation, "function");
   assert.equal(typeof runner.runHarness, "function");
-  assert.equal(typeof runner.runProjectHarness, "function");
   assert.equal(typeof runner.validateWorkspace, "function");
   assert.equal(typeof runner.validateSemanticWorkspace, "function");
   assert.equal(typeof sessionRunner.runSession, "function");

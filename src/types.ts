@@ -20,11 +20,6 @@ export interface CliOptions {
   specPath: string;
   maxAttempts?: number;
   workspacePath?: string;
-  /**
-   * @deprecated Isolated-run continue directory. Project-centric `run` uses
-   * `--continue <branch>` (`continueBranch`) instead.
-   */
-  continueRunDirectory?: string;
   /** Force a new `harness/run-*` branch even when current branch matches the spec. */
   forceNew?: boolean;
   /** Explicit harness branch to checkout and continue. */
@@ -94,38 +89,6 @@ export interface PreflightCommandConfig {
   name?: string;
   command: string;
   timeoutMs?: number;
-}
-
-export interface SeedConfig {
-  repo: string;
-  ref: string;
-  mode?: "clone-ref-to-run-workspace" | "copy-local-ref";
-  workspace?: string;
-  preflight?: {
-    commands?: Array<string | PreflightCommandConfig>;
-  };
-  isolation?: {
-    separateFolder?: boolean;
-    neverModifySeedRepo?: boolean;
-    excludeFromArtifact?: string[];
-  };
-}
-
-export interface WorkspaceSeedInput {
-  seed: SeedConfig;
-  runDirectory: string;
-  workspacePath?: string;
-  fetchLatest?: boolean;
-  runPreflight?: boolean;
-}
-
-export interface WorkspaceSeedResult {
-  workspacePath: string;
-  repo: string;
-  ref: string;
-  commitSha: string;
-  fetchedLatest: boolean;
-  preflight: CommandExecutionResult[];
 }
 
 export interface TemplateConstraints {
@@ -222,8 +185,6 @@ export interface TemplateSpec {
   description?: string;
   prdPath: string;
   contractPath?: string;
-  /** Required for isolated `run`; optional for in-place `extend`. */
-  seed?: SeedConfig;
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   skills?: string[];
@@ -300,29 +261,20 @@ export interface ValidationFinding {
     | "secret"
     | "commands"
     | "agent"
-    | "oracle"
     | "playwright"
     | "semantic"
     | "semantic-infra";
   message: string;
   details?: string;
+  /**
+   * Lifecycle across attempts. `fixed` findings are carried forward from a prior
+   * attempt to show what the last repair closed; they are not failures.
+   */
+  status?: "open" | "fixed";
   /** Acceptance-contract assertion id when category is semantic (e.g. C7). */
   contractAssertion?: string;
   /** Route associated with a semantic finding, when known. */
   route?: string;
-}
-
-export interface OracleAccessFinding {
-  id: string;
-  message: string;
-  evidence: string;
-  path?: string;
-}
-
-export interface BlindIntegrityResult {
-  passed: boolean;
-  findings: OracleAccessFinding[];
-  scannedLogs: string[];
 }
 
 export interface ValidationResult {
@@ -338,9 +290,6 @@ export interface RunReport {
   specPath: string;
   runDirectory: string;
   workspacePath: string;
-  seedRepo: string;
-  seedRef: string;
-  seedCommitSha: string;
   attempts: number;
   maxAttempts: number;
   /** Set when this kick was a --continue cycle (1-based). */
@@ -349,7 +298,10 @@ export interface RunReport {
   attemptsThisCycle?: number;
   /** True when deterministic, playwright gate, and semantic validation (if configured) all pass. */
   passed: boolean;
-  blindIntegrity: BlindIntegrityResult;
+  /** Finding ids still failing when the run stopped. */
+  openFindingIds: string[];
+  /** Finding ids the final attempt closed. */
+  fixedFindingIds: string[];
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -388,12 +340,6 @@ export type HarnessLogEvent =
       promptPath: string;
     }
   | {
-      type: "workspace_seeded";
-      timestamp: string;
-      seedCommitSha: string;
-      workspacePath: string;
-    }
-  | {
       type: "skills_vendored";
       timestamp: string;
       count: number;
@@ -422,11 +368,6 @@ export type HarnessLogEvent =
       error?: string;
     }
   | {
-      type: "workspace_git_initialized";
-      timestamp: string;
-      commitSha: string;
-    }
-  | {
       type: "workspace_git_committed";
       timestamp: string;
       attempt: number;
@@ -449,18 +390,14 @@ export type HarnessLogEvent =
       timedOut: boolean;
     }
   | {
-      type: "oracle_audit_finished";
-      timestamp: string;
-      attempt: number;
-      passed: boolean;
-      findingCount: number;
-    }
-  | {
       type: "validation_finished";
       timestamp: string;
       attempt: number;
       passed: boolean;
       findingCount: number;
+      openFindingIds?: string[];
+      fixedFindingIds?: string[];
+      introducedFindingIds?: string[];
     }
   | {
       type: "validator_started";
