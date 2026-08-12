@@ -65,8 +65,18 @@ export async function cleanupRuntimeInjections(
   };
 }
 
+/** Workspace MCP files any agent preset may write. Claude is passed a config path instead. */
+const WORKSPACE_MCP_PATHS = [[".cursor", "mcp.json"], [".mcp.json"]] as const;
+
 async function stripHarnessPlaywrightMcp(workspacePath: string): Promise<boolean> {
-  const mcpPath = path.join(workspacePath, ".cursor", "mcp.json");
+  let stripped = false;
+  for (const segments of WORKSPACE_MCP_PATHS) {
+    if (await stripMcpFile(path.join(workspacePath, ...segments))) stripped = true;
+  }
+  return stripped;
+}
+
+async function stripMcpFile(mcpPath: string): Promise<boolean> {
   if (!(await exists(mcpPath))) {
     return false;
   }

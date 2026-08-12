@@ -1,6 +1,6 @@
 # hedera-harness — implementation plan
 
-**Status:** Phases 0–3 complete and verified; Phase 4 next
+**Status:** Phases 0–4 complete; Phase 5 next
 **Date:** 2026-08-11
 **Baseline:** v1.1.2 (`28e36f9`), 9,400 source lines, 73 tests passing
 **Current:** branch `feat/harness-phase-0-1-bulletproof`, 9,100 source lines, 98 tests passing
@@ -12,8 +12,9 @@
 | 2 — stages + findings lifecycle | ✅ complete |
 | e2e verification | ✅ green (`smoke-run-e2e OK`) |
 | 3 — manifest redesign | ✅ complete |
-| 4 — prompts, MCP, models, knobs | next |
-| 5–7 | not started |
+| 4 — prompts, MCP, models, knobs | ✅ complete |
+| 5 — provisioning + overlays | next |
+| 6–7 | not started |
 
 ### e2e verification
 
@@ -341,7 +342,9 @@ is captured, and `HARNESS_E2E_KEEP=1` preserves the workspace on failure.
 
 ---
 
-## Phase 4 — Prompts, MCP, models, knobs
+## Phase 4 — Prompts, MCP, models, knobs ✅
+
+Commits `6138322`, `ccc167e`, `b20e0c6`, `63bf26f`.
 
 - `promptBuilder.ts` (723 lines) → `prompts/*.md` templates with a thin render layer.
   Prompt tuning is the main quality lever; it should not require a recompile.
@@ -355,8 +358,34 @@ is captured, and `HARNESS_E2E_KEEP=1` preserves the workspace on failure.
 - `doctor` command — fail in 2 seconds instead of 40 minutes
 
 **Exit criteria**
-- switching Cursor ↔ Claude is a one-line change
-- the Claude path works end to end
+- ✅ switching Cursor ↔ Claude is a one-line change (`agent:`), and the validator
+  inherits it — enabling Tier 3 is `validator: { enabled: true }`
+- ⬜ **the Claude path works end to end** — verified by unit tests only. The
+  `hedera-demo` recipe enables neither `validator` nor `validators.playwright`, so
+  SMOKE and EVALUATE never run in the e2e. This is the one change in Phases 0–4
+  whose payoff has not been observed on a real run; Phase 6 needs a template that
+  turns the higher tiers on.
+
+### Outcome
+
+The MCP delivery was verified against the installed CLIs rather than assumed:
+`claude` accepts `--mcp-config <configs...>`; Cursor's `agent` has no equivalent and
+reads the workspace file. So Claude is passed a harness-owned config and the project
+is never touched, while Cursor keeps write-and-restore — that dance is a property of
+the CLI, not a choice the harness made.
+
+Model escalation uses the Phase 2 findings delta: repairs run the cheaper model
+*except* after an attempt that fixed nothing, which escalates back. Paying less to
+repeat a failure is not a saving.
+
+`promptBuilder.ts` went 594 → 355 lines, with 265 lines of prose moving to
+`prompts/*.md` and a 128-line render layer. Projects override individual prompts at
+`.harness/prompts/<name>.md`; `doctor` reports which are overridden, since an
+override is a copy that will not receive later changes.
+
+Writing doctor's tests caught a Phase 3 flaw: the loader warned when `prd` was
+absent, but the generated skeleton omits it deliberately, so every fresh recipe
+would have warned.
 
 **Size:** M.
 

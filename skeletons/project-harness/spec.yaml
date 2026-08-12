@@ -60,11 +60,11 @@ baseline:
 # validators:
 #   playwright: .harness/validators/playwright-smoke.yaml
 #
-# Tier 3 grades the running app against an acceptance contract.
+# Tier 3 grades the running app against an acceptance contract. The validator
+# inherits the agent preset above, including how it receives Playwright MCP.
 # contract: .harness/acceptance-contract.json
 # validator:
 #   enabled: true
-#   command: agent
 #
 # Tier 3.5 provisions a funded ephemeral testnet account. Testnet only.
 # chainValidation:

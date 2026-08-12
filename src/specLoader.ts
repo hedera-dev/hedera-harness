@@ -4,6 +4,7 @@ import { parse as parseYaml } from "yaml";
 import type {
   BaselineConfig,
   ChainValidationConfig,
+  CommandAgentConfig,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
@@ -24,6 +25,7 @@ import {
   defaultForbiddenCommands,
   defaultSecretFiles,
   isAgentPresetName,
+  type AgentPresetName,
 } from "./specDefaults.js";
 
 export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
@@ -40,15 +42,18 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
 
   const constraints = readConstraints(parsed);
   const workspaces = constraints?.workspaces ?? [];
+  const agent = readAgentPresetName(parsed);
 
   const spec: TemplateSpec = {
     schemaVersion,
+    projectRoot,
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
-    prdPaths: readPrdPaths(parsed, projectRoot, warnings),
+    prdPaths: readPrdPaths(parsed, projectRoot),
     contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
-    generator: readGenerator(parsed),
-    validator: readOptionalValidator(parsed),
+    agent,
+    generator: readGenerator(parsed, agent),
+    validator: readOptionalValidator(parsed, agent),
     // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
     skills: readOptionalStringArray(parsed, "skills"),
     constraints: {
@@ -148,15 +153,13 @@ function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): v
  * delivery is not implemented yet, so more than one is refused rather than silently
  * running only the first.
  */
-function readPrdPaths(
-  parsed: Record<string, unknown>,
-  projectRoot: string,
-  warnings: string[],
-): string[] {
+function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): string[] {
   const raw = parsed.prd;
 
+  // No warning: the generated skeleton deliberately omits `prd`, so warning here
+  // would fire on every fresh recipe. A defaulted value is the happy path, and
+  // doctor reports the resolved path anyway.
   if (raw === undefined) {
-    warnings.push(`no "prd" declared — defaulting to ${DEFAULT_PRD_PATH}`);
     return [resolveProjectPath(projectRoot, DEFAULT_PRD_PATH)];
   }
 
@@ -236,41 +239,64 @@ function readOptionalValidatorPath(
 }
 
 /**
- * Generator wiring, from an `agent:` preset or an explicit `generator:` block.
+ * Which agent CLI family the run targets.
  *
- * The preset exists so flag and model changes ship with the harness rather than
- * needing an edit in every project and template branch. An explicit block still
- * wins for anything the presets do not cover.
+ * Kept separate from `generator:` so it still governs MCP delivery and model
+ * selection when someone overrides the invocation.
  */
-function readGenerator(parsed: Record<string, unknown>) {
-  if (parsed.generator !== undefined) {
-    const generator = readObject(parsed, "generator");
-    return {
-      provider: "command" as const,
-      command: readString(generator, "command"),
-      args: readOptionalStringArray(generator, "args"),
-      env: readOptionalStringRecord(generator, "env"),
-      timeoutMs: readOptionalNumber(generator, "timeoutMs"),
-    };
-  }
-
+function readAgentPresetName(parsed: Record<string, unknown>): AgentPresetName {
   const requested = readOptionalString(parsed, "agent")?.trim() || DEFAULT_AGENT_PRESET;
   if (!isAgentPresetName(requested)) {
     throw new Error(
       [
         `Unknown agent preset ${JSON.stringify(requested)}.`,
         `Available: ${Object.keys(AGENT_PRESETS).join(", ")}.`,
-        "Or supply an explicit `generator:` block.",
       ].join(" "),
     );
   }
-
-  // Copy: presets are module-level and must not be mutated by a caller.
-  const preset = AGENT_PRESETS[requested];
-  return { ...preset, args: [...(preset.args ?? [])] };
+  return requested;
 }
 
-function readOptionalValidator(parsed: Record<string, unknown>) {
+/** Invocation for a preset, with the model flag applied. */
+function presetCommandConfig(agent: AgentPresetName, model?: string): CommandAgentConfig {
+  const preset = AGENT_PRESETS[agent];
+  const args = [...(preset.args ?? [])];
+  args.push(preset.modelFlag, model ?? preset.defaultModel);
+  return {
+    provider: "command",
+    command: preset.command,
+    args,
+    timeoutMs: preset.timeoutMs,
+  };
+}
+
+/**
+ * Generator wiring, from the `agent:` preset or an explicit `generator:` block.
+ *
+ * The preset exists so flag and model changes ship with the harness rather than
+ * needing an edit in every project and template branch.
+ */
+function readGenerator(parsed: Record<string, unknown>, agent: AgentPresetName) {
+  if (parsed.generator === undefined) {
+    return presetCommandConfig(agent);
+  }
+
+  const generator = readObject(parsed, "generator");
+  return {
+    provider: "command" as const,
+    command: readString(generator, "command"),
+    args: readOptionalStringArray(generator, "args"),
+    env: readOptionalStringRecord(generator, "env"),
+    timeoutMs: readOptionalNumber(generator, "timeoutMs"),
+  };
+}
+
+/**
+ * Validator wiring. Defaults to the same preset as the generator, so enabling
+ * the semantic tier is `validator: { enabled: true }` rather than a second
+ * hand-maintained copy of the agent invocation.
+ */
+function readOptionalValidator(parsed: Record<string, unknown>, agent: AgentPresetName) {
   const validator = parsed.validator;
   if (validator === undefined) return undefined;
   if (!validator || typeof validator !== "object" || Array.isArray(validator)) {
@@ -281,9 +307,13 @@ function readOptionalValidator(parsed: Record<string, unknown>) {
   if (record.enabled === false) {
     return {
       provider: "command" as const,
-      command: readOptionalString(record, "command") ?? "agent",
+      command: readOptionalString(record, "command") ?? AGENT_PRESETS[agent].command,
       enabled: false,
     };
+  }
+
+  if (record.command === undefined) {
+    return { ...presetCommandConfig(agent), enabled: true };
   }
 
   return {

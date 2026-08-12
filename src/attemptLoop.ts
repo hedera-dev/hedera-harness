@@ -1,5 +1,8 @@
 import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
+import { selectModel, withModel } from "./modelSelection.js";
+import { AGENT_PRESETS } from "./specDefaults.js";
+import { envAgentTimeoutMs } from "./env.js";
 import {
   buildSessionContinuePrompt,
   buildSessionPrompt,
@@ -49,7 +52,6 @@ export interface SessionContext {
 
 /** Prompt + Playwright MCP wiring for the in-place run loop. */
 export interface AttemptPromptStrategy {
-  playwrightMcpMode: "workspace" | "snapshot-restore";
   buildInitialPrompt(isContinue: boolean, cycle: number | undefined): Promise<string>;
   buildRepairPrompt(findings: ValidationFinding[], nextAttempt: number): Promise<string>;
 }
@@ -86,7 +88,6 @@ export function createSessionPromptStrategy(
 ): AttemptPromptStrategy {
   const { spec, vendoredSkills, vendoredContext } = session;
   return {
-    playwrightMcpMode: "snapshot-restore",
     async buildInitialPrompt(isContinue, cycle) {
       return isContinue
         ? buildSessionContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
@@ -121,8 +122,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     commitAttempt,
   } = input;
 
-  const generator = new CommandAgentProvider(spec.generator);
   const promptStrategy = input.promptStrategy ?? createSessionPromptStrategy(input);
+  const agentTimeoutMs = envAgentTimeoutMs();
 
   let attempts = input.startingAttempt - 1;
   let attemptsThisCycle = 0;
@@ -143,14 +144,33 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       layout,
       chainSigner,
       contractRelativePath: vendoredContext.contractRelativePath,
-      playwrightMcpMode: promptStrategy.playwrightMcpMode,
     };
 
     const kind = attemptKind(isContinue, attempts, attemptsThisCycle);
-    await announceAttempt({ layout, kind, attempt: attempts, cycle, attemptsThisCycle, prompt: latestPrompt });
+    const choice = selectModel({
+      spec,
+      isFirstAttemptOfCycle: attemptsThisCycle === 1,
+      previousFixedCount: delta.fixed.length,
+      hasRepaired: attemptsThisCycle > 1,
+    });
+    await announceAttempt({
+      layout,
+      kind,
+      attempt: attempts,
+      cycle,
+      attemptsThisCycle,
+      prompt: latestPrompt,
+      model: choice,
+    });
+
+    const generatorConfig = withModel(
+      agentTimeoutMs ? { ...spec.generator, timeoutMs: agentTimeoutMs } : spec.generator,
+      AGENT_PRESETS[spec.agent].modelFlag,
+      choice.model,
+    );
 
     const generate = await runGenerateStage(context, {
-      generator,
+      generator: new CommandAgentProvider(generatorConfig),
       prompt: latestPrompt,
       agentLogPath: path.join(layout.logsDirectory, `generator-attempt-${attempts}.log`),
       agentActivityLogPath: path.join(

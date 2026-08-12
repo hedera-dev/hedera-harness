@@ -27,8 +27,10 @@ export async function runSemanticValidation(input: {
   promptsDirectory: string;
   devServer?: DevServerSession;
   chainSigner?: ChainSigner;
-  /** Override vendored contract path (extend uses `.harness/runtime/context/...`). */
+  /** Override vendored contract path (`.harness/runtime/context/...`). */
   contractRelativePath?: string;
+  /** Appended to the validator invocation — e.g. --mcp-config for CLIs that take one. */
+  extraArgs?: string[];
 }): Promise<SemanticValidationResult> {
   const startedAt = Date.now();
   const validatorConfig = input.spec.validator;
@@ -86,7 +88,13 @@ export async function runSemanticValidation(input: {
 
     const browserKey =
       input.spec.chainValidation?.expose.browserLocalStorageKey ?? "burnerWallet.pk";
-    const prompt = buildValidatorPrompt(contract, serverUrl, input.chainSigner, browserKey);
+    const prompt = await buildValidatorPrompt(
+      input.spec,
+      contract,
+      serverUrl,
+      input.chainSigner,
+      browserKey,
+    );
     const promptPath = path.join(input.promptsDirectory, `validator-attempt-${input.attempt}.txt`);
     const agentLogPath = path.join(input.logsDirectory, `validator-attempt-${input.attempt}.log`);
     const agentActivityLogPath = path.join(
@@ -96,7 +104,11 @@ export async function runSemanticValidation(input: {
 
     await writePromptFile(promptPath, prompt, [input.chainSigner?.privateKeyHex]);
 
-    const validator = new CommandAgentProvider(validatorConfig);
+    const validator = new CommandAgentProvider(
+      input.extraArgs?.length
+        ? { ...validatorConfig, args: [...(validatorConfig.args ?? []), ...input.extraArgs] }
+        : validatorConfig,
+    );
     const agentResult = await validator.run({
       workspacePath: input.workspacePath,
       prompt,

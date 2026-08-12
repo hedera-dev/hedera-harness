@@ -61,7 +61,7 @@ test("withPlaywrightMcpSnapshot restores prior mcp.json", async () => {
   await writeFile(path.join(root, ".cursor", "mcp.json"), original);
 
   let sawPlaywright = false;
-  await withPlaywrightMcpSnapshot(root, async () => {
+  await withPlaywrightMcpSnapshot(root, ".cursor/mcp.json", async () => {
     const during = JSON.parse(await readFile(path.join(root, ".cursor", "mcp.json"), "utf8"));
     sawPlaywright = Boolean(during.mcpServers?.playwright);
   });

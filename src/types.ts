@@ -1,6 +1,6 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "init" | "run" | "validate" | "validate-semantic";
+export type HarnessCommand = "init" | "run" | "doctor" | "validate" | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -175,6 +175,8 @@ export interface BaselineConfig {
 export interface TemplateSpec {
   /** Recipe schema version. Absent in the file means 1 (the original schema). */
   schemaVersion: number;
+  /** Directory containing `.harness/`. Used to resolve prompt overrides. */
+  projectRoot: string;
   name: string;
   description?: string;
   /**
@@ -183,6 +185,11 @@ export interface TemplateSpec {
    */
   prdPaths: string[];
   contractPath?: string;
+  /**
+   * Which agent CLI family this run targets. Drives MCP delivery and model
+   * selection even when `generator:` overrides the invocation itself.
+   */
+  agent: "cursor" | "claude";
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   skills?: string[];

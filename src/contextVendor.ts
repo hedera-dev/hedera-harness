@@ -106,13 +106,27 @@ export async function vendorHarnessContext(
   };
 }
 
+/** Standalone MCP config the harness owns, for CLIs that accept a config path. */
+export async function writePlaywrightMcpConfig(absolutePath: string): Promise<string> {
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(
+    absolutePath,
+    `${JSON.stringify({ mcpServers: { playwright: { ...PLAYWRIGHT_MCP_SERVER } } }, null, 2)}\n`,
+    "utf8",
+  );
+  return absolutePath;
+}
+
 /**
- * Merge the Playwright MCP server into the workspace `.cursor/mcp.json`.
- * The Cursor agent CLI loads MCP from the `--workspace` directory, so the
- * seeded scaffold config alone is not enough for semantic validation.
+ * Merge the Playwright MCP server into a workspace config file.
+ *
+ * For CLIs with no flag to point elsewhere (Cursor), the harness has to write
+ * into the project, which is why the caller restores it afterwards.
  */
-export async function ensurePlaywrightMcp(workspacePath: string): Promise<string> {
-  const relativePath = ".cursor/mcp.json";
+export async function ensurePlaywrightMcp(
+  workspacePath: string,
+  relativePath = ".cursor/mcp.json",
+): Promise<string> {
   const mcpPath = path.join(workspacePath, relativePath);
   await mkdir(path.dirname(mcpPath), { recursive: true });
 
@@ -143,15 +157,16 @@ export async function ensurePlaywrightMcp(workspacePath: string): Promise<string
 }
 
 /**
- * Temporarily inject Playwright MCP into `.cursor/mcp.json`, then restore the
- * prior file (or remove the file if it did not exist). Used by in-place extend
- * so the final branch does not contain harness-injected MCP changes.
+ * Temporarily inject Playwright MCP into a workspace config, then restore the
+ * prior file (or remove it if it did not exist), so the branch does not end up
+ * carrying harness-injected MCP changes.
  */
 export async function withPlaywrightMcpSnapshot<T>(
   workspacePath: string,
+  relativePath: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const mcpPath = path.join(workspacePath, ".cursor", "mcp.json");
+  const mcpPath = path.join(workspacePath, ...relativePath.split("/"));
   let previous: string | undefined;
   let existed = false;
   try {
@@ -163,7 +178,7 @@ export async function withPlaywrightMcpSnapshot<T>(
   }
 
   try {
-    await ensurePlaywrightMcp(workspacePath);
+    await ensurePlaywrightMcp(workspacePath, relativePath);
     return await fn();
   } finally {
     if (existed && previous !== undefined) {
