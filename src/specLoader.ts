@@ -506,7 +506,8 @@ function assertCommandsIncludeInstall(
 ): void {
   if (!commands.some(command => command.name === "install")) {
     throw new Error(
-      'extend.baseline must include a command literally named "install" (used for host-health / fingerprinting).',
+      'baseline.commands must include a command literally named "install" '
+        + '(used for host-health checks and install fingerprinting).',
     );
   }
 }
