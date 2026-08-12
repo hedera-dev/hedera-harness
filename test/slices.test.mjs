@@ -67,6 +67,11 @@ baseline:
   );
 
   await run("git", ["init", "-q", "-b", "main", "."], { cwd: root });
+  // The harness makes its own checkpoint commits with the repo's identity, and
+  // a CI runner has no global one — set it locally so the fixture is a complete
+  // project rather than one that only works on a developer machine.
+  await run("git", ["config", "user.email", "fixture@local"], { cwd: root });
+  await run("git", ["config", "user.name", "Fixture"], { cwd: root });
   await run("git", ["add", "-A"], { cwd: root });
   await run(
     "git",

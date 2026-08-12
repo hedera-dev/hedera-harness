@@ -24,7 +24,8 @@
     "test": "npm run build --silent && node --test test/*.test.mjs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
-    "check:templates": "bash scripts/check-template-recipes.sh"
+    "check:templates": "bash scripts/check-template-recipes.sh",
+    "test:browser": "npm run build --silent && node --test test/browser/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
