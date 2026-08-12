@@ -19,9 +19,13 @@ baseline:
 # and model changes arrive with an upgrade instead of an edit here.
 # agent: cursor              # or: claude
 #
-# Feature description. A list is accepted so recipes need not change when
-# sequential slice delivery lands; more than one is refused for now.
+# Feature description. A list delivers ordered increments onto one branch,
+# each with its own attempt budget; a failing increment stops the sequence.
 # prd: .harness/prd.md
+#
+# prd:
+#   - .harness/prds/01-foundation.md
+#   - .harness/prds/02-ui.md
 #
 # maxAttempts: 3             # repair attempts per run before stopping
 #

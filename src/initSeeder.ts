@@ -8,6 +8,38 @@ const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
 export const DEFAULT_SCAFFOLD_REPO = "https://github.com/hedera-dev/scaffold-hbar.git";
 export const DEFAULT_SCAFFOLD_REF = "main";
 const INITIAL_COMMIT_MESSAGE = "Initial scaffold from scaffold-hbar";
+/** scaffold-hbar keeps one template per branch under this prefix. */
+export const TEMPLATE_BRANCH_PREFIX = "templates/";
+
+/**
+ * Resolve `--template <name>` to its branch.
+ *
+ * Templates are branches, not directories, so a bare name has to be prefixed.
+ * A fully-qualified ref is passed through, so `--template templates/x` and
+ * `--ref some-branch` both still work.
+ */
+export function resolveTemplateRef(template: string): string {
+  const trimmed = template.trim();
+  return trimmed.includes("/") ? trimmed : `${TEMPLATE_BRANCH_PREFIX}${trimmed}`;
+}
+
+/** Template branch names on a scaffold repo, for error messages. */
+export async function listTemplateBranches(repo: string): Promise<string[]> {
+  const result = await executeCommand({
+    command: "git",
+    args: ["ls-remote", "--heads", repo, `refs/heads/${TEMPLATE_BRANCH_PREFIX}*`],
+    cwd: process.cwd(),
+    timeoutMs: 60_000,
+  });
+  if (result.exitCode !== 0) return [];
+
+  return result.stdout
+    .split("\n")
+    .map(line => line.split("refs/heads/")[1]?.trim())
+    .filter((value): value is string => Boolean(value))
+    .map(branch => branch.slice(TEMPLATE_BRANCH_PREFIX.length))
+    .sort();
+}
 
 export interface InitSeedInput {
   /** Absolute path where the project should be created. */
@@ -46,14 +78,29 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
   // Prefer the given repo path/URL as-is (including local checkouts). Cloning never
   // modifies the seed, so we do not rewrite local paths to `origin`.
   logPhase("Cloning scaffold project", `${repo}@${ref} → ${targetDir}`);
-  const cloneArgs = ["clone", "--branch", ref, "--single-branch", repo, targetDir];
-  await executeCommandOrThrow({
+  const clone = await executeCommand({
     command: "git",
-    args: cloneArgs,
+    args: ["clone", "--branch", ref, "--single-branch", repo, targetDir],
     cwd: path.dirname(targetDir),
     timeoutMs: DEFAULT_GIT_TIMEOUT_MS,
     streamOutput: true,
   });
+  if (clone.exitCode !== 0) {
+    // A wrong template name is the likely cause, so name the real options
+    // rather than leaving the user with git's "remote branch not found".
+    const available = await listTemplateBranches(repo);
+    throw new Error(
+      [
+        `Could not clone ${repo} at ref ${JSON.stringify(ref)}.`,
+        available.length > 0
+          ? `Available templates: ${available.join(", ")}.`
+          : "Could not list templates from the remote.",
+        clone.stderr.trim(),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
 
   const scaffoldSha = (
     await executeCommandOrThrow({
@@ -133,28 +180,56 @@ async function reinitializeFreshGitRepo(targetDir: string): Promise<void> {
 async function assertTargetReadyForInit(
   targetDir: string,
 ): Promise<{ emptyExisting: boolean }> {
+  const mode = await detectInitMode(targetDir);
+  if (mode.kind === "in-place") {
+    throw new Error(`Init target directory is not empty: ${targetDir}`);
+  }
+  return { emptyExisting: mode.kind === "seed-empty" };
+}
+
+export type InitMode =
+  | { kind: "seed-new" }
+  | { kind: "seed-empty" }
+  | { kind: "in-place" };
+
+/**
+ * Decide whether `init` clones a scaffold or adopts the project already here.
+ *
+ * A missing or empty target is bootstrapped from scaffold-hbar. A directory that
+ * already looks like a project is adopted in place — which is how someone adds
+ * the harness to an app they scaffolded through create-hbar, or to any existing
+ * repo. A non-empty directory that is *not* a project is refused rather than
+ * guessed at: provisioning into an arbitrary folder is not a recoverable mistake.
+ */
+export async function detectInitMode(targetDir: string): Promise<InitMode> {
+  let entries: string[];
   try {
     const stats = await stat(targetDir);
     if (!stats.isDirectory()) {
       throw new Error(`Init target exists and is not a directory: ${targetDir}`);
     }
-    const entries = await readdir(targetDir);
-    if (entries.length > 0) {
-      throw new Error(
-        [
-          `Init target directory is not empty: ${targetDir}`,
-          `Found ${entries.length} entr${entries.length === 1 ? "y" : "ies"} (e.g. ${entries.slice(0, 5).join(", ")}).`,
-          "Choose an empty directory or a new path.",
-        ].join("\n"),
-      );
-    }
-    return { emptyExisting: true };
+    entries = await readdir(targetDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { emptyExisting: false };
+      return { kind: "seed-new" };
     }
     throw error;
   }
+
+  if (entries.length === 0) {
+    return { kind: "seed-empty" };
+  }
+  if (entries.includes("package.json")) {
+    return { kind: "in-place" };
+  }
+
+  throw new Error(
+    [
+      `Init target directory is not empty and does not look like a project: ${targetDir}`,
+      `Found ${entries.length} entr${entries.length === 1 ? "y" : "ies"} (e.g. ${entries.slice(0, 5).join(", ")}) but no package.json.`,
+      "Choose an empty directory to scaffold into, or run init inside a project to adopt the harness there.",
+    ].join("\n"),
+  );
 }
 
 async function runPreflightCommands(

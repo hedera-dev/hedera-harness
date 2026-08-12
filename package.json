@@ -1,6 +1,6 @@
 {
   "name": "hedera-harness",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Agentic harness for scaffolding and iteratively developing hedera dapps projects (init + run).",
   "type": "module",
   "bin": {
@@ -11,6 +11,7 @@
     "skills-index.json",
     "prompts",
     "skeletons",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
@@ -23,7 +24,9 @@
     "pretest": "rm -rf .tmp-test",
     "test": "npm run build --silent && node --test test/*.test.mjs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "check:templates": "bash scripts/check-template-recipes.sh",
+    "test:browser": "npm run build --silent && node --test test/browser/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

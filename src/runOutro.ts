@@ -26,6 +26,9 @@ export function formatRunOutro(input: OutroInput): string[] {
     `report=${report.runDirectory}/reports/report.json`,
     `session=${report.runDirectory}/session.json`,
     `attempts=${report.attemptsThisCycle ?? report.attempts}/${report.maxAttempts}`,
+    report.slices && report.slices.length > 1
+      ? `increments=${report.slices.filter(s => s.passed).length}/${report.slices.length} delivered`
+      : undefined,
     report.cycle ? `cycle=${report.cycle}` : undefined,
     // Reports written before the findings lifecycle landed have neither field.
     `findings=${(report.openFindingIds ?? []).length} open` +

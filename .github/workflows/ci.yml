@@ -40,3 +40,36 @@ jobs:
 
       - name: Tarball smoke (Yarn 3 node-modules)
         run: npm run smoke:pack
+
+  template-recipes:
+    # The recipes live on scaffold-hbar branches that never merge, so nothing else
+    # notices when a harness schema change breaks one.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Every template recipe still loads
+        run: npm run check:templates
+
+  runtime-tiers:
+    # SMOKE and EVALUATE need a browser, so they run in their own job rather than
+    # adding Playwright download time to the main one.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Dev server, Playwright gate and validator against a fixture app
+        run: npm run test:browser

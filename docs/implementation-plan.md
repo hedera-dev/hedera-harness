@@ -1,6 +1,6 @@
 # hedera-harness — implementation plan
 
-**Status:** Phases 0–4 complete; Phase 5 next
+**Status:** all phases complete; release pending
 **Date:** 2026-08-11
 **Baseline:** v1.1.2 (`28e36f9`), 9,400 source lines, 73 tests passing
 **Current:** branch `feat/harness-phase-0-1-bulletproof`, 9,100 source lines, 98 tests passing
@@ -13,8 +13,38 @@
 | e2e verification | ✅ green (`smoke-run-e2e OK`) |
 | 3 — manifest redesign | ✅ complete |
 | 4 — prompts, MCP, models, knobs | ✅ complete |
-| 5 — provisioning + overlays | next |
-| 6–7 | not started |
+| 5 — provisioning + migration | ✅ complete (rescoped — see below) |
+| 6 — CI matrix | ✅ complete |
+| 7 — increments | ✅ complete |
+| Claude Tier 3 verified | ✅ real agent drove a real browser |
+| **Release 1.2.0** | ⬜ **blocks the scaffold-hbar push** |
+
+### Phase 5 was rescoped mid-flight
+
+D1 assumed template branches would not carry recipes. They already did — all 8,
+~110 lines each, schema v1. And Phase 3 had removed most of what made them
+expensive to maintain, so the argument for centralising them had largely
+dissolved. D1 was reversed: **branches keep their recipes**, slimmed to v2.
+
+That deleted most of Phase 5 (eight overlays, identity detection) and most of
+Phase 6's per-branch PRs, and replaced them with `harness migrate` plus a CI
+guard that every template recipe still loads.
+
+### Release ordering — this constraint is load-bearing
+
+The published `hedera-harness@1.1.2` **cannot read a v2 recipe**. Tested, not
+assumed: it fails with `Expected non-empty string "prd"`. It predates
+`schemaVersion`, so it cannot even give the helpful "upgrade the harness"
+message.
+
+The 8 template branches pin the harness in `devDependencies`. So:
+
+1. merge #3 → #4 → #5
+2. publish **1.2.0**
+3. bump the 8 pins to `^1.2.0`
+4. push the migrated recipes **in the same commit as the pin bump**
+
+Pushing the recipes first breaks every scaffold-hbar user.
 
 ### e2e verification
 

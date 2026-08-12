@@ -149,9 +149,8 @@ function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): v
 }
 
 /**
- * `prd` accepts a path or an ordered list. The list is the slice format; sequential
- * delivery is not implemented yet, so more than one is refused rather than silently
- * running only the first.
+ * `prd` accepts a path or an ordered list of increments delivered in order onto
+ * one branch. A single path is the common case and behaves identically.
  */
 function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): string[] {
   const raw = parsed.prd;
@@ -174,15 +173,6 @@ function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): str
   if (raw.length === 0) {
     throw new Error('Expected "prd" to list at least one PRD path.');
   }
-  if (raw.length > 1) {
-    throw new Error(
-      [
-        `"prd" lists ${raw.length} PRDs, but sequential slice delivery is not implemented yet.`,
-        "Use a single PRD for now; the list form is accepted so recipes do not need to change later.",
-      ].join(" "),
-    );
-  }
-
   return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
 }
 
@@ -257,10 +247,15 @@ function readAgentPresetName(parsed: Record<string, unknown>): AgentPresetName {
   return requested;
 }
 
-/** Invocation for a preset, with the model flag applied. */
-function presetCommandConfig(agent: AgentPresetName, model?: string): CommandAgentConfig {
+/** Invocation for a preset and role, with the model flag applied. */
+function presetCommandConfig(
+  agent: AgentPresetName,
+  role: "generator" | "validator" = "generator",
+  model?: string,
+): CommandAgentConfig {
   const preset = AGENT_PRESETS[agent];
-  const args = [...(preset.args ?? [])];
+  const base = role === "validator" ? (preset.validatorArgs ?? preset.args) : preset.args;
+  const args = [...(base ?? [])];
   args.push(preset.modelFlag, model ?? preset.defaultModel);
   return {
     provider: "command",
@@ -313,7 +308,7 @@ function readOptionalValidator(parsed: Record<string, unknown>, agent: AgentPres
   }
 
   if (record.command === undefined) {
-    return { ...presetCommandConfig(agent), enabled: true };
+    return { ...presetCommandConfig(agent, "validator"), enabled: true };
   }
 
   return {

@@ -1,6 +1,12 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
 
-export type HarnessCommand = "init" | "run" | "doctor" | "validate" | "validate-semantic";
+export type HarnessCommand =
+  | "init"
+  | "run"
+  | "doctor"
+  | "migrate"
+  | "validate"
+  | "validate-semantic";
 
 export interface CommandExecutionResult {
   command: string;
@@ -24,6 +30,10 @@ export interface CliOptions {
   forceNew?: boolean;
   /** Explicit harness branch to checkout and continue. */
   continueBranch?: string;
+  /** `migrate` only: report the rewrite without writing it. */
+  dryRun?: boolean;
+  /** `doctor` only: check the recipe alone, skipping host and project checks. */
+  recipeOnly?: boolean;
 }
 
 export interface InitCliOptions {
@@ -37,12 +47,17 @@ export interface InitCliOptions {
 }
 
 export interface InitResult {
+  /** `seeded` cloned a scaffold; `in-place` adopted the project already present. */
+  mode: "seeded" | "in-place";
   targetDir: string;
-  repo: string;
-  ref: string;
-  commitSha: string;
+  /** Absent when adopting an existing project — nothing was cloned. */
+  repo?: string;
+  ref?: string;
+  commitSha?: string;
   harnessDir: string;
   writtenFiles: string[];
+  /** Recipe files already present and left untouched. */
+  skippedFiles: string[];
   vendoredSkillCount: number;
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;
@@ -290,6 +305,17 @@ export interface ValidationResult {
   semanticValidation?: SemanticValidationResult;
 }
 
+/** Outcome of one increment in an ordered `prd:` list. */
+export interface SliceReport {
+  /** Zero-based position in `prd:`. */
+  index: number;
+  prdPath: string;
+  passed: boolean;
+  /** Attempts consumed by this increment alone. */
+  attempts: number;
+  openFindingIds: string[];
+}
+
 export interface RunReport {
   specName: string;
   specPath: string;
@@ -307,6 +333,8 @@ export interface RunReport {
   openFindingIds: string[];
   /** Finding ids the final attempt closed. */
   fixedFindingIds: string[];
+  /** One entry per increment attempted this kick. Single-PRD recipes have one. */
+  slices?: SliceReport[];
   startedAt: string;
   finishedAt: string;
   durationMs: number;

@@ -50,6 +50,17 @@ export interface SessionContext {
   chainSigner?: ChainSigner;
 }
 
+/**
+ * Position of the current increment in an ordered `prd:` list.
+ *
+ * Single-PRD recipes get `{ index: 0, count: 1 }`, which renders no slice
+ * framing at all — so the common case reads exactly as it did before.
+ */
+export interface SliceContext {
+  index: number;
+  count: number;
+}
+
 /** Prompt + Playwright MCP wiring for the in-place run loop. */
 export interface AttemptPromptStrategy {
   buildInitialPrompt(isContinue: boolean, cycle: number | undefined): Promise<string>;
@@ -70,6 +81,8 @@ export interface AttemptLoopInput {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  /** Which increment of an ordered `prd:` list this loop is delivering. */
+  slice?: SliceContext;
   /** Finding ids still open when the previous cycle stopped, for delta reporting. */
   previousOpenFindingIds?: string[];
   /** Exclusion-safe checkpoint commit hook (never stages runtime or secret paths). */
@@ -84,14 +97,16 @@ export interface AttemptLoopInput {
 }
 
 export function createSessionPromptStrategy(
-  session: Pick<SessionContext, "spec" | "vendoredSkills" | "vendoredContext">,
+  session: Pick<SessionContext, "spec" | "vendoredSkills" | "vendoredContext"> & {
+    slice?: SliceContext;
+  },
 ): AttemptPromptStrategy {
-  const { spec, vendoredSkills, vendoredContext } = session;
+  const { spec, vendoredSkills, vendoredContext, slice } = session;
   return {
     async buildInitialPrompt(isContinue, cycle) {
       return isContinue
-        ? buildSessionContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext)
-        : buildSessionPrompt(spec, 1, vendoredSkills, vendoredContext);
+        ? buildSessionContinuePrompt(spec, cycle!, vendoredSkills, vendoredContext, slice)
+        : buildSessionPrompt(spec, 1, vendoredSkills, vendoredContext, slice);
     },
     async buildRepairPrompt(findings, nextAttempt) {
       return buildSessionRepairPrompt(spec, findings, nextAttempt, vendoredContext);

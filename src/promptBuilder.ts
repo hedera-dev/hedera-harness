@@ -8,6 +8,7 @@ import {
 import type { VendoredSkill } from "./skillVendor.js";
 import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 import { renderPrompt } from "./promptTemplates.js";
+import type { SliceContext } from "./attemptLoop.js";
 
 /**
  * Assembles prompt inputs; the prose lives in `prompts/*.md`.
@@ -56,13 +57,16 @@ export async function buildSessionPrompt(
   attempt: number,
   vendoredSkills: VendoredSkill[] = [],
   vendoredContext?: VendoredContext,
+  slice?: SliceContext,
 ): Promise<string> {
-  const prd = await readFile(spec.prdPaths[0], "utf8");
+  const prdPath = spec.prdPaths[slice?.index ?? 0];
+  const prd = await readFile(prdPath, "utf8");
   const paths = runtimeContextPaths(vendoredSkills, vendoredContext);
 
   return renderPrompt(spec.projectRoot, "generator", {
     attempt: String(attempt),
     prd: prd.trim(),
+    ...sliceVars(slice),
     ...paths,
     hasContract: Boolean(spec.contractPath),
     hardConstraints: formatHardConstraints(spec),
@@ -79,11 +83,13 @@ export async function buildSessionContinuePrompt(
   cycle: number,
   vendoredSkills: VendoredSkill[] = [],
   vendoredContext?: VendoredContext,
+  slice?: SliceContext,
 ): Promise<string> {
   const paths = runtimeContextPaths(vendoredSkills, vendoredContext);
 
   return renderPrompt(spec.projectRoot, "generator-continue", {
     cycle: String(cycle),
+    ...sliceVars(slice),
     ...paths,
     hasContract: Boolean(spec.contractPath),
     hardConstraints: formatHardConstraints(spec),
@@ -241,6 +247,20 @@ export async function buildValidatorPrompt(
     signerNetwork: chainSigner?.network,
     browserKey: browserLocalStorageKey,
   });
+}
+
+/** Slice framing. A single-increment run renders none of it. */
+function sliceVars(slice?: SliceContext): Record<string, string | boolean> {
+  if (!slice || slice.count <= 1) {
+    return { hasSlices: false, hasCompletedSlices: false };
+  }
+  return {
+    hasSlices: true,
+    sliceNumber: String(slice.index + 1),
+    sliceCount: String(slice.count),
+    hasCompletedSlices: slice.index > 0,
+    completedSlices: String(slice.index),
+  };
 }
 
 function formatBulletList(values: string[]): string {

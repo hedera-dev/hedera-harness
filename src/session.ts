@@ -57,6 +57,11 @@ export interface SessionMetadata {
   gateStatus: GateStatus;
   baselineResult?: BaselineResult;
   /**
+   * Increment the last cycle stopped on, zero-based. A `--continue` resumes here
+   * rather than redoing increments already delivered. Absent means the first.
+   */
+  sliceIndex?: number;
+  /**
    * Finding ids still failing when the last cycle stopped.
    *
    * Carried across `--continue` so the next cycle can report what it closed

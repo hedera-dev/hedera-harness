@@ -1,227 +1,212 @@
 # hedera-harness
 
-TypeScript CLI that **bootstraps and iteratively develops [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) projects** from a product brief you supply.
+TypeScript CLI that builds features into [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) projects from a product brief you write. It drives a coding agent, validates what the agent produced, and repairs on failure — recording everything on a git branch you can review.
 
-Two main commands:
+**The harness decides whether a run passed, not the agent.**
 
-1. **`init`** — create a new project (seeds scaffold-hbar, fresh `git init`, provisions `.harness/` + generator skills)
-2. **`run`** — generate → validate → repair on the **same project cwd**, versioned with `harness/run-*` git branches
+```bash
+npx hedera-harness init my-app     # or run `init` inside a project you already have
+cd my-app
+$EDITOR .harness/prd.md            # describe the feature
+npx hedera-harness doctor          # check the setup before a long run
+npx hedera-harness run
+```
 
-The harness is **template-agnostic**. You bring a PRD, a YAML spec, and validators for *your* Hedera demo (HCS feed, tip jar, marketplace, etc.).
+## How a run works
 
-## What it does
-
-1. **`init`** clones scaffold-hbar into a project directory, replaces `.git` with a **fresh repo** (no scaffold history/remote), and provisions `.harness/`
-2. **`run`** vendors skills/context into ignored runtime paths under `.harness/runtime/`
-3. **Creates or continues** a `harness/run-<spec>-<id>` branch with checkpoint commits
-4. **Runs a generator agent** (Cursor CLI or Claude Code CLI — see [generator config](#configure-a-project-centric-spec)) against your PRD
-5. **Validates** in layers you enable in the spec (see below)
-6. **Repairs** on failure with focused prompts, up to `maxAttempts`
-7. **Writes artifacts** under `.harness/runs/` for inspection
-
-**Pass condition:** every validation tier enabled in the spec must pass. Oracle audit never blocks a pass.
-
-### Run lifecycle
-
-Happy path (top → bottom). Skip validation tiers that are not enabled in the spec. The dashed edge is the repair loop.
+Each attempt runs four stages. Early stages short-circuit the rest, so a failing build never pays for a browser or an agent.
 
 ```mermaid
 flowchart TD
-  init[Optional: hedera-harness init] --> inputs[1 Inputs: Spec + PRD + validators]
-  inputs --> branch[2 Create or continue harness/run-* branch]
-  branch --> vendor[3 Vendor skills and context]
-  vendor --> generate[4 Generate]
-  generate --> audit[5 Oracle audit - informational]
-  audit --> validate[6 Validate enabled tiers]
-  validate --> tier01[Tier 0-1 Deterministic]
-  tier01 --> tier2[Tier 2 Playwright - opt-in]
-  tier2 --> tier3[Tier 3 Semantic - opt-in]
-  tier3 --> tier35[Tier 3.5 On-chain - opt-in]
-  tier35 --> outcome[7 Outcome: Pass / Fail / Abort]
-  outcome --> artifacts[.harness/runs/ artifacts]
-  tier01 -.->|fail + attempts left| generate
-  tier2 -.->|fail + attempts left| generate
-  tier3 -.->|fail + attempts left| generate
+  inputs[Recipe: spec + PRD + validators] --> branch[Create or continue harness/run-* branch]
+  branch --> baseline[Baseline health checks on the existing app]
+  baseline --> generate[1 GENERATE - coding agent]
+  generate --> assert[2 ASSERT - files, static, secrets, commands]
+  assert --> smoke[3 SMOKE - dev server + Playwright routes]
+  smoke --> evaluate[4 EVALUATE - adversarial validator vs contract]
+  evaluate --> outcome[Pass / Fail / Abort]
+  outcome --> artifacts[.harness/runs/ artifacts + checkpoint commits]
+  assert -.->|fail + attempts left| generate
+  smoke -.->|fail + attempts left| generate
+  evaluate -.->|fail + attempts left| generate
 ```
 
-**Branches**
+- **fail + attempts left** → focused repair prompt → back to GENERATE
+- **fail + budget exhausted** → stay on the harness branch with artifacts
+- **harness/tooling failure** (MCP, browser) → **abort**, no repair — the app is not what broke
 
-- Validation **fail** + attempts left → repair prompt → back to **Generate**
-- Validation **fail** + budget exhausted → **Fail** → stay on harness branch
-- Semantic **infra** failure (MCP / browser) → **Abort** (no repair)
-- Oracle audit never blocks a pass
+Every attempt reports what moved, not just pass/fail:
 
-### Smart branch detection
+```
+Stage 1/4 GENERATE — repair, attempt 3 [opus, escalated — last attempt fixed nothing]
+Attempt 3 FAILED — 2 open, 3 fixed, 1 new
+```
 
-| Current branch | Spec | Behavior |
-|----------------|------|----------|
-| `harness/run-feature-abc` | Same as branch | **Continue** — resume attempts |
-| `harness/run-feature-abc` | Different | **New branch** — different feature |
-| `main` or other | Any | **New branch** |
+`2 open, 3 fixed` distinguishes an agent converging from one trading one failure for another — which is what tells you whether another attempt is worth its 15–40 minutes.
 
-Overrides:
+## The recipe
+
+`.harness/` inside your project. Everything the harness can default, it defaults:
+
+```yaml
+schemaVersion: 2
+
+name: my-feature
+description: What you want the agent to build.
+
+baseline:
+  commands:
+    - name: install          # required — also used for install fingerprinting
+      command: yarn install
+    - name: build
+      command: yarn next:build
+```
+
+That is a complete, working recipe. `generator`, `logging`, `secretScan`, `forbiddenFiles`, validator paths, `prd` and `maxAttempts` all have defaults, and `constraints.forbiddenCommands` is derived from your package manager. The generated skeleton lists every default as a comment so you can see the full surface without carrying it.
+
+Pick the agent with one line:
+
+```yaml
+agent: claude        # or: cursor (default)
+```
+
+That governs the whole run — how the generator is invoked, how the validator receives Playwright MCP, and which models are used. Enabling the semantic tier is then `validator: { enabled: true }`, not a second copy of the agent flags.
+
+See [docs/authoring-a-recipe.md](docs/authoring-a-recipe.md) for the full format.
+
+### Building in increments
+
+For anything larger than a small change, list PRDs in order:
+
+```yaml
+prd:
+  - .harness/prds/01-foundation.md
+  - .harness/prds/02-ui.md
+  - .harness/prds/03-onchain.md
+```
+
+Each is delivered onto the same branch with its own attempt budget and its own checkpoint commits, and the agent is told which increment it is on and that the earlier ones are done. A failure stops the sequence; `--continue` resumes there rather than redoing delivered work.
+
+One large PRD with three repair attempts is a poor fit for a real feature: the work exceeds the budget, and a failure loses all of it.
+
+## Validation tiers
+
+| Tier | Enable with | What it proves | Cost |
+|---|---|---|---|
+| **0–1 deterministic** | on by default | files present, static assertions, no secrets, build passes | seconds |
+| **2 Playwright gate** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
+| **3 semantic** | `contract` + `validator.enabled` | an adversarial agent drives the live app and grades numbered assertions | an agent session |
+| **3.5 on-chain** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
+
+Start at the bottom. Add a tier when the one below stops catching your failures.
+
+The Tier 3 validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
+
+## Branch behaviour
+
+| Current branch | Recipe | Behaviour |
+|---|---|---|
+| `harness/run-feature-abc` | same | **continue** — resume attempts |
+| `harness/run-feature-abc` | different | **new branch** |
+| `main` or other | any | **new branch** |
 
 ```bash
-hedera-harness run .harness/spec.yaml --new
-hedera-harness run .harness/spec.yaml --continue harness/run-my-feature-abc123
+hedera-harness run --new                                  # force a fresh branch
+hedera-harness run --continue harness/run-my-feature-abc  # resume a specific one
 ```
 
-## Validation tiers (opt-in via spec)
+The harness never pushes, opens a PR, merges, deletes a branch, or switches away. It requires a clean tree and does not auto-stash. Checkpoint commits stage explicit paths — never `git add -A` — and refuse to stage runtime or secret paths.
 
-| Tier | Spec fields | What it checks |
-|------|-------------|----------------|
-| **0–1 Deterministic** | `validators.static`, `validators.commands`, `requiredFiles`, `forbiddenFiles`, `secretScan` | Files, JSON/text assertions, secrets, yarn install/lint/build (or your commands) |
-| **2 Playwright gate** | `validators.playwright` | Dev server boots; configured routes return OK; optional console / forbidden-text checks |
-| **3 Semantic** | `contract` + `validator` | Read-only agent drives the live app and grades numbered acceptance assertions |
-| **3.5 On-chain** | `chainValidation` (+ Tier 3) | Ephemeral funded ECDSA test signer injected as burner wallet; `executableWithTestSigner` assertions complete real txs and verify via mirror node |
+## CLI
 
-Tier 0–1 is the minimum. Tier 2–3 are optional but recommended for UI demos. Tier 3.5 needs a funded testnet operator on the host.
+```bash
+hedera-harness init [dir] [--repo URL] [--ref branch] [--template name] [--skip-install] [--skills a,b]
+hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
+hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
+hedera-harness migrate [spec] [--dry-run]
+hedera-harness validate [spec] [--workspace <path>]
+hedera-harness validate-semantic [spec] [--workspace <path>]
+```
+
+**`init`** decides what to do from the target:
+
+| Target | Behaviour |
+|---|---|
+| missing or empty | clone scaffold-hbar and provision `.harness/` |
+| holds a `package.json` | adopt the harness in place, no clone |
+| non-empty, not a project | refused |
+
+`--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
+
+**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, optional peer deps for the enabled tiers, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
+
+**`migrate`** rewrites a pre-v2 recipe in place. A key is removed only when its value equals what the harness would default it to — anything you customised is kept and reported.
+
+## Configuration
+
+Operational knobs live in the environment, not the recipe. Editing a recipe to shorten a timeout produces a spurious project diff, and on a template branch it gets committed by mistake.
+
+| Variable | Effect |
+|---|---|
+| `HARNESS_MAX_ATTEMPTS` | repair attempts per run |
+| `HARNESS_AGENT_TIMEOUT_S` | wall-clock budget per agent invocation |
+| `HARNESS_AGENT_IDLE_TIMEOUT_MS` | kill an agent that stops producing output |
+| `HARNESS_MODEL` / `HARNESS_FIX_MODEL` | override the preset's models |
+| `HARNESS_NO_MODEL_SWITCH` | disable dropping to a cheaper model on repairs |
+
+Precedence: CLI flag > environment > recipe > harness default.
+
+**Model escalation.** Repairs run the cheaper model, *except* after an attempt that fixed nothing — paying less to repeat a failure is not a saving, so it escalates back.
+
+**Prompts are files.** Everything the agent is told lives in [`prompts/`](prompts/) as markdown. Override any single one at `.harness/prompts/<name>.md`; `doctor` reports which are overridden, since an override is a copy that will not receive later changes.
 
 ## Prerequisites
 
-### Always
-
-- **Node.js** >= 20
-- **git**
-- **yarn** (scaffold-hbar workspaces are Yarn-based)
-- **A supported AI coding agent CLI** (one of):
-  - **Cursor CLI** — `agent` on your `PATH`, authenticated
-  - **Claude Code CLI** — `claude` on your `PATH`, authenticated (Claude Pro/Max subscription or `ANTHROPIC_API_KEY`)
-
-**Install as a CLI dependency** (recommended for consumer projects):
+**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`).
 
 ```bash
-npm install -D hedera-harness@1.1.2
-npx hedera-harness --help
+npm install -D hedera-harness
+npx hedera-harness doctor
 ```
 
-Gate 0–1 (deterministic validators) needs only the harness package plus `yaml` — Playwright and the Hedera JS SDK are **optional peer dependencies** and are not installed by default.
-
-**Develop from a clone:**
+Playwright and the Hedera SDK are **optional peer dependencies**, needed only by the higher tiers:
 
 ```bash
-git clone https://github.com/hedera-dev/hedera-harness.git
-cd hedera-harness
-npm install
-```
+# Tier 2
+npm install -D playwright && npx playwright install chromium
 
-## Quickstart
+# Tier 3 — the MCP server bundles its own browser, separate from the above
+npx @playwright/mcp@latest install-browser chromium
 
-### 1. Bootstrap a project
-
-```bash
-npx hedera-harness init my-app
-cd my-app
-```
-
-This clones [scaffold-hbar](https://github.com/hedera-dev/scaffold-hbar) `main`, replaces the cloned `.git` with a **fresh repository** (single initial commit, no remote), writes `.harness/` (spec, PRD, validators), copies `skills-index.json`, and pre-vendors generator skills under `.harness/skills/`.
-
-### 2. Edit the recipe
-
-```bash
-# Describe your feature
-$EDITOR .harness/prd.md
-$EDITOR .harness/spec.yaml
-# Align validators with the PRD
-$EDITOR .harness/validators/static.json
-$EDITOR .harness/validators/yarn.json
-```
-
-### 3. Run the harness
-
-```bash
-npx hedera-harness run .harness/spec.yaml --max-attempts 3
-# or: yarn harness:run
-```
-
-Creates `harness/run-<spec>-<id>`, runs the attempt loop, and checkpoints each attempt.
-
-### 4. Continue or start a new feature
-
-```bash
-# Same branch + same spec after a failed budget → continues automatically
-npx hedera-harness run .harness/spec.yaml --max-attempts 3
-
-# Different feature → edit spec name/PRD, then run (new branch)
-npx hedera-harness run .harness/other-feature.yaml
-
-# Force a clean slate for the same spec
-git checkout main
-npx hedera-harness run .harness/spec.yaml --new
-```
-
-### Author with agent skills (optional)
-
-Prefer an AI coding agent with the **hedera-harness** plugin from [hedera-skills](https://github.com/hedera-dev/hedera-skills):
-
-```bash
-/plugin marketplace add hedera-dev/hedera-skills
-/plugin install hedera-harness
-# then:
-/create-harness-spec
-/review-harness-spec
-```
-
-Optional inspiration: example PRDs ship in this repo under `docs/prds/`. For project work, start from `.harness/` after `init`.
-
-### If you enable Tier 2 (`validators.playwright`)
-
-```bash
-npm install -D playwright
-npx playwright install chromium
-```
-
-### If you enable Tier 3 (`contract` + `validator`)
-
-- An **acceptance contract** JSON
-- Playwright MCP available to the Cursor agent
-- Validator flags typically: `--force`, `--sandbox disabled`, `--approve-mcps`
-
-### If you enable Tier 3.5 (`chainValidation`)
-
-```bash
+# Tier 3.5
 npm install -D @hiero-ledger/sdk
 export HEDERA_OPERATOR_ID=0.0.xxxx
-export HEDERA_OPERATOR_KEY=0x...   # ECDSA private key hex
+export HEDERA_OPERATOR_KEY=0x...      # ECDSA — ED25519 has no EVM alias
 ```
 
-See [`.env.example`](.env.example). The harness does not auto-load `.env`.
+See [`.env.example`](.env.example). The harness does not auto-load `.env`, and never writes credentials into the workspace.
 
-## Project layout (after `init`)
+## Project layout after `init`
 
 ```
 my-app/
 ├── .harness/
-│   ├── spec.yaml              # paths relative to project root
-│   ├── prd.md
+│   ├── spec.yaml              # the recipe
+│   ├── prd.md                 # what to build
 │   ├── validators/
-│   │   ├── static.json
-│   │   └── yarn.json
+│   ├── prompts/               # optional per-project prompt overrides
 │   ├── skills/                # pre-vendored at init (gitignored)
-│   ├── runtime/               # session skills/context (gitignored)
+│   ├── runtime/               # per-run skills/context (gitignored)
 │   └── runs/                  # artifacts + session.json (gitignored)
 ├── skills-index.json
-├── packages/
-└── ...
+└── packages/
 ```
 
-Required in the **spec file**:
+Harness logs always live under `.harness/runs/` and are not configurable — pointing them elsewhere would leave untracked files that fail the next run's clean-tree check.
 
-- `extend.baseline` — host-app health checks before generation (YAML key name kept for compatibility; must include a command literally named `install`)
-- Validators / PRD under `.harness/…`
+## Skills
 
-```bash
-hedera-harness run .harness/spec.yaml --max-attempts 3
-hedera-harness validate
-hedera-harness validate .harness/spec.yaml
-hedera-harness validate-semantic .harness/spec.yaml
-```
-
-## Skills index
-
-Specs should list skills by **name**. The harness resolves those names through [`skills-index.json`](skills-index.json), fetches them from git when needed (cached under `.skill-cache/`), then vendors into `.harness/runtime/skills/` during `run`.
-
-`init` also pre-vendors skills into `.harness/skills/` for offline browsing.
+Recipes list skills by **name**. The harness resolves them through [`skills-index.json`](skills-index.json), fetching from git when needed (cached under `.skill-cache/`) and vendoring into `.harness/runtime/skills/` for the run.
 
 ```yaml
 skills:
@@ -229,143 +214,43 @@ skills:
   - project-scaffolding
 ```
 
-## Configure a project-centric spec
-
-The harness spawns your chosen AI coding agent via the `generator` block. Below are examples for **Cursor CLI** and **Claude Code CLI**.
-
-### Generator: Cursor CLI (default)
-
-```yaml
-name: my-feature
-prd: .harness/prd.md
-
-generator:
-  provider: command
-  command: agent
-  args:
-    - -p
-    - --trust
-    - --sandbox
-    - enabled
-    - --workspace
-    - "{workspace}"
-    - --model
-    - composer-2.5
-    - --force
-    - --output-format
-    - stream-json
-    - --stream-partial-output
-  timeoutMs: 3600000
-```
-
-### Generator: Claude Code CLI
-
-```yaml
-name: my-feature
-prd: .harness/prd.md
-
-generator:
-  provider: command
-  command: claude
-  args:
-    - -p
-    - "{prompt}"
-    - --model
-    - sonnet                    # or opus, haiku — pin the model to control cost
-    - --permission-mode
-    - acceptEdits               # auto-approve file writes
-    - --allowedTools
-    - Bash,Read,Edit,Write      # pre-approve tools to avoid prompts
-    - --output-format
-    - stream-json
-    - --verbose
-  timeoutMs: 3600000
-```
-
-> **Tip:** Use `--model sonnet` (or `claude-sonnet-5`) to keep token costs lower during development. Omit the flag to use your account's default model.
-
-### Common spec fields (both agents)
-
-```yaml
-skills:
-  - quality-gates
-
-constraints:
-  packageManager: yarn@3.2.3
-
-extend:
-  baseline:
-    commands:
-      - name: install
-        command: yarn install
-        timeoutMs: 300000
-
-validators:
-  static: .harness/validators/static.json
-  commands: .harness/validators/yarn.json
-
-requiredFiles:
-  - README.md
-  - package.json
-  - .harness/spec.yaml
-
-forbiddenFiles:
-  - .env
-
-maxAttempts: 3
-
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
-```
-
-Skeleton source: [`skeletons/project-harness/`](skeletons/project-harness/).
-
-## CLI
-
-```bash
-hedera-harness init [target-dir] [--repo URL] [--ref branch] [--template branch] [--skip-install] [--skills a,b]
-hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
-hedera-harness validate [spec] [--workspace <path>]
-hedera-harness validate-semantic [spec] [--workspace <path>]
-```
-
-Default spec for `run`: `.harness/spec.yaml`.
-
-## Repository layout (this package)
+To author recipes with an agent, install the marketplace plugin:
 
 ```
-├── src/                      # Harness implementation
-├── skeletons/
-│   ├── project-harness/      # Provisioned by `init` into consumer .harness/
-│   └── new-template/         # Stale: authoring stubs for the removed isolated flow
+/plugin marketplace add hedera-dev/hedera-skills
+/plugin install hedera-harness
+/create-harness-spec
+```
+
+## Repository layout
+
+```
+├── src/                      # implementation
+├── prompts/                  # agent prompts (shipped; overridable per project)
+├── skeletons/project-harness # provisioned by `init`
 ├── skills-index.json
-├── docs/
+├── scripts/                  # e2e, template-recipe check, tier 3 verification
+├── docs/                     # authoring-a-recipe.md, prds/, implementation-plan.md
 └── test/
 ```
 
 ## Scripts
 
 | Command | Description |
-|---------|-------------|
-| `npm run harness -- <cmd>` | Build and run the CLI |
-| `npm run build` | Compile TypeScript to `dist/` |
+|---|---|
+| `npm run build` | Clean and compile to `dist/` |
 | `npm run typecheck` | Type-check without emitting |
-| `npm test` | Build, then run Node test runner suites |
-| `npm run smoke:pack` | Pack a release tarball and smoke-install it with Yarn 3 |
-
-CLI commands: `init`, `run`, `validate`, `validate-semantic`.
-
-Published package version **1.1.2** ships `dist/`, `skills-index.json`, and `skeletons/` (see `package.json` `files`).
+| `npm test` | Build, then run the Node test suites |
+| `npm run check:templates` | Verify every scaffold-hbar template recipe still loads |
+| `npm run smoke:pack` | Pack a tarball and smoke-install it with Yarn 3 |
 
 ## Design notes
 
-- **Project-centric** — one git worktree; versioning via `harness/run-*` branches + checkpoint commits
-- **Validation is authoritative** — agents do not declare success; the harness does
-- **Blind by default** — no reference finished template is passed in
-- **Oracle audit** — scans agent logs for access outside the workspace; logged only
-- **No auto-push / PR / merge** — completion prints optional next steps only
-- **Yarn-only constraints** — typical for scaffold-hbar; encode package-manager rules in the spec
+- **Validation is authoritative** — agents do not declare success; the harness does.
+- **Infrastructure failures are not app failures** — an MCP or browser problem aborts rather than handing the agent a repair prompt for something it did not break.
+- **The project is the workspace** — one git worktree, versioned by `harness/run-*` branches and checkpoint commits.
+- **Nothing is pushed for you** — completion prints the next steps and stops.
+- **Secrets never reach artifacts** — prompts and logs are redacted, the ephemeral signer file is `0600`, and checkpoints refuse to stage secret paths.
 
 ## License
 

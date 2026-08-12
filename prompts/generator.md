@@ -3,7 +3,14 @@ Work directly in the current project directory (this is not a fresh seed).
 
 Attempt: {{attempt}}
 
-## Product Requirements (extension brief)
+{{#hasSlices}}
+## Increment {{sliceNumber}} of {{sliceCount}}
+This project is being built in ordered increments. Deliver only this one.
+{{#hasCompletedSlices}}
+The first {{completedSlices}} increment(s) are already implemented and committed on this branch. Build on them — do not redo, rewrite, or second-guess that work.
+{{/hasCompletedSlices}}
+
+{{/hasSlices}}## Product Requirements (extension brief)
 {{prd}}
 
 ## Extension Mission

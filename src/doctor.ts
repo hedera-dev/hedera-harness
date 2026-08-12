@@ -4,6 +4,7 @@ import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
 import { resolvePackageInstallTool } from "./optionalDeps.js";
+import { isValidatorEnabled } from "./semanticValidator.js";
 import {
   PROJECT_PROMPTS_DIR,
   PROMPT_TEMPLATE_NAMES,
@@ -34,16 +35,28 @@ export interface DoctorReport {
  * starting baseline commands — and a real run costs 40 minutes to two hours.
  * Learning that the agent CLI is not on PATH should take two seconds.
  */
-export async function runDoctor(options: CliOptions): Promise<DoctorReport> {
+export async function runDoctor(
+  options: CliOptions,
+  mode: { recipeOnly?: boolean } = {},
+): Promise<DoctorReport> {
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   const checks: DoctorCheck[] = [];
-
-  checks.push(checkNodeVersion());
-  checks.push(await checkCommand("git", workspacePath, "git is required for branch and checkpoint handling."));
 
   const loaded = await loadRecipe(options.specPath, checks);
   const spec = loaded?.spec;
 
+  // CI checks recipes across template branches without building each app, so
+  // host and project checks would all fail for reasons unrelated to the recipe.
+  if (mode.recipeOnly) {
+    return { checks, passed: checks.every(check => check.status !== "fail") };
+  }
+
+  checks.unshift(checkNodeVersion());
+  checks.splice(
+    1,
+    0,
+    await checkCommand("git", workspacePath, "git is required for branch and checkpoint handling."),
+  );
   checks.push(await checkGitRepo(workspacePath));
 
   if (spec) {
@@ -253,10 +266,43 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
   if (spec.validators.playwrightPath) {
     checks.push(await checkImport("playwright", "Tier 2 Playwright gate", tool));
   }
+  if (isValidatorEnabled(spec)) {
+    checks.push(await checkMcpBrowser());
+  }
   if (spec.chainValidation?.enabled) {
     checks.push(await checkImport("@hiero-ledger/sdk", "Tier 3.5 on-chain validation", tool));
   }
   return checks;
+}
+
+/**
+ * The validator drives the browser through @playwright/mcp, which bundles its
+ * own Playwright and installs to its own revision directory. Having the
+ * `playwright` package's browser is not the same thing — the Tier 2 gate can
+ * pass while the validator has nothing to drive, and the mismatch only surfaces
+ * after a full agent session has been paid for.
+ */
+async function checkMcpBrowser(): Promise<DoctorCheck> {
+  const { executeCommand } = await import("./command.js");
+  const result = await executeCommand({
+    command: "npx",
+    args: ["-y", "@playwright/mcp@latest", "install-browser", "chromium", "--dry-run"],
+    cwd: process.cwd(),
+    timeoutMs: 120_000,
+  });
+
+  // --dry-run is not supported on every version; fall back to reporting unknown
+  // rather than claiming a failure we did not actually observe.
+  if (result.exitCode !== 0) {
+    return {
+      name: "playwright mcp browser",
+      status: "warn",
+      detail: "could not confirm the MCP browser is installed",
+      fix: "If Tier 3 fails at browser launch: npx @playwright/mcp@latest install-browser chromium",
+    };
+  }
+
+  return { name: "playwright mcp browser", status: "ok", detail: "installed" };
 }
 
 async function checkImport(pkg: string, feature: string, tool: string): Promise<DoctorCheck> {
