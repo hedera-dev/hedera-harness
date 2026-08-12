@@ -38,13 +38,27 @@ async function makeProject({ specBody, files = {} } = {}) {
   return root;
 }
 
-const VALID_SPEC = `schemaVersion: 2
+/**
+ * Build a recipe with an explicit generator command.
+ *
+ * `node` rather than an agent preset: a machine without Cursor or Claude
+ * installed is a legitimate environment, and these fixtures are about the
+ * recipe, not the host. Built rather than concatenated so a test that wants a
+ * different generator does not end up with two `generator:` keys.
+ */
+const specWith = (command, extra = "") =>
+  `schemaVersion: 2
 name: doctor-demo
-baseline:
+generator:
+  provider: command
+  command: ${command}
+${extra}baseline:
   commands:
     - name: install
       command: "true"
 `;
+
+const VALID_SPEC = specWith("node");
 
 test("doctor reports a healthy project as ready", async () => {
   const root = await makeProject({ specBody: VALID_SPEC });
@@ -80,7 +94,7 @@ test("doctor fails, rather than throws, when the recipe is missing", async () =>
 
 test("doctor flags a recipe pointing at a file that does not exist", async () => {
   const root = await makeProject({
-    specBody: `${VALID_SPEC}contract: .harness/missing.json\n`,
+    specBody: specWith("node", "contract: .harness/missing.json\n"),
   });
 
   const report = await runDoctor({
@@ -119,10 +133,7 @@ extend:
 
 test("doctor reports an unknown agent CLI as a failure", async () => {
   const root = await makeProject({
-    specBody: `${VALID_SPEC}generator:
-  provider: command
-  command: definitely-not-a-real-binary-xyz
-`,
+    specBody: specWith("definitely-not-a-real-binary-xyz"),
   });
 
   const report = await runDoctor({
