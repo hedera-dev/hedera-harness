@@ -509,6 +509,47 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
       );
     }
   }
+
+  await assertTier3BrowserUsable(cwd, spec);
+}
+
+/**
+ * Fail before the first agent call when Tier 3 cannot open a browser.
+ *
+ * This used to surface only at EVALUATE, after a full generator session, and
+ * the repair loop then spent further attempts "fixing" app code that was never
+ * broken. A missing browser is a prerequisite, not a finding.
+ */
+async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promise<void> {
+  if (!spec.contractPath || !spec.validator?.enabled) {
+    return;
+  }
+
+  const { probeMcpBrowser } = await import("./mcpBrowser.js");
+  logPhase("Preflight", "checking the Tier 3 browser");
+  const probe = await probeMcpBrowser(cwd);
+
+  if (probe.ok) {
+    logPhase("Preflight", `Tier 3 browser ready — ${probe.choice.detail}`);
+    return;
+  }
+
+  const fix =
+    probe.choice.source === "project-playwright"
+      ? "npx playwright install chromium"
+      : "yarn add -D playwright && npx playwright install chromium";
+
+  throw new SessionError(
+    "missing-tier3-browser",
+    [
+      "Harness run preflight failed: Tier 3 is enabled but the Playwright MCP browser could not be launched.",
+      probe.error ?? "",
+      `Fix: ${fix}`,
+      "Or disable Tier 3 by removing `contract` / `validator.enabled` from the recipe.",
+    ]
+      .filter(Boolean)
+      .join("\n  "),
+  );
 }
 
 async function assertRecipeFilesExist(spec: TemplateSpec): Promise<void> {

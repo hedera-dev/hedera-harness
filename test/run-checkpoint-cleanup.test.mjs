@@ -116,7 +116,7 @@ test("cleanupRuntimeInjections removes runtime/MCP but keeps runs", async () => 
     `${JSON.stringify(
       {
         mcpServers: {
-          playwright: { ...contextMod.PLAYWRIGHT_MCP_SERVER },
+          playwright: await contextMod.playwrightMcpServer(root),
           other: { command: "echo" },
         },
       },
@@ -140,6 +140,24 @@ test("cleanupRuntimeInjections removes runtime/MCP but keeps runs", async () => 
   const mcp = JSON.parse(await readFile(path.join(root, ".cursor", "mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.playwright, undefined);
   assert.ok(mcp.mcpServers.other);
+});
+
+test("cleanup never strips a playwright server the user wrote themselves", async () => {
+  const root = await initRepo();
+  await mkdir(path.join(root, ".cursor"), { recursive: true });
+
+  // The shape a user actually writes — same server name, no harness marker.
+  const userServer = { command: "npx", args: ["@playwright/mcp@latest"] };
+  await writeFile(
+    path.join(root, ".cursor", "mcp.json"),
+    `${JSON.stringify({ mcpServers: { playwright: userServer } }, null, 2)}\n`,
+  );
+
+  const cleanup = await cleanupMod.cleanupRuntimeInjections(root);
+  assert.equal(cleanup.mcpStripped, false, "a user's own server is not a harness injection");
+
+  const mcp = JSON.parse(await readFile(path.join(root, ".cursor", "mcp.json"), "utf8"));
+  assert.deepEqual(mcp.mcpServers.playwright, userServer, "user config must survive untouched");
 });
 
 test("formatRunOutro success prints push/PR instructions without implying execution", () => {

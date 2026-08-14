@@ -1,6 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeRelativeDir } from "./fsUtils.js";
+import { resolveMcpBrowser } from "./mcpBrowser.js";
 import { ISOLATED_CONTEXT_DIR } from "./runtimePaths.js";
 
 export { pathExists } from "./fsUtils.js";
@@ -17,11 +18,21 @@ export const LEGACY_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
 export const VENDORED_PRD_PATH = `${LEGACY_CONTEXT_DIR}/prd.md`;
 export const VENDORED_CONTRACT_PATH = `${LEGACY_CONTEXT_DIR}/acceptance-contract.json`;
 
-/** Playwright MCP config merged into the seeded workspace so the validator agent can drive the live app. */
-export const PLAYWRIGHT_MCP_SERVER = {
-  command: "npx",
-  args: ["-y", "@playwright/mcp@latest", "--headless", "--browser", "chromium"],
-} as const;
+/**
+ * Playwright MCP server the validator agent drives the live app through.
+ *
+ * The browser is resolved per project rather than fixed: see `mcpBrowser.ts`.
+ */
+export async function playwrightMcpServer(
+  projectRoot: string,
+  outputDir?: string,
+): Promise<{ command: string; args: string[] }> {
+  const browser = await resolveMcpBrowser(projectRoot);
+  // Without --output-dir the server drops `.playwright-mcp/` session files into
+  // the workspace, leaving a dirty tree that the next run refuses to start on.
+  const args = outputDir ? [...browser.args, "--output-dir", outputDir] : browser.args;
+  return { command: "npx", args };
+}
 
 export interface VendoredContext {
   prdRelativePath: string;
@@ -107,11 +118,18 @@ export async function vendorHarnessContext(
 }
 
 /** Standalone MCP config the harness owns, for CLIs that accept a config path. */
-export async function writePlaywrightMcpConfig(absolutePath: string): Promise<string> {
+export async function writePlaywrightMcpConfig(
+  absolutePath: string,
+  projectRoot: string,
+): Promise<string> {
   await mkdir(path.dirname(absolutePath), { recursive: true });
+  // Session files land beside the config, inside the harness-owned run dir.
+  const outputDir = path.join(path.dirname(absolutePath), "output");
+  await mkdir(outputDir, { recursive: true });
+  const server = await playwrightMcpServer(projectRoot, outputDir);
   await writeFile(
     absolutePath,
-    `${JSON.stringify({ mcpServers: { playwright: { ...PLAYWRIGHT_MCP_SERVER } } }, null, 2)}\n`,
+    `${JSON.stringify({ mcpServers: { playwright: server } }, null, 2)}\n`,
     "utf8",
   );
   return absolutePath;
@@ -126,6 +144,7 @@ export async function writePlaywrightMcpConfig(absolutePath: string): Promise<st
 export async function ensurePlaywrightMcp(
   workspacePath: string,
   relativePath = ".cursor/mcp.json",
+  outputDir?: string,
 ): Promise<string> {
   const mcpPath = path.join(workspacePath, relativePath);
   await mkdir(path.dirname(mcpPath), { recursive: true });
@@ -138,7 +157,7 @@ export async function ensurePlaywrightMcp(
   }
 
   const mcpServers = { ...(existing.mcpServers ?? {}) };
-  mcpServers.playwright = { ...PLAYWRIGHT_MCP_SERVER };
+  mcpServers.playwright = await playwrightMcpServer(workspacePath, outputDir);
 
   await writeFile(
     mcpPath,
@@ -165,6 +184,7 @@ export async function withPlaywrightMcpSnapshot<T>(
   workspacePath: string,
   relativePath: string,
   fn: () => Promise<T>,
+  outputDir?: string,
 ): Promise<T> {
   const mcpPath = path.join(workspacePath, ...relativePath.split("/"));
   let previous: string | undefined;
@@ -178,7 +198,7 @@ export async function withPlaywrightMcpSnapshot<T>(
   }
 
   try {
-    await ensurePlaywrightMcp(workspacePath, relativePath);
+    await ensurePlaywrightMcp(workspacePath, relativePath, outputDir);
     return await fn();
   } finally {
     if (existed && previous !== undefined) {

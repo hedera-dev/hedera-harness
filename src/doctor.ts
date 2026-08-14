@@ -267,7 +267,7 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
     checks.push(await checkImport("playwright", "Tier 2 Playwright gate", tool));
   }
   if (isValidatorEnabled(spec)) {
-    checks.push(await checkMcpBrowser());
+    checks.push(await checkMcpBrowser(cwd));
   }
   if (spec.chainValidation?.enabled) {
     checks.push(await checkImport("@hiero-ledger/sdk", "Tier 3.5 on-chain validation", tool));
@@ -276,33 +276,33 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
 }
 
 /**
- * The validator drives the browser through @playwright/mcp, which bundles its
- * own Playwright and installs to its own revision directory. Having the
- * `playwright` package's browser is not the same thing — the Tier 2 gate can
- * pass while the validator has nothing to drive, and the mismatch only surfaces
- * after a full agent session has been paid for.
+ * Start the MCP server and navigate for real.
+ *
+ * The Tier 2 gate passing says nothing about Tier 3: they used to resolve
+ * different browsers, so the gate could go green while the validator had
+ * nothing to drive — surfacing only after a paid agent session.
  */
-async function checkMcpBrowser(): Promise<DoctorCheck> {
-  const { executeCommand } = await import("./command.js");
-  const result = await executeCommand({
-    command: "npx",
-    args: ["-y", "@playwright/mcp@latest", "install-browser", "chromium", "--dry-run"],
-    cwd: process.cwd(),
-    timeoutMs: 120_000,
-  });
+async function checkMcpBrowser(projectRoot: string): Promise<DoctorCheck> {
+  const { probeMcpBrowser } = await import("./mcpBrowser.js");
+  const probe = await probeMcpBrowser(projectRoot);
 
-  // --dry-run is not supported on every version; fall back to reporting unknown
-  // rather than claiming a failure we did not actually observe.
-  if (result.exitCode !== 0) {
+  if (probe.ok) {
     return {
       name: "playwright mcp browser",
-      status: "warn",
-      detail: "could not confirm the MCP browser is installed",
-      fix: "If Tier 3 fails at browser launch: npx @playwright/mcp@latest install-browser chromium",
+      status: "ok",
+      detail: probe.choice.detail,
     };
   }
 
-  return { name: "playwright mcp browser", status: "ok", detail: "installed" };
+  return {
+    name: "playwright mcp browser",
+    status: "fail",
+    detail: probe.error ?? "the Playwright MCP browser could not be launched",
+    fix:
+      probe.choice.source === "project-playwright"
+        ? "Reinstall the project's browser: npx playwright install chromium"
+        : "Install Playwright in the project so Tier 2 and Tier 3 share one browser: yarn add -D playwright && npx playwright install chromium",
+  };
 }
 
 async function checkImport(pkg: string, feature: string, tool: string): Promise<DoctorCheck> {
