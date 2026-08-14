@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.2.1
+
+Tier 3 could fail at EVALUATE with `Browser "chrome-for-testing" is not
+installed` — after a full generator session had already been paid for. Four
+defects combined to produce that; all are fixed.
+
+### Fixed
+
+- **Tier 2 and Tier 3 now share one browser.** Tier 2 resolves `playwright` from
+  the project; Tier 3 spawned `@playwright/mcp`, which bundles its own Playwright
+  and wanted a different chromium revision. The gate could pass while the
+  validator had nothing to drive. Tier 3 now points MCP at the browser the
+  project already installed, so it needs no download of its own and both tiers
+  grade against the same binary. Falls back to the system Chrome channel when
+  that browser is unavailable.
+
+- **`@playwright/mcp` is pinned.** It was `@latest`, so a new upstream release
+  could change the required browser build with no harness release involved —
+  which is exactly what happened on 2026-08-06.
+
+- **`run` preflights the browser.** `doctor` had a check, but `run` never called
+  it, and the check was a `--dry-run` that reported "installed" for a browser
+  that could not launch. Preflight now starts the MCP server and actually
+  navigates: about 2s to pass, under 2s to fail with the real launch error,
+  instead of discovering it minutes into a run.
+
+- **A missing browser is classified as infrastructure.** None of the existing
+  patterns matched the real error text, so the repair loop spent attempts
+  "fixing" application code that was never broken.
+
+- **Playwright MCP session files stay out of the workspace.** The server wrote
+  `.playwright-mcp/` into its working directory and nothing ignored or cleaned
+  it, so a successful Tier 3 run would leave a dirty tree — which the next run
+  refuses to start on. It went unnoticed only because the browser was failing to
+  launch.
+
+- **The `install` error names a key v2 recipes have.** A recipe whose baseline
+  had commands but none named `install` failed with `extend.baseline must
+  include …`; `extend.baseline` was renamed to `baseline` in v2, so the message
+  pointed at a key that cannot be present.
+
+### Changed
+
+- The validator is invoked with **`--strict-mcp-config`**, so the harness config
+  is authoritative. Previously the CLI also loaded your MCP scopes, and a
+  `playwright` server there collided with the harness one — silently deciding
+  which browser graded the app. If you relied on the harness picking up MCP
+  servers from your own configuration, it no longer does.
+
 ## 1.2.0
 
 ### Upgrade first, then update recipes
