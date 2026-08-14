@@ -1,6 +1,6 @@
 import { access, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PLAYWRIGHT_MCP_SERVER } from "./contextVendor.js";
+import { isHarnessMcpServer } from "./mcpBrowser.js";
 import { listHarnessConsumerDirtyPaths } from "./harnessGit.js";
 import { HARNESS_RUNTIME_DIR } from "./runtimePaths.js";
 
@@ -93,13 +93,11 @@ async function stripMcpFile(mcpPath: string): Promise<boolean> {
     return false;
   }
 
-  const playwright = servers.playwright as { command?: string; args?: string[] };
-  const looksLikeHarness =
-    playwright?.command === PLAYWRIGHT_MCP_SERVER.command &&
-    Array.isArray(playwright.args) &&
-    playwright.args.join(" ") === PLAYWRIGHT_MCP_SERVER.args.join(" ");
-
-  if (!looksLikeHarness) {
+  // Match on a marker rather than the exact arg list: the browser flags are
+  // resolved per project now, so an equality check would stop recognising our
+  // own entry — and, worse, could start matching a user's if the two ever
+  // converged. Never strip a server the harness did not write.
+  if (!isHarnessMcpServer(servers.playwright)) {
     return false;
   }
 

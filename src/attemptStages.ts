@@ -376,8 +376,11 @@ export async function runValidationStages(
 
   if (mcp.kind === "config-flag") {
     const configPath = path.join(context.layout.runDirectory, "mcp", "playwright.json");
-    await writePlaywrightMcpConfig(configPath);
-    mcpArgs = [mcp.flag, configPath];
+    await writePlaywrightMcpConfig(configPath, context.workspacePath);
+    // --strict-mcp-config so this file is authoritative. Without it the CLI also
+    // loads the user's MCP scopes, and a `playwright` server there collides with
+    // ours — silently deciding which browser grades the app.
+    mcpArgs = [mcp.flag, configPath, "--strict-mcp-config"];
     return runtimeStages();
   }
 

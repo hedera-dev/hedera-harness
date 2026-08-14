@@ -1,6 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeRelativeDir } from "./fsUtils.js";
+import { resolveMcpBrowser } from "./mcpBrowser.js";
 import { ISOLATED_CONTEXT_DIR } from "./runtimePaths.js";
 
 export { pathExists } from "./fsUtils.js";
@@ -17,11 +18,17 @@ export const LEGACY_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
 export const VENDORED_PRD_PATH = `${LEGACY_CONTEXT_DIR}/prd.md`;
 export const VENDORED_CONTRACT_PATH = `${LEGACY_CONTEXT_DIR}/acceptance-contract.json`;
 
-/** Playwright MCP config merged into the seeded workspace so the validator agent can drive the live app. */
-export const PLAYWRIGHT_MCP_SERVER = {
-  command: "npx",
-  args: ["-y", "@playwright/mcp@latest", "--headless", "--browser", "chromium"],
-} as const;
+/**
+ * Playwright MCP server the validator agent drives the live app through.
+ *
+ * The browser is resolved per project rather than fixed: see `mcpBrowser.ts`.
+ */
+export async function playwrightMcpServer(
+  projectRoot: string,
+): Promise<{ command: string; args: string[] }> {
+  const browser = await resolveMcpBrowser(projectRoot);
+  return { command: "npx", args: browser.args };
+}
 
 export interface VendoredContext {
   prdRelativePath: string;
@@ -107,11 +114,15 @@ export async function vendorHarnessContext(
 }
 
 /** Standalone MCP config the harness owns, for CLIs that accept a config path. */
-export async function writePlaywrightMcpConfig(absolutePath: string): Promise<string> {
+export async function writePlaywrightMcpConfig(
+  absolutePath: string,
+  projectRoot: string,
+): Promise<string> {
   await mkdir(path.dirname(absolutePath), { recursive: true });
+  const server = await playwrightMcpServer(projectRoot);
   await writeFile(
     absolutePath,
-    `${JSON.stringify({ mcpServers: { playwright: { ...PLAYWRIGHT_MCP_SERVER } } }, null, 2)}\n`,
+    `${JSON.stringify({ mcpServers: { playwright: server } }, null, 2)}\n`,
     "utf8",
   );
   return absolutePath;
@@ -138,7 +149,7 @@ export async function ensurePlaywrightMcp(
   }
 
   const mcpServers = { ...(existing.mcpServers ?? {}) };
-  mcpServers.playwright = { ...PLAYWRIGHT_MCP_SERVER };
+  mcpServers.playwright = await playwrightMcpServer(workspacePath);
 
   await writeFile(
     mcpPath,

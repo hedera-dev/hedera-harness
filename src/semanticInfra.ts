@@ -15,6 +15,17 @@ const INFRA_TEXT_PATTERNS: RegExp[] = [
   /no playwright mcp/i,
   /playwright\/?mcp.*(unavailable|rejected)/i,
   /browser[_ ]navigate was rejected/i,
+  // A missing browser build is the single most common Tier 3 infrastructure
+  // failure, and none of the phrasings above matched its actual error text —
+  // so it was reported as app defects and burned repair attempts.
+  /browser .{0,40}is not installed/i,
+  /browser[- _]unavailable/i,
+  /executable doesn't exist/i,
+  /expected executable at/i,
+  /install-browser/i,
+  /chrome-for-testing/i,
+  /failed to launch/i,
+  /no browser session could be started/i,
   /browser automation (?:was )?(?:unavailable|could not|failed)/i,
   /could not drive .{0,80} in a browser/i,
   /without browser access/i,
