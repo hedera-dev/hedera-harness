@@ -89,11 +89,19 @@ export async function probeMcpBrowser(
   timeoutMs = 60_000,
 ): Promise<McpBrowserProbe> {
   const { spawn } = await import("node:child_process");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const os = await import("node:os");
+  const nodePath = await import("node:path");
+
   const choice = await resolveMcpBrowser(projectRoot);
+  // The server writes session files into `.playwright-mcp/` under its cwd.
+  // Left in the project those dirty the working tree, which the next run
+  // refuses to start on — a preflight must not cost the user a clean tree.
+  const outputDir = await mkdtemp(nodePath.join(os.tmpdir(), "harness-mcp-probe-"));
 
   return await new Promise<McpBrowserProbe>(resolve => {
-    const child = spawn("npx", choice.args, {
-      cwd: projectRoot,
+    const child = spawn("npx", [...choice.args, "--output-dir", outputDir], {
+      cwd: outputDir,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -121,6 +129,7 @@ export async function probeMcpBrowser(
       settled = true;
       clearTimeout(timer);
       child.kill("SIGKILL");
+      void rm(outputDir, { recursive: true, force: true });
 
       if (verdictFrom(output) === true) {
         resolve({ ok: true, choice });

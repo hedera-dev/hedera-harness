@@ -74,6 +74,29 @@ test("isHarnessMcpServer only matches entries the harness wrote", async () => {
   assert.equal(isHarnessMcpServer({}), false);
 });
 
+test("the MCP config directs session files away from the project", async () => {
+  const root = await makeTestTempDir("mcp-outdir-");
+  const configPath = path.join(root, ".harness", "runs", "r1", "mcp", "playwright.json");
+
+  const { writePlaywrightMcpConfig } = await import(
+    pathToFileURL(path.resolve("dist/contextVendor.js")).href
+  );
+  await writePlaywrightMcpConfig(configPath, root);
+
+  const { readFile } = await import("node:fs/promises");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  const args = config.mcpServers.playwright.args;
+
+  // Left to itself the server writes `.playwright-mcp/` into the workspace,
+  // and the next run refuses to start on a dirty tree.
+  const at = args.indexOf("--output-dir");
+  assert.notEqual(at, -1, "must pin an output directory");
+  assert.ok(
+    args[at + 1].startsWith(path.join(root, ".harness", "runs")),
+    `output must stay inside the run directory, got ${args[at + 1]}`,
+  );
+});
+
 /** Builds a failing semantic result shaped like the validator's real output. */
 function semanticFailure(findings, summary) {
   return {

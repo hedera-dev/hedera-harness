@@ -384,7 +384,12 @@ export async function runValidationStages(
     return runtimeStages();
   }
 
-  return withPlaywrightMcpSnapshot(context.workspacePath, mcp.path, runtimeStages);
+  return withPlaywrightMcpSnapshot(
+    context.workspacePath,
+    mcp.path,
+    runtimeStages,
+    path.join(context.layout.runDirectory, "mcp", "output"),
+  );
 }
 
 function truncate(value: string, maxLength = 1200): string {

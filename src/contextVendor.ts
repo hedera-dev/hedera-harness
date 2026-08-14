@@ -25,9 +25,13 @@ export const VENDORED_CONTRACT_PATH = `${LEGACY_CONTEXT_DIR}/acceptance-contract
  */
 export async function playwrightMcpServer(
   projectRoot: string,
+  outputDir?: string,
 ): Promise<{ command: string; args: string[] }> {
   const browser = await resolveMcpBrowser(projectRoot);
-  return { command: "npx", args: browser.args };
+  // Without --output-dir the server drops `.playwright-mcp/` session files into
+  // the workspace, leaving a dirty tree that the next run refuses to start on.
+  const args = outputDir ? [...browser.args, "--output-dir", outputDir] : browser.args;
+  return { command: "npx", args };
 }
 
 export interface VendoredContext {
@@ -119,7 +123,10 @@ export async function writePlaywrightMcpConfig(
   projectRoot: string,
 ): Promise<string> {
   await mkdir(path.dirname(absolutePath), { recursive: true });
-  const server = await playwrightMcpServer(projectRoot);
+  // Session files land beside the config, inside the harness-owned run dir.
+  const outputDir = path.join(path.dirname(absolutePath), "output");
+  await mkdir(outputDir, { recursive: true });
+  const server = await playwrightMcpServer(projectRoot, outputDir);
   await writeFile(
     absolutePath,
     `${JSON.stringify({ mcpServers: { playwright: server } }, null, 2)}\n`,
@@ -137,6 +144,7 @@ export async function writePlaywrightMcpConfig(
 export async function ensurePlaywrightMcp(
   workspacePath: string,
   relativePath = ".cursor/mcp.json",
+  outputDir?: string,
 ): Promise<string> {
   const mcpPath = path.join(workspacePath, relativePath);
   await mkdir(path.dirname(mcpPath), { recursive: true });
@@ -149,7 +157,7 @@ export async function ensurePlaywrightMcp(
   }
 
   const mcpServers = { ...(existing.mcpServers ?? {}) };
-  mcpServers.playwright = await playwrightMcpServer(workspacePath);
+  mcpServers.playwright = await playwrightMcpServer(workspacePath, outputDir);
 
   await writeFile(
     mcpPath,
@@ -176,6 +184,7 @@ export async function withPlaywrightMcpSnapshot<T>(
   workspacePath: string,
   relativePath: string,
   fn: () => Promise<T>,
+  outputDir?: string,
 ): Promise<T> {
   const mcpPath = path.join(workspacePath, ...relativePath.split("/"));
   let previous: string | undefined;
@@ -189,7 +198,7 @@ export async function withPlaywrightMcpSnapshot<T>(
   }
 
   try {
-    await ensurePlaywrightMcp(workspacePath, relativePath);
+    await ensurePlaywrightMcp(workspacePath, relativePath, outputDir);
     return await fn();
   } finally {
     if (existed && previous !== undefined) {
