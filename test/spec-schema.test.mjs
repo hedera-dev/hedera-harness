@@ -206,3 +206,30 @@ baseline:
 `);
   await assert.rejects(() => loadTemplateSpec(specPath), /named "install"/);
 });
+
+test("the install error names a key a v2 recipe actually has", async () => {
+  // A v2 recipe has no `extend.baseline`, so naming it sends the reader looking
+  // for a key that cannot be there.
+  const missing = await writeRecipe(`schemaVersion: 2
+name: no-install
+baseline:
+  commands:
+    - name: lint
+      command: "true"
+`);
+  await assert.rejects(() => loadTemplateSpec(missing.specPath), error => {
+    assert.match(error.message, /baseline\.commands/);
+    assert.doesNotMatch(error.message, /extend\.baseline/);
+    return true;
+  });
+
+  const empty = await writeRecipe(`schemaVersion: 2
+name: empty-baseline
+baseline:
+  commands: []
+`);
+  await assert.rejects(() => loadTemplateSpec(empty.specPath), error => {
+    assert.doesNotMatch(error.message, /extend\.baseline/);
+    return true;
+  });
+});
