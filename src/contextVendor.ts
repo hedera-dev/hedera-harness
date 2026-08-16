@@ -39,17 +39,11 @@ export interface VendoredContext {
   contractRelativePath?: string;
   prdSourcePath: string;
   contractSourcePath?: string;
-  playwrightMcpPath?: string;
 }
 
 export interface VendorContextOptions {
   /** Relative directory under the workspace (default: `.harness-context`). */
   contextDir?: string;
-  /**
-   * When false, skip mutating `.cursor/mcp.json` (extend uses snapshot/restore around validation).
-   * Default: true.
-   */
-  injectPlaywrightMcp?: boolean;
 }
 
 export async function vendorHarnessContext(
@@ -76,11 +70,6 @@ export async function vendorHarnessContext(
     );
   }
 
-  const injectPlaywrightMcp = options.injectPlaywrightMcp !== false;
-  const playwrightMcpPath = injectPlaywrightMcp
-    ? await ensurePlaywrightMcp(workspacePath)
-    : undefined;
-
   await writeFile(
     path.join(contextRoot, "manifest.json"),
     `${JSON.stringify(
@@ -96,11 +85,6 @@ export async function vendorHarnessContext(
               sourcePath: input.contractPath,
             }
           : undefined,
-        playwrightMcp: playwrightMcpPath
-          ? {
-              relativePath: playwrightMcpPath,
-            }
-          : undefined,
       },
       null,
       2,
@@ -113,7 +97,6 @@ export async function vendorHarnessContext(
     contractRelativePath,
     prdSourcePath: input.prdPath,
     contractSourcePath: input.contractPath,
-    playwrightMcpPath,
   };
 }
 

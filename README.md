@@ -172,17 +172,23 @@ npx hedera-harness doctor
 Playwright and the Hedera SDK are **optional peer dependencies**, needed only by the higher tiers:
 
 ```bash
-# Tier 2
-npm install -D playwright && npx playwright install chromium
-
-# Tier 3 — the MCP server bundles its own browser, separate from the above
-npx @playwright/mcp@latest install-browser chromium
+# Tier 2 — the browser API; no separate Chromium download is required
+npm install -D playwright
 
 # Tier 3.5
 npm install -D @hiero-ledger/sdk
 export HEDERA_OPERATOR_ID=0.0.xxxx
 export HEDERA_OPERATOR_KEY=0x...      # ECDSA — ED25519 has no EVM alias
 ```
+
+**Tier 2 and Tier 3 share one browser policy.** The harness uses the project's
+existing Playwright Chromium when available and otherwise launches system
+Chrome. Tier 2 still needs the `playwright` package for its browser API, but
+neither tier requires a separate Chromium download when Chrome is installed.
+For Tier 3, the harness launches its pinned `@playwright/mcp` version through
+`npx` and supplies the MCP configuration itself; do not copy an `.mcp.json`
+into the project. Run `npx hedera-harness doctor` to launch-probe the selected
+browser.
 
 See [`.env.example`](.env.example). The harness does not auto-load `.env`, and never writes credentials into the workspace.
 

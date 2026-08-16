@@ -263,11 +263,16 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
     packageManager: spec.constraints?.packageManager,
   });
 
+  let tier2PlaywrightAvailable = false;
   if (spec.validators.playwrightPath) {
-    checks.push(await checkImport("playwright", "Tier 2 Playwright gate", tool));
+    const dependency = await checkImport("playwright", "Tier 2 Playwright gate", tool);
+    checks.push(dependency);
+    tier2PlaywrightAvailable = dependency.status === "ok";
   }
   if (isValidatorEnabled(spec)) {
-    checks.push(await checkMcpBrowser(cwd));
+    checks.push(await checkMcpBrowser(cwd, tool));
+  } else if (tier2PlaywrightAvailable) {
+    checks.push(await checkTier2Browser(cwd));
   }
   if (spec.chainValidation?.enabled) {
     checks.push(await checkImport("@hiero-ledger/sdk", "Tier 3.5 on-chain validation", tool));
@@ -282,27 +287,51 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
  * different browsers, so the gate could go green while the validator had
  * nothing to drive — surfacing only after a paid agent session.
  */
-async function checkMcpBrowser(projectRoot: string): Promise<DoctorCheck> {
+async function checkMcpBrowser(projectRoot: string, installTool: string): Promise<DoctorCheck> {
   const { probeMcpBrowser } = await import("./mcpBrowser.js");
   const probe = await probeMcpBrowser(projectRoot);
 
   if (probe.ok) {
     return {
-      name: "playwright mcp browser",
+      name: "Tier 3 browser (Playwright MCP)",
       status: "ok",
       detail: probe.choice.detail,
     };
   }
 
   return {
-    name: "playwright mcp browser",
+    name: "Tier 3 browser (Playwright MCP)",
     status: "fail",
     detail: probe.error ?? "the Playwright MCP browser could not be launched",
     fix:
       probe.choice.source === "project-playwright"
         ? "Reinstall the project's browser: npx playwright install chromium"
-        : "Install Playwright in the project so Tier 2 and Tier 3 share one browser: yarn add -D playwright && npx playwright install chromium",
+        : `Install Playwright in the project so Tier 2 and Tier 3 share one browser: ${installTool} add -D playwright && npx playwright install chromium`,
   };
+}
+
+async function checkTier2Browser(projectRoot: string): Promise<DoctorCheck> {
+  const { launchSharedBrowser, resolveMcpBrowser } = await import("./mcpBrowser.js");
+  const choice = await resolveMcpBrowser(projectRoot);
+  try {
+    const browser = await launchSharedBrowser(projectRoot);
+    await browser.close();
+    return {
+      name: "Tier 2 browser",
+      status: "ok",
+      detail: choice.detail,
+    };
+  } catch (error) {
+    return {
+      name: "Tier 2 browser",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+      fix:
+        choice.source === "project-playwright"
+          ? "Reinstall the project's browser: npx playwright install chromium"
+          : "Install system Chrome, or install the project's Playwright browser: npx playwright install chromium",
+    };
+  }
 }
 
 async function checkImport(pkg: string, feature: string, tool: string): Promise<DoctorCheck> {

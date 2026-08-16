@@ -21,6 +21,7 @@ import {
   type SessionRunResult,
   type RunSessionOptions,
 } from "./sessionRunner.js";
+import { withValidatorMcp } from "./validatorMcp.js";
 
 export interface ProjectRunResult extends SessionRunResult {}
 
@@ -48,8 +49,8 @@ export async function validateWorkspace(options: CliOptions) {
 
 /**
  * Run Tier 3 semantic validation alone against an existing workspace
- * (skips generator + deterministic gates). Re-vendors PRD/contract/Playwright MCP
- * so older runs pick up current harness tooling.
+ * (skips generator + deterministic gates). Re-vendors PRD/contract so older
+ * runs pick up current harness context.
  */
 export async function validateSemanticWorkspace(options: CliOptions): Promise<SemanticValidationResult> {
   // Project-centric default: validate the current project (cwd), like `run`.
@@ -79,7 +80,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   });
   logPhase(
     "Harness context refreshed for semantic validation",
-    `.harness-context + ${vendored.playwrightMcpPath ?? "no playwright MCP"}`,
+    vendored.contractRelativePath ?? vendored.prdRelativePath,
   );
 
   const artifactDirs = await resolveArtifactDirsForWorkspace(workspacePath);
@@ -107,14 +108,24 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
 
   logPhase(`Semantic validation attempt ${attempt} started`, workspacePath);
 
-  const result = await runSemanticValidation({
-    workspacePath,
-    spec,
-    attempt,
-    logsDirectory: artifactDirs.logsDirectory,
-    promptsDirectory: artifactDirs.promptsDirectory,
-    chainSigner,
-  });
+  const result = await withValidatorMcp(
+    {
+      agent: spec.agent,
+      workspacePath,
+      artifactsDirectory:
+        artifactDirs.runDirectory ?? path.join(workspacePath, ".harness-semantic"),
+    },
+    extraArgs =>
+      runSemanticValidation({
+        workspacePath,
+        spec,
+        attempt,
+        logsDirectory: artifactDirs.logsDirectory,
+        promptsDirectory: artifactDirs.promptsDirectory,
+        chainSigner,
+        extraArgs,
+      }),
+  );
 
   const resultPath = path.join(artifactDirs.logsDirectory, `semantic-validation-attempt-${attempt}.json`);
   await writeJsonFile(resultPath, result);

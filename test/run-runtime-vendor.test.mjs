@@ -13,7 +13,7 @@ const { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } = await import(
   pathToFileURL(path.resolve("dist/runtimePaths.js")).href
 );
 
-test("extend vendoring writes skills/context under .harness/runtime and skips MCP mutation", async () => {
+test("run vendoring writes skills/context without mutating MCP configuration", async () => {
   const root = await makeTestTempDir("extend-runtime-");
   await mkdir(path.join(root, ".cursor"), { recursive: true });
   await writeFile(
@@ -41,10 +41,9 @@ test("extend vendoring writes skills/context under .harness/runtime and skips MC
   const context = await vendorHarnessContext(
     root,
     { prdPath },
-    { contextDir: HARNESS_CONTEXT_DIR, injectPlaywrightMcp: false },
+    { contextDir: HARNESS_CONTEXT_DIR },
   );
   assert.equal(context.prdRelativePath, `${HARNESS_CONTEXT_DIR}/prd.md`);
-  assert.equal(context.playwrightMcpPath, undefined);
   await access(path.join(root, ...context.prdRelativePath.split("/")));
 
   // Root vendor dirs for isolated mode must not appear.

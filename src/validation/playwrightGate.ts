@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { Browser, Page, Response } from "playwright";
 import { parse as parseYaml } from "yaml";
-import { importPlaywright } from "../optionalDeps.js";
+import { launchSharedBrowser } from "../mcpBrowser.js";
 import type { PlaywrightGateResult, PlaywrightGateRouteResult, ValidationFinding } from "../types.js";
 import {
   startDevServer,
@@ -77,8 +77,7 @@ export async function runPlaywrightGate(
       await waitForServer(serverUrl, serverTimeoutMs);
     }
 
-    const { chromium } = await importPlaywright({ projectRoot: workspacePath });
-    browser = await chromium.launch({ headless: true });
+    browser = await launchSharedBrowser(workspacePath);
     const context = await browser.newContext();
     const page = await context.newPage();
 

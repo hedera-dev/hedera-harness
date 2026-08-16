@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.2.2
+
+### Fixed
+
+- Tier 2 and Tier 3 now share the same browser choice. They use an existing
+  project-managed Playwright Chromium when available and otherwise launch
+  system Chrome. Tier 2 no longer requires a separate Chromium download, and
+  Tier 3 no longer passes the undocumented `--browser chromium` MCP channel.
+- `validate-semantic` now uses the same agent-specific MCP delivery as a normal
+  run: Claude receives a strict harness-owned config path, while Cursor gets a
+  temporary workspace config that is restored immediately afterwards.
+- Vendoring PRD and contract context no longer leaves a harness-authored MCP
+  entry in the project. MCP configuration exists only for the validator
+  invocation that needs it.
+
+### Changed
+
+- Browser setup documentation now reflects the actual runtime: Tier 2 needs
+  only the Playwright package when system Chrome is available, while Tier 3
+  launches the pinned MCP package itself. No separate browser download, MCP
+  browser install, or copied `.mcp.json` is required.
+- `doctor` reports the browser as the Tier 3 Playwright MCP browser and prints a
+  package-manager-aware repair command.
+
 ## 1.2.1
 
 Tier 3 could fail at EVALUATE with `Browser "chrome-for-testing" is not

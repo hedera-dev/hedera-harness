@@ -49,16 +49,6 @@ export function buildOptionalDepInstallLines(
   packageName: string,
   tool: PackageInstallTool,
 ): string[] {
-  if (packageName === "playwright") {
-    if (tool === "yarn") {
-      return ["yarn add -D playwright", "yarn playwright install chromium"];
-    }
-    if (tool === "pnpm") {
-      return ["pnpm add -D playwright", "pnpm exec playwright install chromium"];
-    }
-    return ["npm install -D playwright", "npx playwright install chromium"];
-  }
-
   if (tool === "yarn") return [`yarn add -D ${packageName}`];
   if (tool === "pnpm") return [`pnpm add -D ${packageName}`];
   return [`npm install -D ${packageName}`];
