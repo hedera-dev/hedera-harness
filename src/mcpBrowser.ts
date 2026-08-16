@@ -1,4 +1,5 @@
 import { access } from "node:fs/promises";
+import type { Browser, LaunchOptions } from "playwright";
 import { importPlaywright } from "./optionalDeps.js";
 
 /**
@@ -16,13 +17,46 @@ export const HARNESS_MCP_MARKER = "--headless";
 
 export type McpBrowserSource = "project-playwright" | "system-chrome";
 
-export interface McpBrowserChoice {
+interface McpBrowserChoiceBase {
   args: string[];
-  source: McpBrowserSource;
-  /** Absolute browser path when the project's Playwright supplied it. */
-  executablePath?: string;
   /** One line for logs and doctor output. */
   detail: string;
+}
+
+export type McpBrowserChoice =
+  | (McpBrowserChoiceBase & {
+      source: "project-playwright";
+      /** Absolute browser path supplied by the project's Playwright package. */
+      executablePath: string;
+    })
+  | (McpBrowserChoiceBase & {
+      source: "system-chrome";
+      executablePath?: undefined;
+    });
+
+export function mcpArgsForBrowser(
+  choice:
+    | { source: "project-playwright"; executablePath: string }
+    | { source: "system-chrome"; executablePath?: undefined },
+): string[] {
+  const base = ["-y", PLAYWRIGHT_MCP_PACKAGE, HARNESS_MCP_MARKER];
+  if (choice.source === "project-playwright") {
+    // `chromium` is Playwright's engine name, not a documented value for the
+    // MCP CLI's --browser channel flag. The existing executable is sufficient.
+    return [...base, "--executable-path", choice.executablePath];
+  }
+  return [...base, "--browser", "chrome"];
+}
+
+export function playwrightLaunchOptionsForBrowser(
+  choice:
+    | { source: "project-playwright"; executablePath: string }
+    | { source: "system-chrome"; executablePath?: undefined },
+): LaunchOptions {
+  if (choice.source === "project-playwright") {
+    return { headless: true, executablePath: choice.executablePath };
+  }
+  return { headless: true, channel: "chrome" };
 }
 
 /**
@@ -37,14 +71,12 @@ export interface McpBrowserChoice {
  * is whatever version the machine happens to have.
  */
 export async function resolveMcpBrowser(projectRoot: string): Promise<McpBrowserChoice> {
-  const base = ["-y", PLAYWRIGHT_MCP_PACKAGE, HARNESS_MCP_MARKER];
-
   try {
     const { chromium } = await importPlaywright({ projectRoot });
     const executablePath = chromium.executablePath();
     await access(executablePath);
     return {
-      args: [...base, "--browser", "chromium", "--executable-path", executablePath],
+      args: mcpArgsForBrowser({ source: "project-playwright", executablePath }),
       source: "project-playwright",
       executablePath,
       detail: `project Playwright browser (shared with the Tier 2 gate) — ${executablePath}`,
@@ -52,12 +84,21 @@ export async function resolveMcpBrowser(projectRoot: string): Promise<McpBrowser
   } catch {
     // Playwright missing from the project, or installed without its browser.
     return {
-      args: [...base, "--browser", "chrome"],
+      args: mcpArgsForBrowser({ source: "system-chrome" }),
       source: "system-chrome",
       detail:
-        "system Chrome — the project's Playwright browser was unavailable, so Tier 2 and Tier 3 may not run the same browser",
+        "system Chrome — shared by Tier 2 and Tier 3 because the project's Playwright browser was unavailable",
     };
   }
+}
+
+/** Launch the exact browser choice shared with the Tier 3 MCP server. */
+export async function launchSharedBrowser(projectRoot: string): Promise<Browser> {
+  const [{ chromium }, choice] = await Promise.all([
+    importPlaywright({ projectRoot }),
+    resolveMcpBrowser(projectRoot),
+  ]);
+  return chromium.launch(playwrightLaunchOptionsForBrowser(choice));
 }
 
 /** true = navigated, false = launch failed, undefined = still unknown. */

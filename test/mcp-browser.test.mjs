@@ -6,6 +6,8 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 
 const {
   resolveMcpBrowser,
+  mcpArgsForBrowser,
+  playwrightLaunchOptionsForBrowser,
   isHarnessMcpServer,
   PLAYWRIGHT_MCP_PACKAGE,
   HARNESS_MCP_MARKER,
@@ -46,15 +48,49 @@ test("no resolution asks for a browser that would need its own download", async 
   const root = await makeTestTempDir("mcp-nodownload-");
   const { args } = await resolveMcpBrowser(root);
 
-  // `--browser chromium` on its own is what forced a per-version download and
-  // broke Tier 3 for anyone who had not run install-browser.
+  // The MCP CLI documents chrome/firefox/webkit/msedge as --browser values.
+  // Playwright-managed Chromium is selected by its existing executable path,
+  // not by passing the undocumented `--browser chromium` value.
   const at = args.indexOf("--browser");
-  if (args[at + 1] === "chromium") {
-    assert.ok(
-      args.includes("--executable-path"),
-      "bundled chromium is only allowed when pointed at an existing binary",
-    );
+  assert.notEqual(args[at + 1], "chromium", "must not pass an undocumented MCP browser value");
+
+  if (args.includes("--executable-path")) {
+    assert.equal(at, -1, "an explicit Playwright browser path needs no channel override");
+  } else {
+    assert.equal(args[at + 1], "chrome", "the zero-download fallback is system Chrome");
   }
+});
+
+test("a project Playwright browser is selected by executable path, not an undocumented channel", () => {
+  const args = mcpArgsForBrowser({
+    source: "project-playwright",
+    executablePath: "/existing/playwright/chromium",
+    detail: "fixture",
+  });
+
+  assert.ok(args.includes("--executable-path"));
+  assert.ok(args.includes("/existing/playwright/chromium"));
+  assert.equal(args.indexOf("--browser"), -1);
+});
+
+test("Tier 2 launches the same browser choice as Tier 3", () => {
+  assert.deepEqual(
+    playwrightLaunchOptionsForBrowser({
+      source: "project-playwright",
+      executablePath: "/existing/playwright/chromium",
+    }),
+    {
+      headless: true,
+      executablePath: "/existing/playwright/chromium",
+    },
+  );
+  assert.deepEqual(
+    playwrightLaunchOptionsForBrowser({ source: "system-chrome" }),
+    {
+      headless: true,
+      channel: "chrome",
+    },
+  );
 });
 
 test("isHarnessMcpServer only matches entries the harness wrote", async () => {

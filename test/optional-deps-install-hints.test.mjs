@@ -47,7 +47,6 @@ test("buildOptionalDepInstallLines uses yarn add for yarn projects", () => {
   ]);
   assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("playwright", "yarn"), [
     "yarn add -D playwright",
-    "yarn playwright install chromium",
   ]);
 });
 

@@ -1,8 +1,6 @@
 import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
 import { appendHarnessLog, writeJsonFile, writeStatusFile, type RunLayout } from "./runArtifacts.js";
-import { withPlaywrightMcpSnapshot, writePlaywrightMcpConfig } from "./contextVendor.js";
-import { AGENT_PRESETS } from "./specDefaults.js";
 import type { AgentProgress } from "./agentStreamLogger.js";
 import type {
   AgentRunResult,
@@ -24,6 +22,7 @@ import {
   type DevServerSession,
 } from "./validation/devServer.js";
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
+import { withValidatorMcp } from "./validatorMcp.js";
 import { WorkspaceWatcher } from "./workspaceWatcher.js";
 
 /**
@@ -321,12 +320,6 @@ export async function runValidationStages(
     return validation;
   }
 
-  // How the validator's CLI learns about Playwright MCP. A config-flag agent
-  // (Claude) takes a harness-owned file and never touches the project; a
-  // workspace-file agent (Cursor) reads a fixed path, so it is written and
-  // restored around the run. Previously the Cursor path was hardcoded, which
-  // left a Claude validator with no browser tools at all.
-  const mcp = AGENT_PRESETS[context.spec.agent].mcp;
   let mcpArgs: string[] = [];
 
   const runtimeStages = async (): Promise<ValidationResult> => {
@@ -374,21 +367,16 @@ export async function runValidationStages(
     }
   };
 
-  if (mcp.kind === "config-flag") {
-    const configPath = path.join(context.layout.runDirectory, "mcp", "playwright.json");
-    await writePlaywrightMcpConfig(configPath, context.workspacePath);
-    // --strict-mcp-config so this file is authoritative. Without it the CLI also
-    // loads the user's MCP scopes, and a `playwright` server there collides with
-    // ours — silently deciding which browser grades the app.
-    mcpArgs = [mcp.flag, configPath, "--strict-mcp-config"];
-    return runtimeStages();
-  }
-
-  return withPlaywrightMcpSnapshot(
-    context.workspacePath,
-    mcp.path,
-    runtimeStages,
-    path.join(context.layout.runDirectory, "mcp", "output"),
+  return withValidatorMcp(
+    {
+      agent: context.spec.agent,
+      workspacePath: context.workspacePath,
+      artifactsDirectory: context.layout.runDirectory,
+    },
+    async extraArgs => {
+      mcpArgs = extraArgs;
+      return runtimeStages();
+    },
   );
 }
 

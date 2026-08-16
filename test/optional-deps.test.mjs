@@ -16,6 +16,18 @@ test("importHieroSdk succeeds when @hiero-ledger/sdk is installed as a devDepend
   assert.equal(typeof sdk.Client.forTestnet, "function");
 });
 
+test("Playwright install guidance relies on the shared system Chrome fallback", () => {
+  assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("playwright", "npm"), [
+    "npm install -D playwright",
+  ]);
+  assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("playwright", "yarn"), [
+    "yarn add -D playwright",
+  ]);
+  assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("playwright", "pnpm"), [
+    "pnpm add -D playwright",
+  ]);
+});
+
 test("package.json declares playwright and SDK as optional peers, not runtime deps", async () => {
   const pkg = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile("package.json", "utf8")));
   // Shape, not value: pinning the exact version here means every release starts

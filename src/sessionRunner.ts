@@ -236,7 +236,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       const vendoredContext = await vendorHarnessContext(
         workspaceRoot,
         { prdPath: spec.prdPaths[sliceIndex], contractPath: spec.contractPath },
-        { contextDir: HARNESS_CONTEXT_DIR, injectPlaywrightMcp: false },
+        { contextDir: HARNESS_CONTEXT_DIR },
       );
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "context_vendored",
