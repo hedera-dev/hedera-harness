@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
@@ -262,5 +262,9 @@ routes:
   await assert.rejects(
     () => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"),
     "Cursor MCP snapshot must not run when SMOKE fails",
+  );
+  await assert.rejects(
+    () => readdir(path.join(root, ".cursor")),
+    "withValidatorMcp must not run at all — even a restored snapshot leaves .cursor/ behind",
   );
 }, { timeout: 180_000 });
