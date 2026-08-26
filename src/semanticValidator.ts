@@ -13,7 +13,7 @@ import type {
 } from "./types.js";
 import { parseValidatorVerdict } from "./validatorVerdictParser.js";
 import { annotateInfrastructureFailure } from "./semanticInfra.js";
-import { loadDevServerConfig, startDevServer, stopDevServer, waitForServer, type DevServerSession } from "./validation/devServer.js";
+import type { DevServerSession } from "./validation/devServer.js";
 
 export function isValidatorEnabled(spec: TemplateSpec): boolean {
   return spec.validator !== undefined && spec.validator.enabled !== false;
@@ -25,7 +25,8 @@ export async function runSemanticValidation(input: {
   attempt: number;
   logsDirectory: string;
   promptsDirectory: string;
-  devServer?: DevServerSession;
+  /** Required — callers own lifecycle via createDevServerSession. */
+  devServer: DevServerSession;
   chainSigner?: ChainSigner;
   /** Override vendored contract path (`.harness/runtime/context/...`). */
   contractRelativePath?: string;
@@ -65,27 +66,9 @@ export async function runSemanticValidation(input: {
     input.contractRelativePath ?? path.posix.join(".harness-context", "acceptance-contract.json");
   const contractPath = path.join(input.workspacePath, ...contractRelativePath.split("/"));
   const contract = await readFile(contractPath, "utf8");
-  const serverConfig = await loadDevServerConfig(input.spec.validators.playwrightPath);
-
-  let serverHandle: ReturnType<typeof startDevServer> | null = null;
-  let ownsServer = false;
-  let serverUrl = input.devServer?.url ?? serverConfig.configuredUrl;
+  const serverUrl = input.devServer.url;
 
   try {
-    if (input.devServer) {
-      serverUrl = input.devServer.url;
-    } else {
-      ownsServer = true;
-      serverHandle = startDevServer(
-        input.workspacePath,
-        serverConfig.command,
-        serverConfig.configuredUrl,
-        "validator",
-      );
-      serverUrl = await serverHandle.detectedUrl;
-      await waitForServer(serverUrl, serverConfig.timeoutMs);
-    }
-
     const browserKey =
       input.spec.chainValidation?.expose.browserLocalStorageKey ?? "burnerWallet.pk";
     const prompt = await buildValidatorPrompt(
@@ -166,10 +149,6 @@ export async function runSemanticValidation(input: {
     return annotateInfrastructureFailure(
       failureResult(startedAt, [findingFromMessage("validator-runtime", message)], serverUrl),
     );
-  } finally {
-    if (ownsServer) {
-      await stopDevServer(serverHandle);
-    }
   }
 }
 

@@ -3,13 +3,7 @@ import type { Browser, Page, Response } from "playwright";
 import { parse as parseYaml } from "yaml";
 import { launchSharedBrowser } from "../mcpBrowser.js";
 import type { PlaywrightGateResult, PlaywrightGateRouteResult, ValidationFinding } from "../types.js";
-import {
-  startDevServer,
-  stopDevServer,
-  waitForServer,
-  type DevServerHandle,
-  type DevServerSession,
-} from "./devServer.js";
+import type { DevServerSession } from "./devServer.js";
 
 interface PlaywrightGateConfig {
   name?: string;
@@ -39,44 +33,31 @@ const DEFAULT_HYDRATION_TIMEOUT_MS = 60_000;
 const DEFAULT_MIN_BODY_TEXT_LENGTH = 20;
 const HYDRATION_POLL_MS = 250;
 
+/**
+ * Walk configured routes against an already-running DevServerSession.
+ *
+ * Lifecycle (spawn/readiness/teardown) is owned by createDevServerSession —
+ * this gate only borrows the session.
+ */
 export async function runPlaywrightGate(
   workspacePath: string,
   configPath: string,
-  existingDevServer?: DevServerSession,
+  devServer: DevServerSession,
 ): Promise<{ result: PlaywrightGateResult; findings: ValidationFinding[] }> {
   const startedAt = Date.now();
   const config = await loadPlaywrightGateConfig(configPath);
-  const serverTimeoutMs = config.server.timeoutMs ?? 120_000;
   const routeTimeoutMs = config.defaults?.timeoutMs ?? 30_000;
   const hydrationTimeoutMs = config.defaults?.hydrationTimeoutMs ?? DEFAULT_HYDRATION_TIMEOUT_MS;
   const minBodyTextLength = config.defaults?.minBodyTextLength ?? DEFAULT_MIN_BODY_TEXT_LENGTH;
   const failOnConsoleError = config.defaults?.failOnConsoleError ?? true;
   const forbiddenText = config.forbidden?.visibleText ?? [];
 
-  let serverHandle: DevServerHandle | null = null;
-  let ownsServer = false;
   let browser: Browser | null = null;
-  let serverUrl = existingDevServer?.url ?? config.server.url;
+  const serverUrl = devServer.url;
   const routeResults: PlaywrightGateRouteResult[] = [];
   const findings: ValidationFinding[] = [];
 
   try {
-    if (existingDevServer) {
-      serverUrl = existingDevServer.url;
-    } else {
-      ownsServer = true;
-      serverHandle = startDevServer(workspacePath, config.server.command, config.server.url, "playwright");
-      serverUrl = await serverHandle.detectedUrl;
-
-      if (serverUrl !== config.server.url) {
-        console.log(
-          `[hedera-harness] Playwright gate using detected dev server ${serverUrl} (config specified ${config.server.url})`,
-        );
-      }
-
-      await waitForServer(serverUrl, serverTimeoutMs);
-    }
-
     browser = await launchSharedBrowser(workspacePath);
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -108,20 +89,11 @@ export async function runPlaywrightGate(
         // Next.js / client apps often return a sparse shell at DOMContentLoaded.
         // Wait for load, then poll until body text looks hydrated (or timeout).
         await page.waitForLoadState("load", { timeout: Math.min(routeTimeoutMs, 15_000) }).catch(() => undefined);
-        const isServerAlive = () => {
-          if (serverHandle) {
-            return serverHandle.process.exitCode === null && !serverHandle.process.killed;
-          }
-          if (existingDevServer) {
-            return existingDevServer.isAlive();
-          }
-          return true;
-        };
         const hydration = await waitForMeaningfulBodyText(page, {
           timeoutMs: hydrationTimeoutMs,
           minLength: minBodyTextLength,
           pollMs: HYDRATION_POLL_MS,
-          isServerAlive,
+          isServerAlive: () => devServer.isAlive(),
         });
         rendered = hydration.rendered;
         lastBodyText = hydration.bodyText;
@@ -201,16 +173,13 @@ export async function runPlaywrightGate(
     if (browser) {
       await browser.close().catch(() => undefined);
     }
-    if (ownsServer) {
-      await stopDevServer(serverHandle);
-    }
   }
 
   const result: PlaywrightGateResult = {
     passed: findings.length === 0,
     configPath,
     serverUrl,
-    serverCommand: existingDevServer?.serverCommand ?? config.server.command,
+    serverCommand: devServer.serverCommand,
     routes: routeResults,
     durationMs: Date.now() - startedAt,
   };

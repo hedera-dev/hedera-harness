@@ -6,16 +6,16 @@ import { parse as parseYaml } from "yaml";
 const LOCAL_URL_PATTERN = /Local:\s*(https?:\/\/[^\s-]+)/i;
 const URL_DETECT_TIMEOUT_MS = 30_000;
 
-export interface DevServerHandle {
-  process: ChildProcess;
-  configuredUrl: string;
-  detectedUrl: Promise<string>;
-}
-
 export interface DevServerConfig {
   command: string;
   configuredUrl: string;
   timeoutMs: number;
+}
+
+interface DevServerHandle {
+  process: ChildProcess;
+  configuredUrl: string;
+  detectedUrl: Promise<string>;
 }
 
 /** Live dev server reused by Playwright gate and semantic validator within one attempt. */
@@ -27,6 +27,11 @@ export interface DevServerSession {
   stop(): Promise<void>;
 }
 
+/**
+ * Sole entrypoint for spawn → URL detect → readiness → teardown-on-failure.
+ *
+ * Callers borrow the returned session; gates must not spawn their own servers.
+ */
 export async function createDevServerSession(
   workspacePath: string,
   config: DevServerConfig,
@@ -51,13 +56,16 @@ export async function createDevServerSession(
     );
   }
 
+  let stopped = false;
   return {
     url,
     serverCommand: config.command,
     isAlive() {
+      if (stopped) return false;
       return handle.process.exitCode === null && !handle.process.killed;
     },
     async stop() {
+      stopped = true;
       await stopDevServer(handle);
     },
   };
@@ -80,7 +88,7 @@ export async function loadDevServerConfig(playwrightConfigPath: string): Promise
   };
 }
 
-export function startDevServer(
+function startDevServer(
   workspacePath: string,
   command: string,
   configuredUrl: string,
@@ -173,7 +181,7 @@ export function startDevServer(
   };
 }
 
-export async function waitForServer(url: string, timeoutMs: number): Promise<void> {
+async function waitForServer(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = "server not ready";
 
@@ -194,7 +202,7 @@ export async function waitForServer(url: string, timeoutMs: number): Promise<voi
   throw new Error(`Dev server did not become ready at ${url} within ${timeoutMs}ms (${lastError}).`);
 }
 
-export async function stopDevServer(target: DevServerHandle | ChildProcess | null): Promise<void> {
+async function stopDevServer(target: DevServerHandle | ChildProcess | null): Promise<void> {
   const child = target && "process" in target && "detectedUrl" in target ? target.process : target;
   if (!child || child.exitCode !== null) {
     return;
