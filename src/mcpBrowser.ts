@@ -264,7 +264,7 @@ export async function writePlaywrightMcpConfig(
  * For CLIs with no flag to point elsewhere (Cursor), the harness has to write
  * into the project, which is why the caller restores it afterwards.
  */
-export async function ensurePlaywrightMcp(
+async function ensurePlaywrightMcp(
   workspacePath: string,
   relativePath = ".cursor/mcp.json",
   outputDir?: string,
