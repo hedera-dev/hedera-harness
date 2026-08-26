@@ -246,3 +246,21 @@ routes:
       skipToolChecks: true,
       maxAttempts: 1,
     });
+  } finally {
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    Object.assign(process.env, previous);
+  }
+
+  assert.equal(result.report.passed, false);
+  assert.ok(result.report.validation.playwrightGate);
+  assert.equal(result.report.validation.playwrightGate.passed, false);
+  assert.equal(result.report.semanticValidation, undefined, "EVALUATE must be skipped");
+  await assert.rejects(
+    () => readFile(argvFile, "utf8"),
+    "validator must not have been invoked",
+  );
+  await assert.rejects(
+    () => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"),
+    "Cursor MCP snapshot must not run when SMOKE fails",
+  );
+}, { timeout: 180_000 });
