@@ -4,12 +4,10 @@ import { executeCommand } from "../command.js";
 import { pathExists } from "../fsUtils.js";
 import type {
   CommandExecutionResult,
-  PlaywrightGateResult,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
 } from "../types.js";
-import { runPlaywrightGate } from "./playwrightGate.js";
 import {
   computeInstallFingerprint,
   readCachedInstallFingerprint,
@@ -17,8 +15,6 @@ import {
 } from "./installFingerprint.js";
 
 export interface DeterministicValidationOptions {
-  /** When true, Playwright gate is omitted (caller runs it with a shared dev server). */
-  skipPlaywrightGate?: boolean;
   /** Persist install fingerprint across attempts under this run cache path. */
   installCachePath?: string;
 }
@@ -97,25 +93,10 @@ export async function runDeterministicValidation(
   findings.push(...commandValidation.findings);
   commandResults.push(...commandValidation.commandResults);
 
-  let playwrightGate: PlaywrightGateResult | undefined;
-  if (spec.validators.playwrightPath && !options.skipPlaywrightGate) {
-    if (commandValidation.findings.length === 0) {
-      console.log("[hedera-harness] Running thin Playwright gate...");
-      const gate = await runPlaywrightGate(workspacePath, spec.validators.playwrightPath);
-      playwrightGate = gate.result;
-      findings.push(...gate.findings);
-    } else {
-      console.log(
-        "[hedera-harness] Skipping Playwright gate because yarn command validation failed.",
-      );
-    }
-  }
-
   return {
     passed: findings.length === 0,
     findings,
     commandResults,
-    playwrightGate,
   };
 }
 

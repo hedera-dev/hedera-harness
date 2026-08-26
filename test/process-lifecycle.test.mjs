@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
@@ -109,4 +109,55 @@ test("createDevServerSession tears down the server when readiness fails", async 
   const pid = Number.parseInt((await readFile(pidFile, "utf8")).trim(), 10);
   assert.ok(Number.isInteger(pid), "server should have written its pid");
   assert.ok(await waitForDeath(pid), `dev server ${pid} should have been torn down`);
+});
+
+test("createDevServerSession happy path stops the process group", async () => {
+  const dir = await makeOsTempDir("harness-devserver-ok-");
+  const pidFile = path.join(dir, "server.pid");
+  const serverScript = path.join(dir, "server.mjs");
+
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+const server = createServer((_req, res) => {
+  res.writeHead(200, { "content-type": "text/plain" });
+  res.end("ok");
+});
+server.listen(0, "127.0.0.1", () => {
+  console.log("Local: http://127.0.0.1:" + server.address().port);
+});
+`,
+  );
+
+  const session = await createDevServerSession(
+    dir,
+    {
+      command: `node ${JSON.stringify(serverScript)}`,
+      configuredUrl: "http://127.0.0.1:0",
+      timeoutMs: 10_000,
+    },
+    "test",
+  );
+
+  assert.match(session.url, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.equal(session.isAlive(), true);
+
+  const pid = Number.parseInt((await readFile(pidFile, "utf8")).trim(), 10);
+  assert.ok(Number.isInteger(pid));
+
+  await session.stop();
+  assert.ok(await waitForDeath(pid), `dev server ${pid} should have been stopped`);
+  assert.equal(session.isAlive(), false);
+});
+
+test("createDevServerSession is the only lifecycle entry callers need", async () => {
+  const mod = await import(pathToFileURL(path.resolve("dist/validation/devServer.js")).href);
+  assert.equal(typeof mod.createDevServerSession, "function");
+  assert.equal(typeof mod.loadDevServerConfig, "function");
+  assert.equal(mod.startDevServer, undefined, "startDevServer must stay module-private");
+  assert.equal(mod.waitForServer, undefined, "waitForServer must stay module-private");
+  assert.equal(mod.stopDevServer, undefined, "stopDevServer must stay module-private");
 });

@@ -172,12 +172,8 @@ export async function runGenerateStage(
 }
 
 /** ASSERT — deterministic gates: required/forbidden files, static config, secrets, commands. */
-export async function runAssertStage(
-  context: AttemptStageContext,
-  options: { skipPlaywrightGate: boolean },
-): Promise<ValidationResult> {
+export async function runAssertStage(context: AttemptStageContext): Promise<ValidationResult> {
   return runDeterministicValidation(context.workspacePath, context.spec, {
-    skipPlaywrightGate: options.skipPlaywrightGate,
     installCachePath: path.join(context.layout.cacheDirectory, "install-fingerprint.txt"),
   });
 }
@@ -282,22 +278,21 @@ export async function runEvaluateStage(
 }
 
 /**
- * Run ASSERT, then SMOKE and EVALUATE if the cheap gates left nothing open.
+ * Run ASSERT, then SMOKE (and EVALUATE when configured) if the cheap gates left
+ * nothing open.
  *
- * SMOKE and EVALUATE share one dev server for the attempt: booting a Next app
- * twice per attempt is the single most expensive thing the harness could do.
+ * Any configured Playwright path boots one DevServerSession; SMOKE and EVALUATE
+ * borrow it. ASSERT never owns a server.
  */
 export async function runValidationStages(
   context: AttemptStageContext,
   generateFinding?: ValidationFinding,
 ): Promise<ValidationResult> {
-  const usesSharedDevServer =
-    isValidatorEnabled(context.spec) && Boolean(context.spec.validators.playwrightPath);
+  const hasPlaywright = Boolean(context.spec.validators.playwrightPath);
+  const runEvaluate = hasPlaywright && isValidatorEnabled(context.spec);
 
   logStage("ASSERT");
-  const deterministic = await runAssertStage(context, {
-    skipPlaywrightGate: usesSharedDevServer,
-  });
+  const deterministic = await runAssertStage(context);
 
   const validation: ValidationResult = generateFinding
     ? {
@@ -315,7 +310,7 @@ export async function runValidationStages(
     logStage("SMOKE", "skipped — deterministic gates are not clean");
     return validation;
   }
-  if (!usesSharedDevServer) {
+  if (!hasPlaywright) {
     return validation;
   }
 
@@ -346,6 +341,9 @@ export async function runValidationStages(
 
     if (!afterSmoke.passed) {
       logStage("EVALUATE", "skipped — smoke gate failed");
+      return afterSmoke;
+    }
+    if (!runEvaluate) {
       return afterSmoke;
     }
 
