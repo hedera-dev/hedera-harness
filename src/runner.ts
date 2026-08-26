@@ -16,26 +16,7 @@ import {
   provisionChainSigner,
 } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
-import {
-  runSession,
-  type SessionRunResult,
-  type RunSessionOptions,
-} from "./sessionRunner.js";
 import { withValidatorMcp } from "./validatorMcp.js";
-
-export interface ProjectRunResult extends SessionRunResult {}
-
-/**
- * Project-centric harness entrypoint.
- *
- * Operates on the project cwd (or `--workspace`), creates/continues
- * `harness/run-*` branches, and stores artifacts under `.harness/runs/`.
- *
- * Bootstrap a project first with `hedera-harness init`.
- */
-export async function runHarness(options: RunSessionOptions): Promise<ProjectRunResult> {
-  return runSession(options);
-}
 
 export async function validateWorkspace(options: CliOptions) {
   // Project-centric default: validate the current project (cwd), like `run`.

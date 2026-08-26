@@ -5,7 +5,7 @@ import {
   appendHarnessNote,
   writeStatusFile,
 } from "./runArtifacts.js";
-import { logPhase, runSessionAttemptLoop } from "./attemptLoop.js";
+import { logPhase, runAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
@@ -253,7 +253,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         );
       }
 
-      const sliceReport = await runSessionAttemptLoop({
+      const sliceReport = await runAttemptLoop({
         layout,
         spec,
         specPath: loaded.specPath,

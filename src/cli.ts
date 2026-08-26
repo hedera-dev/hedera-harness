@@ -1,7 +1,8 @@
 import { runInit } from "./initRunner.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { formatMigrationResult, migrateSpecFile } from "./migrate.js";
-import { runHarness, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
+import { validateSemanticWorkspace, validateWorkspace } from "./runner.js";
+import { runSession } from "./sessionRunner.js";
 import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
 
 const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "migrate", "validate", "validate-semantic"]);
@@ -162,7 +163,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     return;
   }
 
-  const { report, outroLines } = await runHarness(parsed.options);
+  const { report, outroLines } = await runSession(parsed.options);
   console.log(outroLines.join("\n"));
 
   if (!report.passed) {

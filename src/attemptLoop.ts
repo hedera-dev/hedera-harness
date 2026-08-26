@@ -115,13 +115,6 @@ export function createSessionPromptStrategy(
 }
 
 /** In-place project-centric `run` attempt loop. */
-export async function runSessionAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
-  return runAttemptLoop({
-    ...input,
-    promptStrategy: input.promptStrategy ?? createSessionPromptStrategy(input),
-  });
-}
-
 export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
   const {
     layout,

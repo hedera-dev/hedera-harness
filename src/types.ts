@@ -74,7 +74,6 @@ export interface AgentRunInput {
   workspacePath: string;
   prompt: string;
   attempt: number;
-  role?: "generator" | "validator";
   timeoutMs?: number;
   logPath?: string;
   activityLogPath?: string;
@@ -97,8 +96,6 @@ export interface CommandAgentConfig {
   env?: Record<string, string>;
   timeoutMs?: number;
 }
-
-export type AgentConfig = CommandAgentConfig;
 
 export interface PreflightCommandConfig {
   name?: string;
