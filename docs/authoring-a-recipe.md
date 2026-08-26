@@ -171,6 +171,9 @@ chainValidation:
 
 - the operator must be **ECDSA**, not ED25519 — ED25519 has no EVM alias
 - export the env vars in your shell; they are never written into the workspace
+- `doctor` verifies the operator on-chain before you pay for a run: the
+  account exists on testnet, the key matches it, and the balance covers
+  `fundingHbar` — via one mirror-node read, no transaction
 - the template must keep the burner connector enabled so headless signing works
 - for Solidity templates, map `expose.envVars` and `deploy.commands` so
   contracts are deployed before the app is graded
