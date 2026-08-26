@@ -178,6 +178,12 @@ chainValidation:
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.
 
+The signer is created with unlimited automatic token associations (HIP-904),
+so templates that pay or reward it in HTS tokens (USDC, badge tokens) work
+without an explicit associate step. If the account still holds tokens at run
+end it cannot be deleted — the sweep drains its HBAR back to the operator and
+keeps the account for reuse instead.
+
 ## Building in increments
 
 For anything larger than a single change, list PRDs in order:
