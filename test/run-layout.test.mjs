@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,9 +13,24 @@ const {
   resolveArtifactDirsForWorkspace,
   resolveRunDirectoryForWorkspace,
   lastAttemptNumber,
-  nextCycleNumber,
   LAYOUT_MODE_IN_PLACE_RUN,
 } = await import(distUrl);
+
+async function nextCycleFromReports(reportsDirectory) {
+  let maxCycle = 0;
+  try {
+    const entries = await readdir(reportsDirectory);
+    for (const entry of entries) {
+      const match = /^cycle-(\d+)\.json$/.exec(entry);
+      if (match) {
+        maxCycle = Math.max(maxCycle, Number.parseInt(match[1], 10));
+      }
+    }
+  } catch {
+    // empty / missing
+  }
+  return maxCycle + 1;
+}
 
 function loggingPaths(root) {
   return {
@@ -108,7 +123,7 @@ test("continue attempt and cycle numbering accumulate across kicks", async () =>
   const layout = await createSessionLayout(cwd, "continue-demo", loggingPaths(cwd));
 
   assert.equal(await lastAttemptNumber(layout.logsDirectory), 0);
-  assert.equal(await nextCycleNumber(layout.reportsDirectory), 1);
+  assert.equal(await nextCycleFromReports(layout.reportsDirectory), 1);
 
   await writeFile(path.join(layout.logsDirectory, "generator-attempt-1.log"), "ok\n");
   await writeFile(path.join(layout.logsDirectory, "validation-attempt-1.json"), "{}\n");
@@ -116,15 +131,15 @@ test("continue attempt and cycle numbering accumulate across kicks", async () =>
   await writeFile(path.join(layout.reportsDirectory, "report.json"), JSON.stringify({}));
 
   assert.equal(await lastAttemptNumber(layout.logsDirectory), 2);
-  assert.equal(await nextCycleNumber(layout.reportsDirectory), 1);
+  assert.equal(await nextCycleFromReports(layout.reportsDirectory), 1);
 
   await writeFile(path.join(layout.reportsDirectory, "cycle-1.json"), "{}\n");
-  assert.equal(await nextCycleNumber(layout.reportsDirectory), 2);
+  assert.equal(await nextCycleFromReports(layout.reportsDirectory), 2);
 
   const reopened = await openRunLayout(layout.runDirectory, loggingPaths(cwd));
   assert.equal(reopened.mode, LAYOUT_MODE_IN_PLACE_RUN);
   const startingAttempt = (await lastAttemptNumber(reopened.logsDirectory)) + 1;
-  const cycle = await nextCycleNumber(reopened.reportsDirectory);
+  const cycle = await nextCycleFromReports(reopened.reportsDirectory);
   assert.equal(startingAttempt, 3);
   assert.equal(cycle, 2);
 
@@ -132,7 +147,7 @@ test("continue attempt and cycle numbering accumulate across kicks", async () =>
   await writeFile(path.join(reopened.logsDirectory, "continue-cycle-2-attempt-3.txt"), "prompt\n");
   await writeFile(path.join(reopened.reportsDirectory, "cycle-2.json"), "{}\n");
   assert.equal(await lastAttemptNumber(reopened.logsDirectory), 3);
-  assert.equal(await nextCycleNumber(reopened.reportsDirectory), 3);
+  assert.equal(await nextCycleFromReports(reopened.reportsDirectory), 3);
 });
 
 test("layout.json round-trips an explicit workspace path", async () => {

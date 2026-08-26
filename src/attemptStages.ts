@@ -121,7 +121,6 @@ export async function runGenerateStage(
       workspacePath,
       prompt: input.prompt,
       attempt,
-      role: "generator",
       timeoutMs: spec.generator.timeoutMs,
       logPath: input.agentLogPath,
       activityLogPath: input.agentActivityLogPath,

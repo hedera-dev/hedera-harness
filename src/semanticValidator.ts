@@ -113,7 +113,6 @@ export async function runSemanticValidation(input: {
       workspacePath: input.workspacePath,
       prompt,
       attempt: input.attempt,
-      role: "validator",
       timeoutMs: validatorConfig.timeoutMs,
       logPath: agentLogPath,
       activityLogPath: agentActivityLogPath,

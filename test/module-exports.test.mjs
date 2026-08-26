@@ -23,9 +23,7 @@ test("refactored modules export the shared attempt loop and both runners", async
   assert.equal(typeof stages.runValidationStages, "function");
 
   assert.equal(typeof attemptLoop.runAttemptLoop, "function");
-  assert.equal(typeof attemptLoop.runSessionAttemptLoop, "function");
   assert.equal(typeof attemptLoop.createSessionPromptStrategy, "function");
-  assert.equal(typeof runner.runHarness, "function");
   assert.equal(typeof runner.validateWorkspace, "function");
   assert.equal(typeof runner.validateSemanticWorkspace, "function");
   assert.equal(typeof sessionRunner.runSession, "function");

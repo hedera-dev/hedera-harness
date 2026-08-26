@@ -159,27 +159,6 @@ export async function lastAttemptNumber(logsDirectory: string): Promise<number> 
   return maxAttempt;
 }
 
-export async function nextAttemptNumber(logsDirectory: string): Promise<number> {
-  return (await lastAttemptNumber(logsDirectory)) + 1;
-}
-
-/** 1-based cycle index for the next --continue kick. */
-export async function nextCycleNumber(reportsDirectory: string): Promise<number> {
-  let maxCycle = 0;
-  try {
-    const entries = await readdir(reportsDirectory);
-    for (const entry of entries) {
-      const match = /^cycle-(\d+)\.json$/.exec(entry);
-      if (match) {
-        maxCycle = Math.max(maxCycle, Number.parseInt(match[1], 10));
-      }
-    }
-  } catch {
-    // empty / missing
-  }
-  return maxCycle + 1;
-}
-
 export async function appendHarnessLog(jsonlLogPath: string, event: HarnessLogEvent): Promise<void> {
   await appendFile(jsonlLogPath, `${JSON.stringify(event)}\n`, "utf8");
 }

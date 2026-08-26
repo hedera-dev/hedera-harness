@@ -44,7 +44,7 @@ export class CommandAgentProvider implements AgentProvider {
     const args = buildArgs(this.config.args ?? [], {
       prompt: input.prompt,
       workspacePath: input.workspacePath,
-    }, input.role);
+    });
     const timeoutMs = input.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const idleTimeoutMs = readIdleTimeoutMs();
     const streamLogger = input.activityLogPath
@@ -247,7 +247,6 @@ async function finalizeAgentLog(
 function buildArgs(
   configArgs: string[],
   input: { prompt: string; workspacePath: string },
-  _role?: "generator" | "validator",
 ): string[] {
   // Keep --force for validators: headless Cursor rejects non-readonly MCP tool
   // calls (e.g. browser_navigate) without it. Edit isolation is prompt-enforced.
