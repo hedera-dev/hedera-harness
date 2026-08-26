@@ -146,3 +146,115 @@ test("doctor reports an unknown agent CLI as a failure", async () => {
   assert.match(agentCheck.detail, /not on PATH/);
   assert.equal(report.passed, false);
 });
+
+// --- chainValidation operator preflight -------------------------------------
+
+const CHAIN_SPEC_EXTRA = `chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: T_DOCTOR_OP_ID
+    privateKeyEnv: T_DOCTOR_OP_KEY
+  fundingHbar: 2
+`;
+
+/** Run doctor against a chainValidation recipe with env + fetch stubbed. */
+async function doctorWithChainOperator({ accountId, privateKey, fetchImpl }) {
+  const root = await makeProject({ specBody: specWith("node", CHAIN_SPEC_EXTRA) });
+  const previousEnv = {
+    T_DOCTOR_OP_ID: process.env.T_DOCTOR_OP_ID,
+    T_DOCTOR_OP_KEY: process.env.T_DOCTOR_OP_KEY,
+  };
+  const previousFetch = globalThis.fetch;
+  process.env.T_DOCTOR_OP_ID = accountId;
+  process.env.T_DOCTOR_OP_KEY = privateKey;
+  globalThis.fetch = fetchImpl;
+  try {
+    return await runDoctor({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+const mirrorAccount = body => async () => ({ ok: true, status: 200, json: async () => body });
+const operatorCheck = report => report.checks.find(check => check.name === "operator (chainValidation)");
+
+const { PrivateKey } = await import("@hiero-ledger/sdk");
+const OPERATOR_KEY = PrivateKey.generateECDSA();
+const OPERATOR_PUBLIC = OPERATOR_KEY.publicKey.toStringRaw().toLowerCase();
+
+test("doctor passes an operator whose key matches and balance covers fundingHbar", async () => {
+  const report = await doctorWithChainOperator({
+    accountId: "0.0.4321",
+    privateKey: OPERATOR_KEY.toStringRaw(),
+    fetchImpl: mirrorAccount({
+      key: { _type: "ECDSA_SECP256K1", key: OPERATOR_PUBLIC },
+      balance: { balance: 500_000_000 },
+    }),
+  });
+
+  const check = operatorCheck(report);
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /key matches/);
+});
+
+test("doctor fails when the private key does not match the operator account", async () => {
+  const report = await doctorWithChainOperator({
+    accountId: "0.0.4321",
+    privateKey: OPERATOR_KEY.toStringRaw(),
+    fetchImpl: mirrorAccount({
+      key: { _type: "ECDSA_SECP256K1", key: PrivateKey.generateECDSA().publicKey.toStringRaw() },
+      balance: { balance: 500_000_000 },
+    }),
+  });
+
+  const check = operatorCheck(report);
+  assert.equal(check.status, "fail");
+  assert.match(check.fix, /INVALID_SIGNATURE/);
+});
+
+test("doctor fails when the operator account does not exist on testnet", async () => {
+  const report = await doctorWithChainOperator({
+    accountId: "0.0.4321",
+    privateKey: OPERATOR_KEY.toStringRaw(),
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+  });
+
+  assert.equal(operatorCheck(report).status, "fail");
+});
+
+test("doctor fails when the operator cannot fund the ephemeral signer", async () => {
+  const report = await doctorWithChainOperator({
+    accountId: "0.0.4321",
+    privateKey: OPERATOR_KEY.toStringRaw(),
+    fetchImpl: mirrorAccount({
+      key: { _type: "ECDSA_SECP256K1", key: OPERATOR_PUBLIC },
+      balance: { balance: 100_000_000 },
+    }),
+  });
+
+  const check = operatorCheck(report);
+  assert.equal(check.status, "fail");
+  assert.match(check.detail, /fundingHbar/);
+});
+
+test("doctor only warns when the mirror node is unreachable", async () => {
+  const report = await doctorWithChainOperator({
+    accountId: "0.0.4321",
+    privateKey: OPERATOR_KEY.toStringRaw(),
+    fetchImpl: async () => {
+      throw new Error("network down");
+    },
+  });
+
+  const check = operatorCheck(report);
+  assert.equal(check.status, "warn");
+  assert.equal(report.passed, true, "an offline machine must not fail doctor");
+});

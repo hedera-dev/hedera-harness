@@ -3,8 +3,8 @@ import path from "node:path";
 import { importHieroSdk, type OptionalDepInstallOptions } from "../optionalDeps.js";
 import type { ChainSigner, ChainValidationConfig } from "../types.js";
 
-type HieroSdk = typeof import("@hiero-ledger/sdk");
-type PrivateKey = ReturnType<HieroSdk["PrivateKey"]["fromString"]>;
+export type HieroSdk = typeof import("@hiero-ledger/sdk");
+export type PrivateKey = ReturnType<HieroSdk["PrivateKey"]["fromString"]>;
 
 export const CHAIN_SIGNER_FILENAME = "chain-signer.json";
 
@@ -301,8 +301,9 @@ async function readOperatorCredentials(config: ChainValidationConfig): Promise<{
 /**
  * Accept common portal/SDK export formats: raw ECDSA hex, DER hex, or auto-detect.
  * Tip: ECDSA secp256k1 private keys are 32 bytes (64 hex chars), optionally 0x-prefixed.
+ * Exported so `doctor` can preflight the key with the same rules and wording.
  */
-function parseOperatorPrivateKey(sdk: HieroSdk, raw: string, envVarName: string): PrivateKey {
+export function parseOperatorPrivateKey(sdk: HieroSdk, raw: string, envVarName: string): PrivateKey {
   const trimmed = raw.trim();
   const hex = strip0x(trimmed);
   const errors: string[] = [];

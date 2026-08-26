@@ -10,7 +10,7 @@ import {
   PROMPT_TEMPLATE_NAMES,
   resolvePromptTemplatePath,
 } from "./promptTemplates.js";
-import type { CliOptions, TemplateSpec } from "./types.js";
+import type { ChainValidationConfig, CliOptions, TemplateSpec } from "./types.js";
 
 export type CheckStatus = "ok" | "warn" | "fail";
 
@@ -65,7 +65,7 @@ export async function runDoctor(
     checks.push(...(await checkRecipeFiles(spec)));
     checks.push(await checkPromptOverrides(spec.projectRoot));
     checks.push(...(await checkOptionalDeps(spec, workspacePath)));
-    checks.push(...checkChainEnv(spec));
+    checks.push(...(await checkChainOperator(spec)));
   }
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
@@ -348,10 +348,7 @@ async function checkImport(pkg: string, feature: string, tool: string): Promise<
   }
 }
 
-function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
-  const chain = spec.chainValidation;
-  if (!chain?.enabled) return [];
-
+function checkChainEnv(chain: ChainValidationConfig): DoctorCheck[] {
   return [chain.operator.accountIdEnv, chain.operator.privateKeyEnv].map(name => {
     const value = process.env[name]?.trim();
     return value
@@ -363,4 +360,132 @@ function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
           fix: `Required by chainValidation. Testnet credentials from https://portal.hedera.com.`,
         };
   });
+}
+
+/**
+ * Verify the chainValidation operator before a run pays for one.
+ *
+ * The run itself only discovers a bad operator at Tier 3.5 provisioning —
+ * after baseline installs and builds. A wrong key (INVALID_SIGNATURE), a
+ * mistyped or non-existent account, or too little HBAR to fund the ephemeral
+ * signer are all knowable in one mirror-node read, so doctor checks them here.
+ */
+async function checkChainOperator(spec: TemplateSpec): Promise<DoctorCheck[]> {
+  const chain = spec.chainValidation;
+  if (!chain?.enabled) return [];
+
+  const checks = checkChainEnv(chain);
+  if (checks.some(check => check.status !== "ok")) return checks;
+
+  checks.push(await checkOperatorOnChain(chain));
+  return checks;
+}
+
+const MIRROR_ACCOUNTS_URL = "https://testnet.mirrornode.hedera.com/api/v1/accounts/";
+
+async function checkOperatorOnChain(chain: ChainValidationConfig): Promise<DoctorCheck> {
+  const name = "operator (chainValidation)";
+  const accountId = process.env[chain.operator.accountIdEnv]?.trim() ?? "";
+  const privateKeyRaw = process.env[chain.operator.privateKeyEnv]?.trim() ?? "";
+
+  // Same format rules and wording the run enforces at its start.
+  try {
+    const { assertChainValidationOperatorEnv } = await import("./validation/chainSigner.js");
+    assertChainValidationOperatorEnv(chain);
+  } catch (error) {
+    return {
+      name,
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  // Parse the key locally when the SDK is present (its absence has its own check).
+  let publicKeyHex: string | undefined;
+  try {
+    const sdk = await import("@hiero-ledger/sdk");
+    const { parseOperatorPrivateKey } = await import("./validation/chainSigner.js");
+    try {
+      publicKeyHex = parseOperatorPrivateKey(sdk, privateKeyRaw, chain.operator.privateKeyEnv)
+        .publicKey.toStringRaw()
+        .toLowerCase();
+    } catch (error) {
+      return {
+        name,
+        status: "fail",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  } catch {
+    // SDK not installed — reported by checkOptionalDeps; key match is skipped.
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${MIRROR_ACCOUNTS_URL}${accountId}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    return {
+      name,
+      status: "warn",
+      detail: `could not reach the testnet mirror node to verify ${accountId}`,
+      fix: "On-chain operator checks were skipped — a run may still work once connectivity is back.",
+    };
+  }
+
+  if (response.status === 404) {
+    return {
+      name,
+      status: "fail",
+      detail: `account ${accountId} does not exist on testnet`,
+      fix: "Create and fund a testnet ECDSA account at https://portal.hedera.com, then use its Account ID.",
+    };
+  }
+  if (!response.ok) {
+    return {
+      name,
+      status: "warn",
+      detail: `mirror node returned HTTP ${response.status} for ${accountId} — on-chain checks skipped`,
+    };
+  }
+
+  const account = (await response.json()) as {
+    key?: { _type?: string; key?: string };
+    balance?: { balance?: number };
+  };
+
+  if (account.key?._type === "ED25519") {
+    return {
+      name,
+      status: "fail",
+      detail: `account ${accountId} uses an ED25519 key`,
+      fix: "chainValidation requires an ECDSA operator — ED25519 has no EVM alias. Create an ECDSA account at https://portal.hedera.com.",
+    };
+  }
+
+  if (publicKeyHex && account.key?.key && account.key.key.toLowerCase() !== publicKeyHex) {
+    return {
+      name,
+      status: "fail",
+      detail: `the key in $${chain.operator.privateKeyEnv} does not match account ${accountId}`,
+      fix: "Provisioning would fail with INVALID_SIGNATURE. Use the private key that owns this account, or fix the account ID.",
+    };
+  }
+
+  const balanceHbar = (account.balance?.balance ?? 0) / 100_000_000;
+  if (balanceHbar < chain.fundingHbar + 1) {
+    return {
+      name,
+      status: "fail",
+      detail: `account ${accountId} holds ${balanceHbar.toFixed(2)} ℏ — funding the ephemeral signer needs fundingHbar (${chain.fundingHbar} ℏ) plus fees`,
+      fix: "Top up the operator at https://portal.hedera.com, or lower chainValidation.fundingHbar.",
+    };
+  }
+
+  return {
+    name,
+    status: "ok",
+    detail: `${accountId} — ${publicKeyHex ? "key matches, " : ""}${balanceHbar.toFixed(2)} ℏ`,
+  };
 }
