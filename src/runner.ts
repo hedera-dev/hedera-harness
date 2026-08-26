@@ -10,10 +10,11 @@ import { logPhase } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import type { ChainSigner, CliOptions, SemanticValidationResult, ValidationResult } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
-import { runDeterministicValidation } from "./validation/index.js";
+import { isReadyForPlaywrightSmoke, runDeterministicValidation } from "./validation/index.js";
 import {
   createDevServerSession,
   loadDevServerConfig,
+  type DevServerSession,
 } from "./validation/devServer.js";
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
 import {
@@ -39,16 +40,13 @@ export async function validateWorkspace(options: CliOptions): Promise<Validation
     return deterministic;
   }
 
-  const commandFailed = deterministic.findings.some(finding => finding.category === "commands");
-  if (commandFailed) {
-    console.log(
-      "[hedera-harness] Skipping Playwright gate because yarn command validation failed.",
-    );
+  if (!isReadyForPlaywrightSmoke(deterministic)) {
+    console.log("[hedera-harness] Skipping Playwright gate because deterministic gates are not clean.");
     return deterministic;
   }
 
   const serverConfig = await loadDevServerConfig(playwrightPath);
-  let devServer = null as Awaited<ReturnType<typeof createDevServerSession>> | null;
+  let devServer: DevServerSession | null = null;
   try {
     console.log("[hedera-harness] Running thin Playwright gate...");
     devServer = await createDevServerSession(workspacePath, serverConfig, "validate");
@@ -133,7 +131,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
   logPhase(`Semantic validation attempt ${attempt} started`, workspacePath);
 
   const serverConfig = await loadDevServerConfig(spec.validators.playwrightPath);
-  let devServer = null as Awaited<ReturnType<typeof createDevServerSession>> | null;
+  let devServer: DevServerSession | null = null;
   try {
     devServer = await createDevServerSession(workspacePath, serverConfig, "validate-semantic");
     const result = await withValidatorMcp(

@@ -13,7 +13,7 @@ import type {
   ValidationResult,
 } from "./types.js";
 import { executeCommand } from "./command.js";
-import { runDeterministicValidation } from "./validation/index.js";
+import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
 import {
@@ -303,10 +303,7 @@ export async function runValidationStages(
       }
     : deterministic;
 
-  const deterministicClean =
-    validation.findings.filter(finding => finding.category !== "agent").length === 0;
-
-  if (generateFinding || !deterministicClean) {
+  if (generateFinding || !isReadyForPlaywrightSmoke(validation)) {
     logStage("SMOKE", "skipped — deterministic gates are not clean");
     return validation;
   }

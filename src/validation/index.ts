@@ -19,6 +19,19 @@ export interface DeterministicValidationOptions {
   installCachePath?: string;
 }
 
+/**
+ * Whether ASSERT left the workspace clean enough to pay for a Playwright SMOKE boot.
+ *
+ * Agent findings are ignored so a failed GENERATE can still run ASSERT/SMOKE for
+ * deterministic context. Every other finding (files, static, secrets, commands)
+ * blocks the boot — shared by `run` and `validate`.
+ */
+export function isReadyForPlaywrightSmoke(
+  validation: Pick<ValidationResult, "findings">,
+): boolean {
+  return validation.findings.every(finding => finding.category === "agent");
+}
+
 interface StaticValidatorConfig {
   jsonAssertions?: Array<{
     file: string;
