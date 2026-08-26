@@ -88,8 +88,9 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
       "--stream-partial-output",
     ],
     timeoutMs: 3_600_000,
-    // The Cursor CLI has no flag to point at an MCP config; it reads the
-    // workspace file, so the harness must write it and restore it afterwards.
+    // Cursor CLI has no --mcp-config flag. A probe on 2026.08.11-e8db854 showed
+    // root `.mcp.json` alone is not enough; it loads `.cursor/mcp.json`, so the
+    // harness writes that file and restores it afterwards.
     mcp: { kind: "workspace-file", path: ".cursor/mcp.json" },
     modelFlag: "--model",
     defaultModel: "composer-2.5",

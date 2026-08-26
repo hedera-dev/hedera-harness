@@ -319,9 +319,7 @@ export async function runValidationStages(
     return validation;
   }
 
-  let mcpArgs: string[] = [];
-
-  const runtimeStages = async (): Promise<ValidationResult> => {
+  const runtimeStages = async (mcpArgs: string[]): Promise<ValidationResult> => {
     const deployFindings = await runChainDeploy(context);
     if (deployFindings.length > 0) {
       logStage("SMOKE", "chain deploy failed");
@@ -372,10 +370,7 @@ export async function runValidationStages(
       workspacePath: context.workspacePath,
       artifactsDirectory: context.layout.runDirectory,
     },
-    async extraArgs => {
-      mcpArgs = extraArgs;
-      return runtimeStages();
-    },
+    mcpArgs => runtimeStages(mcpArgs),
   );
 }
 

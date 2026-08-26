@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   withPlaywrightMcpSnapshot,
   writePlaywrightMcpConfig,
-} from "./contextVendor.js";
+} from "./mcpBrowser.js";
 import { AGENT_PRESETS, type AgentPresetName } from "./specDefaults.js";
 
 export interface ValidatorMcpContext {
