@@ -76,6 +76,11 @@ async function createFundedSigner(
       receipt = await (
         await new sdk.AccountCreateTransaction()
           .setECDSAKeyWithAlias(ephemeralKey)
+          // HIP-904 unlimited auto-association: templates that pay or reward
+          // the signer in HTS tokens (USDC, badge tokens) would otherwise fail
+          // with TOKEN_NOT_ASSOCIATED_TO_ACCOUNT — a signer limitation the
+          // repair loop would misread as an app defect.
+          .setMaxAutomaticTokenAssociations(-1)
           .setInitialBalance(new sdk.Hbar(config.fundingHbar))
           .execute(client)
       ).getReceipt(client);
@@ -183,7 +188,9 @@ async function topUpSignerIfNeeded(
 /**
  * Best-effort sweep: delete the ephemeral account and transfer remaining HBAR
  * back to the operator. Clears `chain-signer.json` on success so `--continue`
- * does not try to reuse a deleted account.
+ * does not try to reuse a deleted account. An account still holding HTS tokens
+ * cannot be deleted — its HBAR is drained instead and the account is kept for
+ * reuse.
  */
 export async function sweepChainSigner(
   signer: ChainSigner,
@@ -209,7 +216,20 @@ export async function sweepChainSigner(
         .setTransferAccountId(sdk.AccountId.fromString(operatorId))
         .freezeWith(client);
       const signed = await frozen.sign(ephemeralKey);
-      await (await signed.execute(client)).getReceipt(client);
+      try {
+        await (await signed.execute(client)).getReceipt(client);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/TRANSACTION_REQUIRES_ZERO_TOKEN_BALANCES|ACCOUNT_IS_TREASURY/i.test(message)) {
+          throw error;
+        }
+        // The signer auto-associated and still holds HTS tokens, so the
+        // network refuses to delete the account. Recover the HBAR instead and
+        // keep the account (and chain-signer.json): a later --continue can
+        // reuse it together with its existing token associations.
+        await drainHbarToOperator(sdk, client, signer, ephemeralKey, operatorId);
+        return { success: true };
+      }
       if (runDirectory) {
         await clearPersistedSigner(chainSignerPath(runDirectory));
       }
@@ -221,6 +241,33 @@ export async function sweepChainSigner(
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, error: message };
   }
+}
+
+/**
+ * Move the signer's whole HBAR balance back to the operator. The operator is
+ * the transaction payer, so the full balance can move — the signer pays no fee.
+ */
+async function drainHbarToOperator(
+  sdk: HieroSdk,
+  client: ReturnType<HieroSdk["Client"]["forTestnet"]>,
+  signer: ChainSigner,
+  ephemeralKey: PrivateKey,
+  operatorId: string,
+): Promise<void> {
+  const balance = await new sdk.AccountBalanceQuery()
+    .setAccountId(sdk.AccountId.fromString(signer.accountId))
+    .execute(client);
+  const tinybars = BigInt(balance.hbars.toTinybars().toString());
+  if (tinybars === 0n) {
+    return;
+  }
+  const amount = sdk.Hbar.fromTinybars(tinybars.toString());
+  const frozen = await new sdk.TransferTransaction()
+    .addHbarTransfer(sdk.AccountId.fromString(signer.accountId), amount.negated())
+    .addHbarTransfer(sdk.AccountId.fromString(operatorId), amount)
+    .freezeWith(client);
+  const signed = await frozen.sign(ephemeralKey);
+  await (await signed.execute(client)).getReceipt(client);
 }
 
 /**
