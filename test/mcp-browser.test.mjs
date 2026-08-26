@@ -115,7 +115,7 @@ test("the MCP config directs session files away from the project", async () => {
   const configPath = path.join(root, ".harness", "runs", "r1", "mcp", "playwright.json");
 
   const { writePlaywrightMcpConfig } = await import(
-    pathToFileURL(path.resolve("dist/contextVendor.js")).href
+    pathToFileURL(path.resolve("dist/mcpBrowser.js")).href
   );
   await writePlaywrightMcpConfig(configPath, root);
 

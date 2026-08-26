@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
@@ -52,7 +52,19 @@ console.log(JSON.stringify({
 }));
 `;
 
-async function makeTier3Project() {
+async function makeTier3Project(options = {}) {
+  const agent = options.agent ?? "claude";
+  const playwrightBody =
+    options.playwrightBody ??
+    `name: fixture-smoke
+server:
+  command: node server.mjs
+  url: http://127.0.0.1:0
+  timeoutMs: 30000
+routes:
+  - name: home
+    path: /
+`;
   const root = await makeTestTempDir("tiers-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
   await writeFile(path.join(root, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
@@ -71,15 +83,7 @@ async function makeTier3Project() {
   );
   await writeFile(
     path.join(root, ".harness", "validators", "playwright-smoke.yaml"),
-    `name: fixture-smoke
-server:
-  command: node server.mjs
-  url: http://127.0.0.1:0
-  timeoutMs: 30000
-routes:
-  - name: home
-    path: /
-`,
+    playwrightBody,
   );
   await writeFile(
     path.join(root, ".harness", "acceptance-contract.json"),
@@ -90,13 +94,13 @@ routes:
     }),
   );
 
-  // agent: claude selects config-flag MCP delivery, so the validator should be
-  // handed --mcp-config rather than the project getting a .cursor/mcp.json.
+  // agent selects MCP delivery (config-flag vs workspace-file). Generator and
+  // validator stay mocked so the test never pays for a real model.
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
     `schemaVersion: 2
 name: tier3-fixture
-agent: claude
+agent: ${agent}
 contract: .harness/acceptance-contract.json
 skills: []
 generator:
@@ -209,5 +213,58 @@ test("a claude validator is handed --mcp-config and the project is not touched",
   await assert.rejects(
     () => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"),
     "a claude run must not write .cursor/mcp.json",
+  );
+}, { timeout: 180_000 });
+
+test("a Cursor SMOKE failure never writes .cursor/mcp.json", async () => {
+  // agent: cursor would snapshot .cursor/mcp.json around EVALUATE. If SMOKE
+  // fails first, withValidatorMcp must not run at all — no write, no restore.
+  const root = await makeTier3Project({
+    agent: "cursor",
+    playwrightBody: `name: fixture-smoke
+server:
+  command: node server.mjs
+  url: http://127.0.0.1:0
+  timeoutMs: 30000
+forbidden:
+  visibleText:
+    - Fixture app
+routes:
+  - name: home
+    path: /
+`,
+  });
+  const argvFile = path.join(root, "validator-argv.json");
+
+  const previous = { ...process.env };
+  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0" });
+  let result;
+  try {
+    result = await runSession({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+      skipToolChecks: true,
+      maxAttempts: 1,
+    });
+  } finally {
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    Object.assign(process.env, previous);
+  }
+
+  assert.equal(result.report.passed, false);
+  assert.ok(result.report.validation.playwrightGate);
+  assert.equal(result.report.validation.playwrightGate.passed, false);
+  assert.equal(result.report.semanticValidation, undefined, "EVALUATE must be skipped");
+  await assert.rejects(
+    () => readFile(argvFile, "utf8"),
+    "validator must not have been invoked",
+  );
+  await assert.rejects(
+    () => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"),
+    "Cursor MCP snapshot must not run when SMOKE fails",
+  );
+  await assert.rejects(
+    () => readdir(path.join(root, ".cursor")),
+    "withValidatorMcp must not run at all — even a restored snapshot leaves .cursor/ behind",
   );
 }, { timeout: 180_000 });

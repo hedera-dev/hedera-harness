@@ -319,64 +319,59 @@ export async function runValidationStages(
     return validation;
   }
 
-  let mcpArgs: string[] = [];
+  const deployFindings = await runChainDeploy(context);
+  if (deployFindings.length > 0) {
+    logStage("SMOKE", "chain deploy failed");
+    return {
+      ...validation,
+      passed: false,
+      findings: [...validation.findings, ...deployFindings],
+    };
+  }
 
-  const runtimeStages = async (): Promise<ValidationResult> => {
-    const deployFindings = await runChainDeploy(context);
-    if (deployFindings.length > 0) {
-      logStage("SMOKE", "chain deploy failed");
-      return {
-        ...validation,
-        passed: false,
-        findings: [...validation.findings, ...deployFindings],
-      };
+  const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
+  let devServer: DevServerSession | null = null;
+  try {
+    logStage("SMOKE", "booting dev server");
+    devServer = await createDevServerSession(context.workspacePath, serverConfig, "runtime");
+
+    const smoke = await runSmokeStage(context, devServer);
+    const afterSmoke: ValidationResult = {
+      ...validation,
+      findings: [...validation.findings, ...smoke.findings],
+      playwrightGate: smoke.playwrightGate,
+    };
+    afterSmoke.passed =
+      afterSmoke.findings.filter(finding => finding.category !== "agent").length === 0;
+
+    if (!afterSmoke.passed) {
+      logStage("EVALUATE", "skipped — smoke gate failed");
+      return afterSmoke;
     }
 
-    const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
-    let devServer: DevServerSession | null = null;
-    try {
-      logStage("SMOKE", "booting dev server");
-      devServer = await createDevServerSession(context.workspacePath, serverConfig, "runtime");
-
-      const smoke = await runSmokeStage(context, devServer);
-      const afterSmoke: ValidationResult = {
-        ...validation,
-        findings: [...validation.findings, ...smoke.findings],
-        playwrightGate: smoke.playwrightGate,
-      };
-      afterSmoke.passed =
-        afterSmoke.findings.filter(finding => finding.category !== "agent").length === 0;
-
-      if (!afterSmoke.passed) {
-        logStage("EVALUATE", "skipped — smoke gate failed");
-        return afterSmoke;
-      }
-
-      const semanticValidation = await runEvaluateStage(context, devServer, mcpArgs);
-      return semanticValidation.passed
-        ? { ...afterSmoke, semanticValidation }
-        : {
-            ...afterSmoke,
-            passed: false,
-            findings: [...afterSmoke.findings, ...semanticValidation.findings],
-            semanticValidation,
-          };
-    } finally {
-      await devServer?.stop();
-    }
-  };
-
-  return withValidatorMcp(
-    {
-      agent: context.spec.agent,
-      workspacePath: context.workspacePath,
-      artifactsDirectory: context.layout.runDirectory,
-    },
-    async extraArgs => {
-      mcpArgs = extraArgs;
-      return runtimeStages();
-    },
-  );
+    // MCP delivery is EVALUATE-only: Cursor's .cursor/mcp.json snapshot must not
+    // span deploy/boot/SMOKE (longer blast radius if the process is killed).
+    return withValidatorMcp(
+      {
+        agent: context.spec.agent,
+        workspacePath: context.workspacePath,
+        artifactsDirectory: context.layout.runDirectory,
+      },
+      async mcpArgs => {
+        const semanticValidation = await runEvaluateStage(context, devServer!, mcpArgs);
+        return semanticValidation.passed
+          ? { ...afterSmoke, semanticValidation }
+          : {
+              ...afterSmoke,
+              passed: false,
+              findings: [...afterSmoke.findings, ...semanticValidation.findings],
+              semanticValidation,
+            };
+      },
+    );
+  } finally {
+    await devServer?.stop();
+  }
 }
 
 function truncate(value: string, maxLength = 1200): string {

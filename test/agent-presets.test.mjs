@@ -8,7 +8,7 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 const { loadTemplateSpec } = await import(pathToFileURL(path.resolve("dist/specLoader.js")).href);
 const { AGENT_PRESETS } = await import(pathToFileURL(path.resolve("dist/specDefaults.js")).href);
 const { writePlaywrightMcpConfig, withPlaywrightMcpSnapshot } = await import(
-  pathToFileURL(path.resolve("dist/contextVendor.js")).href
+  pathToFileURL(path.resolve("dist/mcpBrowser.js")).href
 );
 
 const MINIMAL_BASELINE = `baseline:
@@ -101,7 +101,7 @@ test("writePlaywrightMcpConfig produces a standalone config outside the project"
   const root = await makeTestTempDir("mcp-standalone-");
   const target = path.join(root, "runs", "abc", "mcp", "playwright.json");
 
-  await writePlaywrightMcpConfig(target);
+  await writePlaywrightMcpConfig(target, root);
 
   const config = JSON.parse(await readFile(target, "utf8"));
   assert.ok(config.mcpServers.playwright.command, "playwright server must be declared");

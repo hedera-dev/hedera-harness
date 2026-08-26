@@ -6,8 +6,11 @@ import test from "node:test";
 import { makeTestTempDir } from "./tmpDir.mjs";
 
 const { vendorSkills } = await import(pathToFileURL(path.resolve("dist/skillVendor.js")).href);
-const { vendorHarnessContext, withPlaywrightMcpSnapshot } = await import(
+const { vendorHarnessContext } = await import(
   pathToFileURL(path.resolve("dist/contextVendor.js")).href
+);
+const { withPlaywrightMcpSnapshot } = await import(
+  pathToFileURL(path.resolve("dist/mcpBrowser.js")).href
 );
 const { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } = await import(
   pathToFileURL(path.resolve("dist/runtimePaths.js")).href
