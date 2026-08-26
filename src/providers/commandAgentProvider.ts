@@ -248,8 +248,6 @@ function buildArgs(
   configArgs: string[],
   input: { prompt: string; workspacePath: string },
 ): string[] {
-  // Keep --force for validators: headless Cursor rejects non-readonly MCP tool
-  // calls (e.g. browser_navigate) without it. Edit isolation is prompt-enforced.
   const replaced = configArgs.map(arg =>
     arg
       .replaceAll(WORKSPACE_PLACEHOLDER, input.workspacePath)
