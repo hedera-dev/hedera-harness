@@ -67,7 +67,7 @@ That is a complete, working recipe. `generator`, `logging`, `secretScan`, `forbi
 Pick the agent with one line:
 
 ```yaml
-agent: claude        # or: cursor (default)
+agent: cursor        # or omit for claude (default)
 ```
 
 That governs the whole run — how the generator is invoked, how the validator receives Playwright MCP, and which models are used. Enabling the semantic tier is then `validator: { enabled: true }`, not a second copy of the agent flags.

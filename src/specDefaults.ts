@@ -130,7 +130,7 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
   },
 };
 
-export const DEFAULT_AGENT_PRESET: AgentPresetName = "cursor";
+export const DEFAULT_AGENT_PRESET: AgentPresetName = "claude";
 
 export function isAgentPresetName(value: string): value is AgentPresetName {
   return Object.hasOwn(AGENT_PRESETS, value);

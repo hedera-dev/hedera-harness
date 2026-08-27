@@ -73,7 +73,20 @@ test("default agent preset is used when none is named", async () => {
 name: default-agent
 ${MINIMAL_BASELINE}`);
   const { spec } = await loadTemplateSpec(specPath);
+  assert.equal(defaults.DEFAULT_AGENT_PRESET, "claude");
+  assert.equal(spec.agent, "claude");
+  assert.equal(spec.generator.command, "claude");
   assert.equal(spec.generator.command, defaults.AGENT_PRESETS[defaults.DEFAULT_AGENT_PRESET].command);
+});
+
+test("explicit agent: cursor still selects the Cursor preset", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 2
+name: cursor-override
+agent: cursor
+${MINIMAL_BASELINE}`);
+  const { spec } = await loadTemplateSpec(specPath);
+  assert.equal(spec.agent, "cursor");
+  assert.equal(spec.generator.command, "agent");
 });
 
 test("an unknown agent preset names the available ones", async () => {
