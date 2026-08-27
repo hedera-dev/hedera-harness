@@ -5,13 +5,16 @@ import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branc
 import { executeCommand } from "./command.js";
 import {
   assertWorkingTreeCleanForRunStart,
-  commandExists,
   createAndCheckoutHarnessBranch,
   filterRelevantDirtyEntries,
   readGitRepoSnapshot,
   resolveHeadSha,
   type GitRepoSnapshot,
 } from "./harnessGit.js";
+import {
+  checkSharedPreflight,
+  SKIPPABLE_HOST_PREFLIGHT_IDS,
+} from "./preflight.js";
 import {
   createSessionLayout,
   openRunLayout,
@@ -168,7 +171,6 @@ export async function prepareSession(
   const { spec } = input.loaded;
 
   await assertPathExists(workspacePath, "workspace");
-  await assertRecipeFilesExist(spec);
 
   if (input.forceNew && input.continueBranch) {
     throw new SessionError(
@@ -182,11 +184,12 @@ export async function prepareSession(
   }
 
   const snapshot = await readGitRepoSnapshot(workspacePath);
-  await assertReadOnlyGitPreflight(snapshot);
-
-  if (!input.skipToolChecks) {
-    await assertHostTooling(workspacePath, spec);
-  }
+  await assertSharedPreflight({
+    workspacePath,
+    spec,
+    gitSnapshot: snapshot,
+    skipHostTooling: Boolean(input.skipToolChecks),
+  });
 
   const decision = decideBranchAction({
     currentBranch: snapshot.branch,
@@ -454,135 +457,40 @@ export async function findMatchingSession(input: {
   return matches[0];
 }
 
-async function assertReadOnlyGitPreflight(snapshot: GitRepoSnapshot): Promise<void> {
-  if (snapshot.detached) {
-    throw new SessionError(
-      "detached-head",
-      "Harness run requires an attached HEAD (checkout a branch before running).",
-    );
-  }
-  if (snapshot.inProgressOperation) {
-    throw new SessionError(
-      "git-operation-in-progress",
-      `Harness run refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
-    );
-  }
-  if (!snapshot.branch) {
-    throw new SessionError(
-      "missing-branch",
-      "Unable to determine the current git branch.",
-    );
-  }
-}
-
-async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void> {
-  const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
-  if (!Number.isFinite(nodeMajor) || nodeMajor < 20) {
-    throw new SessionError(
-      "node-version",
-      `Harness run requires Node.js >= 20 (found ${process.versions.node}).`,
-    );
-  }
-
-  if (!(await commandExists("git", cwd))) {
-    throw new SessionError("missing-git", "Harness run requires `git` on PATH.");
-  }
-
-  const agentCommand = spec.generator.command?.trim() || "agent";
-  // Only enforce PATH presence for bare commands (not absolute paths / npx wrappers).
-  if (!agentCommand.includes("/") && !agentCommand.includes("\\")) {
-    if (!(await commandExists(agentCommand, cwd))) {
-      throw new SessionError(
-        "missing-agent",
-        `Harness run requires generator command ${JSON.stringify(agentCommand)} on PATH.`,
-      );
-    }
-  }
-
-  const packageManager = spec.constraints?.packageManager?.trim();
-  if (packageManager) {
-    const binary = packageManager.split("@")[0] || packageManager;
-    if (!(await commandExists(binary, cwd))) {
-      throw new SessionError(
-        "missing-package-manager",
-        `Harness run requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`,
-      );
-    }
-  }
-
-  await assertTier3BrowserUsable(cwd, spec);
-}
-
 /**
- * Fail before the first agent call when EVALUATE cannot run.
- *
- * This used to surface only at EVALUATE, after a full generator session, and
- * the repair loop then spent further attempts "fixing" app code that was never
- * broken. A missing browser (or missing eval checklist) is a prerequisite, not a finding.
+ * Shared doctor/run preflight — throw SessionError on the first fail.
+ * `skipHostTooling` mirrors prepareSession's skipToolChecks (tests).
  */
-async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promise<void> {
-  if (!spec.validator?.enabled) {
-    return;
-  }
+async function assertSharedPreflight(input: {
+  workspacePath: string;
+  spec: TemplateSpec;
+  gitSnapshot: GitRepoSnapshot;
+  skipHostTooling: boolean;
+}): Promise<void> {
+  const verdicts = await checkSharedPreflight({
+    workspacePath: input.workspacePath,
+    spec: input.spec,
+    gitSnapshot: input.gitSnapshot,
+  });
 
-  if (!spec.evalPath) {
+  for (const verdict of verdicts) {
+    if (
+      input.skipHostTooling &&
+      SKIPPABLE_HOST_PREFLIGHT_IDS.has(verdict.id)
+    ) {
+      continue;
+    }
+
+    if (verdict.id === "evaluate-browser" && verdict.status === "ok") {
+      logPhase("Preflight", `EVALUATE browser ready — ${verdict.detail}`);
+    }
+
+    if (verdict.status !== "fail") continue;
+
     throw new SessionError(
-      "missing-eval",
-      [
-        "Harness run preflight failed: EVALUATE is enabled (`validator.enabled`) but `eval` is not set.",
-        "Add `eval: .harness/eval.json`.",
-        "Or disable EVALUATE by removing `validator.enabled`.",
-      ].join("\n"),
+      verdict.runErrorCode ?? "preflight-failed",
+      verdict.detail,
     );
-  }
-
-  const { probeMcpBrowser } = await import("./mcpBrowser.js");
-    logPhase("Preflight", "checking the EVALUATE browser");
-    const probe = await probeMcpBrowser(cwd);
-
-  if (probe.ok) {
-    logPhase("Preflight", `EVALUATE browser ready — ${probe.choice.detail}`);
-    return;
-  }
-
-  const fix =
-    probe.choice.source === "project-playwright"
-      ? "npx playwright install chromium"
-      : "yarn add -D playwright && npx playwright install chromium";
-
-  throw new SessionError(
-    "missing-tier3-browser",
-    [
-      "Harness run preflight failed: EVALUATE is enabled but the Playwright MCP browser could not be launched.",
-      probe.error ?? "",
-      `Fix: ${fix}`,
-      "Or disable EVALUATE by removing `eval` / `validator.enabled` from the recipe.",
-    ]
-      .filter(Boolean)
-      .join("\n  "),
-  );
-}
-
-async function assertRecipeFilesExist(spec: TemplateSpec): Promise<void> {
-  const required: Array<[string, string]> = [
-    ...spec.prdPaths.map(
-      (prdPath, index): [string, string] => [
-        spec.prdPaths.length > 1 ? `prd[${index}]` : "prd",
-        prdPath,
-      ],
-    ),
-    ["validators.static", spec.validators.staticPath],
-    ["validators.commands", spec.validators.commandsPath],
-  ];
-
-  for (const [label, filePath] of required) {
-    await assertPathExists(filePath, label);
-  }
-  if (spec.evalPath) {
-    await assertPathExists(spec.evalPath, "eval");
-  }
-  if (spec.validators.playwrightPath) {
-    await assertPathExists(spec.validators.playwrightPath, "validators.playwright");
   }
 }
 

@@ -51,6 +51,9 @@
 - Dropped `docs/implementation-plan.md` (historical phase notes, not product docs).
 - Removed doctor warnings for non-`E*` checklist ids and stale prompt override
   filenames — greenfield recipes use current names; old files are ignored.
+- **Shared preflight for `doctor` and `run`.** Host tooling, git-repo usability,
+  recipe path presence, and EVALUATE browser checks live in one module so both
+  surfaces agree (including package-manager-aware EVALUATE install hints).
 
 ## 1.2.2
 
