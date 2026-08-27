@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Claude is the default agent preset.** Recipes that omit `agent:` now select
+  Claude instead of Cursor. Explicit `agent: cursor` remains fully supported.
+  `hedera-harness migrate` writes `agent: cursor` when converting a Cursor
+  generator block, and omits `agent:` when converting a Claude one (the new
+  default).
+
 ## 1.2.2
 
 ### Fixed

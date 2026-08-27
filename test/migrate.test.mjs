@@ -140,7 +140,7 @@ test("a generator pinning a non-default model is preserved", async () => {
   assert.match(keptGenerator.reason, /composer-9\.9/);
 });
 
-test("a claude generator becomes agent: claude", async () => {
+test("a claude generator becomes the default and omits agent:", async () => {
   const { specPath } = await writeSpec(`name: demo
 generator:
   provider: command
@@ -159,8 +159,18 @@ extend:
 
   const result = await migrateSpecFile(specPath, { dryRun: true });
 
+  assert.ok(!keys(result, "changes").includes("agent"), "default preset needs no agent: key");
+  assert.ok(!/^\s*agent:/m.test(result.after));
+  assert.ok(!result.after.includes("generator:"));
+});
+
+test("a cursor generator becomes explicit agent: cursor", async () => {
+  const { specPath } = await writeSpec(V1);
+
+  const result = await migrateSpecFile(specPath, { dryRun: true });
+
   assert.ok(keys(result, "changes").includes("agent"));
-  assert.match(result.after, /agent: claude/);
+  assert.match(result.after, /agent: cursor/);
 });
 
 test("extend.baseline is renamed and its commands survive intact", async () => {
@@ -205,11 +215,15 @@ test("the migrated recipe loads to the same spec, apart from intended changes", 
   const before = (await loadTemplateSpec(originalPath)).spec;
   const after = (await loadTemplateSpec(specPath)).spec;
 
-  const intentionallyDifferent = new Set(["schemaVersion", "generator", "requiredFiles"]);
+  // agent: old v1 files often omit it; loading them now defaults to claude, while
+  // migrate writes agent: cursor for a Cursor generator so behavior is preserved.
+  const intentionallyDifferent = new Set(["schemaVersion", "generator", "requiredFiles", "agent"]);
   for (const key of Object.keys(before)) {
     if (intentionallyDifferent.has(key)) continue;
     assert.deepEqual(after[key], before[key], `${key} should survive migration unchanged`);
   }
+
+  assert.equal(after.agent, "cursor", "Cursor generator must become explicit agent: cursor");
 
   // requiredFiles differs only by the dropped tautologies.
   assert.deepEqual(

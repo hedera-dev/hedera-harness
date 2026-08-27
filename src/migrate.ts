@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseDocument, type Document } from "yaml";
 import {
   AGENT_PRESETS,
+  DEFAULT_AGENT_PRESET,
   DEFAULT_COMMANDS_VALIDATOR_PATH,
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_PRD_PATH,
@@ -249,7 +250,7 @@ function migrateGenerator(
     reason: `replaced by the ${presetName} preset`,
   });
 
-  if (presetName !== "cursor") {
+  if (presetName !== DEFAULT_AGENT_PRESET) {
     doc.set("agent", presetName);
     changes.push({ key: "agent", action: "added", reason: `selects the ${presetName} preset` });
   }

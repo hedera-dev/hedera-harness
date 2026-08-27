@@ -59,7 +59,7 @@ you can see the full surface without carrying it.
 Pick the agent with one line:
 
 ```yaml
-agent: claude        # or: cursor (default)
+agent: cursor        # or omit for claude (default)
 ```
 
 That governs the whole run — how the generator is invoked, how the validator
