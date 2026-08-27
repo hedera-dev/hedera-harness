@@ -15,7 +15,7 @@ export interface OutroInput {
  */
 export function formatRunOutro(input: OutroInput): string[] {
   const { report, session, cleanup, specPath } = input;
-  const infraAbort = Boolean(report.semanticValidation?.infrastructureFailure);
+  const infraAbort = Boolean(report.evaluation?.infrastructureFailure);
   const status = report.passed ? "PASSED" : infraAbort ? "ABORTED" : "FAILED";
 
   const lines: string[] = [

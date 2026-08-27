@@ -14,6 +14,6 @@ export function harnessPrdRelativePath(): string {
   return `${HARNESS_CONTEXT_DIR}/prd.md`;
 }
 
-export function harnessContractRelativePath(): string {
-  return `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`;
+export function harnessEvalRelativePath(): string {
+  return `${HARNESS_CONTEXT_DIR}/eval.json`;
 }

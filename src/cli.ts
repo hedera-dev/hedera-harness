@@ -113,6 +113,9 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
       dryRun: parsed.options.dryRun,
     });
     console.log(formatMigrationResult(result, Boolean(parsed.options.dryRun)));
+    if (result.warnings.length > 0) {
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -144,7 +147,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     const result = await validateSemanticWorkspace(parsed.options);
     console.log(
       [
-        `Semantic validation finished`,
+        `EVALUATE finished`,
         `passed=${result.passed}`,
         `findings=${result.findings.length}`,
         `durationMs=${result.durationMs}`,

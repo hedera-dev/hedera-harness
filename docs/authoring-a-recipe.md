@@ -10,8 +10,8 @@ harness what to build and how to know it worked.
   prd.md                           what to build
   validators/static.json           file and content assertions
   validators/yarn.json             commands that must pass
-  validators/playwright-smoke.yaml Tier 2 (optional)
-  acceptance-contract.json         Tier 3 (optional)
+  validators/playwright-smoke.yaml SMOKE (optional)
+  eval.json                        EVALUATE (optional)
 ```
 
 ## Start here
@@ -37,7 +37,7 @@ To author the PRD and validators with help, install the marketplace plugin:
 Everything the harness can default, it defaults. A working recipe is roughly:
 
 ```yaml
-schemaVersion: 2
+schemaVersion: 3
 
 name: my-feature
 description: What you want the agent to build.
@@ -63,7 +63,7 @@ agent: cursor        # or omit for claude (default)
 ```
 
 That governs the whole run — how the generator is invoked, how the validator
-receives Playwright MCP, and which models are used. Enabling Tier 3 is then
+receives Playwright MCP, and which models are used. Enabling EVALUATE is then
 `validator: { enabled: true }`, not a second copy of the agent flags.
 
 ## Baseline vs validators
@@ -79,19 +79,19 @@ Two different questions, easy to conflate:
 Name one baseline command `install` — the harness fingerprints dependencies
 under that name and skips reinstalling when nothing changed.
 
-## Tiers
+## Stages
 
-Each tier costs more and catches more. Start at the bottom; add a tier when
+Each stage costs more and catches more. Start at the bottom; add a stage when
 the one below stops catching your failures.
 
-| Tier | What it proves | Cost |
+| Stage | What it proves | Cost |
 |---|---|---|
-| 0–1 files, static, commands | the code is present and builds | seconds |
-| 2 Playwright gate | the app boots and its routes render | a dev server boot |
-| 3 acceptance contract | the app does what was asked | an agent session |
-| 3.5 chain validation | on-chain effects really happened | testnet HBAR |
+| ASSERT (files, static, commands) | the code is present and builds | seconds |
+| SMOKE (Playwright gate) | the app boots and its routes render | a dev server boot |
+| EVALUATE (evaluate checklist) | the app does what was asked | an agent session |
+| CHAIN (chain validation) | on-chain effects really happened | testnet HBAR |
 
-### Tier 0–1 — required
+### ASSERT — required
 
 **`validators/static.json`**
 
@@ -106,7 +106,7 @@ the one below stops catching your failures.
 - timeouts generous enough for a cold CI machine
 - nothing that needs live secrets
 
-### Tier 2 — Playwright gate
+### SMOKE — Playwright gate
 
 ```yaml
 validators:
@@ -119,33 +119,33 @@ validators:
 
 Keep it thin. The gate enforces: server up, route reachable, page actually
 rendered, no console errors, no forbidden text. **Rich UX checks belong in the
-acceptance contract** — this tier exists to fail fast before paying for an
+evaluate checklist** — this stage exists to fail fast before paying for an
 agent.
 
-### Tier 3 — acceptance contract
+### EVALUATE — evaluate checklist
 
 ```yaml
-contract: .harness/acceptance-contract.json
+eval: .harness/eval.json
 validator:
   enabled: true
 ```
 
-Numbered assertions (`C1`, `C2`, …), each with:
+Numbered assertions (`E1`, `E2`, …), each with:
 
 - `statement` — what must be true
 - `howToVerify` — concrete browser steps
 - `severity` — `critical` | `major` | `minor`
 - `walletRequired` / `verifiableWithoutCredentials`
-- `executableWithTestSigner` when Tier 3.5 should complete a real transaction
+- `executableWithTestSigner` when CHAIN should complete a real transaction
 
 Prefer few **critical** assertions: the app loads, the core journey is
 possible. This file — not the PRD — is what the validator grades.
 
 The validator is adversarial by design and is told to fail on uncertainty. If
 it cannot reach the browser it will say so and fail the assertion rather than
-guess, so a passing Tier 3 verdict means something.
+guess, so a passing EVALUATE verdict means something.
 
-### Tier 3.5 — on-chain validation
+### CHAIN — on-chain validation
 
 The harness provisions an **ephemeral funded ECDSA testnet account** per run,
 injects it as the scaffold burner wallet, and verifies effects against the
@@ -205,20 +205,29 @@ A real run costs 40 minutes to two hours, so check cheaply first:
 
 ```bash
 hedera-harness doctor              # node, git, agent CLI, recipe, every referenced path
-hedera-harness validate            # Tier 0–1 only, no agent
-hedera-harness validate-semantic   # Tier 3 only, against a workspace you already have
+hedera-harness validate            # ASSERT only, no agent
+hedera-harness validate-semantic   # run EVALUATE only, against a workspace you already have
 ```
 
 `doctor` reports everything at once rather than stopping at the first problem.
 
 ## Upgrading an older recipe
 
-Recipes written before schema v2 still load, with deprecation warnings:
+Pre-v3 recipes that still declare `contract:` **do not load** — the harness
+rejects the removed key at parse time and points at migrate (so a run never
+burns a generator session discovering it). Other older shapes may still load
+with deprecation warnings.
 
 ```bash
 hedera-harness migrate --dry-run   # show what would change
 hedera-harness migrate             # rewrite in place
 ```
+
+v2→v3 renames `contract` → `eval`, rewrites `acceptance-contract.json` → `eval.json`
+in the path value, **and renames that file on disk**. Assertion IDs inside JSON
+bodies are not mass-rewritten; new checklists use E1, E2, … identifiers. If the
+source file is missing (or both names already exist), migrate still rewrites the
+recipe and prints a warning — resolve the file before running.
 
 A key is only removed when its value equals what the harness would default it
 to. Anything you customised — extra forbidden commands, extra secret patterns,
@@ -234,4 +243,4 @@ rather than trusted.
 - Prefer a small number of assertions that would genuinely embarrass you if
   they failed, over exhaustive coverage that makes every run amber.
 - Keep the PRD product-facing. Numbered, browser-verifiable claims belong in
-  the contract.
+  the evaluate checklist.

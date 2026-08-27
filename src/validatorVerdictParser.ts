@@ -95,7 +95,7 @@ function normalizeIssue(value: unknown): ValidatorIssue | null {
 
   return {
     id: issue.id,
-    contractAssertion: typeof issue.contractAssertion === "string" ? issue.contractAssertion : undefined,
+    assertion: typeof issue.assertion === "string" ? issue.assertion : undefined,
     severity,
     route: typeof issue.route === "string" ? issue.route : undefined,
     message: issue.message,

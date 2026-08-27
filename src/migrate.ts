@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseDocument, type Document } from "yaml";
 import {
@@ -28,14 +28,22 @@ export interface MigrationResult {
   changes: MigrationChange[];
   /** Things deliberately left alone, with why — the interesting half of the report. */
   kept: MigrationChange[];
+  /** Loud follow-ups — missing checklist file, rename conflicts, etc. */
+  warnings: string[];
   before: string;
   after: string;
   beforeLines: number;
   afterLines: number;
 }
 
+/** Planned on-disk rename when `acceptance-contract.json` becomes `eval.json`. */
+interface EvalPathRewrite {
+  fromRelative: string;
+  toRelative: string;
+}
+
 /**
- * Rewrite a v1 recipe as slim v2.
+ * Rewrite a v1/v2 recipe to current schema.
  *
  * The governing rule: **only remove a key whose value equals what the harness
  * would default it to.** A recipe that adds a forbidden command, an extra secret
@@ -57,6 +65,7 @@ export async function migrateSpecFile(
 
   const changes: MigrationChange[] = [];
   const kept: MigrationChange[] = [];
+  const warnings: string[] = [];
   const fromVersion = typeof raw.schemaVersion === "number" ? raw.schemaVersion : 1;
 
   if (fromVersion >= SPEC_SCHEMA_VERSION) {
@@ -66,6 +75,7 @@ export async function migrateSpecFile(
       changed: false,
       changes: [],
       kept: [],
+      warnings: [],
       before,
       after: before,
       beforeLines: countLines(before),
@@ -74,6 +84,14 @@ export async function migrateSpecFile(
   }
 
   const workspaces = readStringArray(raw, ["constraints", "workspaces"]) ?? [];
+  // Same convention as loadTemplateSpec: project root is the parent of the spec directory.
+  const projectRoot = path.resolve(path.dirname(absolute), "..");
+
+  // v2 → v3: rename `contract` key → `eval`, rewrite acceptance-contract.json → eval.json in value.
+  let evalPathRewrite: EvalPathRewrite | undefined;
+  if (fromVersion < 3) {
+    evalPathRewrite = migrateContractToEval(doc, raw, changes);
+  }
 
   migrateGenerator(doc, raw, changes, kept);
   renameExtendToBaseline(doc, changes, kept);
@@ -143,10 +161,14 @@ export async function migrateSpecFile(
   changes.push({
     key: "schemaVersion",
     action: "added",
-    reason: `pins the recipe at v${SPEC_SCHEMA_VERSION}`,
+    reason: `pins the recipe at v${SPEC_SCHEMA_VERSION} (eval vocabulary)`,
   });
 
   const after = doc.toString({ lineWidth: 0 });
+  if (evalPathRewrite) {
+    await applyEvalFileRename(projectRoot, evalPathRewrite, Boolean(options.dryRun), changes, warnings);
+  }
+
   if (!options.dryRun && after !== before) {
     await writeFile(absolute, after, "utf8");
   }
@@ -157,6 +179,7 @@ export async function migrateSpecFile(
     changed: after !== before,
     changes,
     kept,
+    warnings,
     before,
     after,
     beforeLines: countLines(before),
@@ -171,7 +194,7 @@ export function formatMigrationResult(result: MigrationResult, dryRun: boolean):
 
   const lines = [
     `${result.specPath}`,
-    `  v${result.fromVersion} → v${SPEC_SCHEMA_VERSION}   ${result.beforeLines} → ${result.afterLines} lines`,
+    `  v${result.fromVersion} → v${SPEC_SCHEMA_VERSION}  ${result.beforeLines} → ${result.afterLines} lines`,
     "",
   ];
 
@@ -187,8 +210,124 @@ export function formatMigrationResult(result: MigrationResult, dryRun: boolean):
     }
   }
 
+  if (result.warnings.length > 0) {
+    lines.push("", "  warnings:");
+    for (const warning of result.warnings) {
+      lines.push(`    ! ${warning}`);
+    }
+  }
+
   lines.push("", dryRun ? "  (dry run — nothing written)" : "  written.");
   return lines.join("\n");
+}
+
+/**
+ * v2 → v3: rename the `contract` key to `eval` and rewrite
+ * `acceptance-contract.json` → `eval.json` in the path value.
+ *
+ * Does NOT mass-rewrite assertion IDs inside JSON bodies — only the recipe key
+ * and path filename. Callers rename the file on disk via {@link applyEvalFileRename}.
+ */
+function migrateContractToEval(
+  doc: Document,
+  raw: Record<string, unknown>,
+  changes: MigrationChange[],
+): EvalPathRewrite | undefined {
+  const contractValue = raw.contract;
+  if (contractValue === undefined) return undefined;
+
+  const newValue =
+    typeof contractValue === "string"
+      ? contractValue.replace(/acceptance-contract\.json$/i, "eval.json")
+      : contractValue;
+
+  doc.delete("contract");
+  doc.set("eval", newValue);
+  changes.push({
+    key: "contract → eval",
+    action: "renamed",
+    reason: "v3 vocab: `contract` key becomes `eval`, acceptance-contract.json → eval.json",
+  });
+
+  if (typeof contractValue !== "string" || typeof newValue !== "string" || contractValue === newValue) {
+    return undefined;
+  }
+  return { fromRelative: contractValue, toRelative: newValue };
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Rename `acceptance-contract.json` → `eval.json` on disk so the rewritten recipe
+ * path still resolves. Dry-run only reports; conflicts / missing sources warn.
+ */
+async function applyEvalFileRename(
+  projectRoot: string,
+  rewrite: EvalPathRewrite,
+  dryRun: boolean,
+  changes: MigrationChange[],
+  warnings: string[],
+): Promise<void> {
+  const fromAbs = path.isAbsolute(rewrite.fromRelative)
+    ? rewrite.fromRelative
+    : path.resolve(projectRoot, rewrite.fromRelative);
+  const toAbs = path.isAbsolute(rewrite.toRelative)
+    ? rewrite.toRelative
+    : path.resolve(projectRoot, rewrite.toRelative);
+
+  const fromLabel = rewrite.fromRelative;
+  const toLabel = rewrite.toRelative;
+  const changeKey = `${path.basename(fromAbs)} → ${path.basename(toAbs)}`;
+
+  if (dryRun) {
+    changes.push({
+      key: changeKey,
+      action: "renamed",
+      reason: `would rename file on disk (${fromLabel} → ${toLabel})`,
+    });
+    return;
+  }
+
+  const sourceExists = await pathExists(fromAbs);
+  const targetExists = await pathExists(toAbs);
+
+  if (!sourceExists && targetExists) {
+    changes.push({
+      key: changeKey,
+      action: "renamed",
+      reason: `checklist already at ${toLabel}; left on-disk name alone`,
+    });
+    return;
+  }
+
+  if (!sourceExists && !targetExists) {
+    warnings.push(
+      `recipe now points at ${toLabel}, but neither that file nor ${fromLabel} exists — create ${toLabel} or restore the checklist`,
+    );
+    return;
+  }
+
+  if (sourceExists && targetExists) {
+    warnings.push(
+      `both ${fromLabel} and ${toLabel} exist; left files alone — remove or merge, then keep eval: ${toLabel}`,
+    );
+    return;
+  }
+
+  await mkdir(path.dirname(toAbs), { recursive: true });
+  await rename(fromAbs, toAbs);
+  changes.push({
+    key: changeKey,
+    action: "renamed",
+    reason: `renamed file on disk (${fromLabel} → ${toLabel})`,
+  });
 }
 
 /**

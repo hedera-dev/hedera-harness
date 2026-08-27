@@ -222,7 +222,7 @@ test("buildSessionPrompt preserves existing app and points at runtime paths", as
     ],
     {
       prdRelativePath: `${HARNESS_CONTEXT_DIR}/prd.md`,
-      contractRelativePath: `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`,
+      evalRelativePath: `${HARNESS_CONTEXT_DIR}/eval.json`,
       prdSourcePath: prdPath,
     },
   );

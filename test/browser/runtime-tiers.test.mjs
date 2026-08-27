@@ -86,10 +86,10 @@ routes:
     playwrightBody,
   );
   await writeFile(
-    path.join(root, ".harness", "acceptance-contract.json"),
+    path.join(root, ".harness", "eval.json"),
     JSON.stringify({
       assertions: [
-        { id: "C1", statement: "Home route renders", route: "/", severity: "critical" },
+        { id: "E1", statement: "Home route renders", route: "/", severity: "critical" },
       ],
     }),
   );
@@ -98,10 +98,10 @@ routes:
   // validator stay mocked so the test never pays for a real model.
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `schemaVersion: 2
+    `schemaVersion: 3
 name: tier3-fixture
 agent: ${agent}
-contract: .harness/acceptance-contract.json
+eval: .harness/eval.json
 skills: []
 generator:
   provider: command
@@ -176,10 +176,10 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
   assert.equal(report.validation.playwrightGate.routes[0].rendered, true);
 
   // EVALUATE: the validator was invoked against the live server and its verdict parsed.
-  assert.ok(report.semanticValidation, "semantic validation should have run");
-  assert.equal(report.semanticValidation.passed, true);
-  assert.match(report.semanticValidation.verdict.summary, /Fixture app renders/);
-  assert.match(report.semanticValidation.serverUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.ok(report.evaluation, "evaluation should have run");
+  assert.equal(report.evaluation.passed, true);
+  assert.match(report.evaluation.verdict.summary, /Fixture app renders/);
+  assert.match(report.evaluation.serverUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
 
   assert.equal(report.passed, true);
 }, { timeout: 180_000 });
@@ -254,7 +254,7 @@ routes:
   assert.equal(result.report.passed, false);
   assert.ok(result.report.validation.playwrightGate);
   assert.equal(result.report.validation.playwrightGate.passed, false);
-  assert.equal(result.report.semanticValidation, undefined, "EVALUATE must be skipped");
+  assert.equal(result.report.evaluation, undefined, "EVALUATE must be skipped");
   await assert.rejects(
     () => readFile(argvFile, "utf8"),
     "validator must not have been invoked",

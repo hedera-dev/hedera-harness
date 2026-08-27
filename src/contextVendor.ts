@@ -15,13 +15,13 @@ export { pathExists } from "./fsUtils.js";
  */
 export const LEGACY_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
 export const VENDORED_PRD_PATH = `${LEGACY_CONTEXT_DIR}/prd.md`;
-export const VENDORED_CONTRACT_PATH = `${LEGACY_CONTEXT_DIR}/acceptance-contract.json`;
+export const VENDORED_EVAL_PATH = `${LEGACY_CONTEXT_DIR}/eval.json`;
 
 export interface VendoredContext {
   prdRelativePath: string;
-  contractRelativePath?: string;
+  evalRelativePath?: string;
   prdSourcePath: string;
-  contractSourcePath?: string;
+  evalSourcePath?: string;
 }
 
 export interface VendorContextOptions {
@@ -31,7 +31,7 @@ export interface VendorContextOptions {
 
 export async function vendorHarnessContext(
   workspacePath: string,
-  input: { prdPath: string; contractPath?: string },
+  input: { prdPath: string; evalPath?: string },
   options: VendorContextOptions = {},
 ): Promise<VendoredContext> {
   const contextDir = normalizeRelativeDir(options.contextDir ?? LEGACY_CONTEXT_DIR);
@@ -42,13 +42,13 @@ export async function vendorHarnessContext(
   const prdRelativePath = path.posix.join(contextDir, "prd.md");
   await writeFile(path.join(workspacePath, ...prdRelativePath.split("/")), prdContent, "utf8");
 
-  let contractRelativePath: string | undefined;
-  if (input.contractPath) {
-    const contractContent = await readFile(input.contractPath, "utf8");
-    contractRelativePath = path.posix.join(contextDir, "acceptance-contract.json");
+  let evalRelativePath: string | undefined;
+  if (input.evalPath) {
+    const evalContent = await readFile(input.evalPath, "utf8");
+    evalRelativePath = path.posix.join(contextDir, "eval.json");
     await writeFile(
-      path.join(workspacePath, ...contractRelativePath.split("/")),
-      contractContent,
+      path.join(workspacePath, ...evalRelativePath.split("/")),
+      evalContent,
       "utf8",
     );
   }
@@ -62,10 +62,10 @@ export async function vendorHarnessContext(
           relativePath: prdRelativePath,
           sourcePath: input.prdPath,
         },
-        contract: contractRelativePath
+        eval: evalRelativePath
           ? {
-              relativePath: contractRelativePath,
-              sourcePath: input.contractPath,
+              relativePath: evalRelativePath,
+              sourcePath: input.evalPath,
             }
           : undefined,
       },
@@ -77,8 +77,8 @@ export async function vendorHarnessContext(
 
   return {
     prdRelativePath,
-    contractRelativePath,
+    evalRelativePath,
     prdSourcePath: input.prdPath,
-    contractSourcePath: input.contractPath,
+    evalSourcePath: input.evalPath,
   };
 }

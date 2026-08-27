@@ -5,21 +5,21 @@ import { buildValidatorPrompt } from "./promptBuilder.js";
 import { writePromptFile } from "./runArtifacts.js";
 import type {
   ChainSigner,
-  SemanticValidationResult,
+  EvaluationResult,
   TemplateSpec,
   ValidationFinding,
   ValidatorIssue,
   ValidatorVerdict,
 } from "./types.js";
 import { parseValidatorVerdict } from "./validatorVerdictParser.js";
-import { annotateInfrastructureFailure } from "./semanticInfra.js";
+import { annotateInfrastructureFailure } from "./evalInfra.js";
 import type { DevServerSession } from "./validation/devServer.js";
 
 export function isValidatorEnabled(spec: TemplateSpec): boolean {
   return spec.validator !== undefined && spec.validator.enabled !== false;
 }
 
-export async function runSemanticValidation(input: {
+export async function runEvaluation(input: {
   workspacePath: string;
   spec: TemplateSpec;
   attempt: number;
@@ -28,11 +28,11 @@ export async function runSemanticValidation(input: {
   /** Required — callers own lifecycle via createDevServerSession. */
   devServer: DevServerSession;
   chainSigner?: ChainSigner;
-  /** Override vendored contract path (`.harness/runtime/context/...`). */
-  contractRelativePath?: string;
+  /** Override vendored eval path (`.harness/runtime/context/...`). */
+  evalRelativePath?: string;
   /** Appended to the validator invocation — e.g. --mcp-config for CLIs that take one. */
   extraArgs?: string[];
-}): Promise<SemanticValidationResult> {
+}): Promise<EvaluationResult> {
   const startedAt = Date.now();
   const validatorConfig = input.spec.validator;
   if (!validatorConfig || validatorConfig.enabled === false) {
@@ -43,10 +43,10 @@ export async function runSemanticValidation(input: {
     };
   }
 
-  if (!input.spec.contractPath) {
+  if (!input.spec.evalPath) {
     return annotateInfrastructureFailure(
       failureResult(startedAt, [
-        findingFromMessage("validator-config", "Semantic validator requires spec.contract to be configured."),
+        findingFromMessage("validator-config", "Evaluator requires spec.eval to be configured."),
       ]),
     );
   }
@@ -56,16 +56,16 @@ export async function runSemanticValidation(input: {
       failureResult(startedAt, [
         findingFromMessage(
           "validator-config",
-          "Semantic validator requires validators.playwright so the harness can start the dev server.",
+          "Evaluator requires validators.playwright so the harness can start the dev server.",
         ),
       ]),
     );
   }
 
-  const contractRelativePath =
-    input.contractRelativePath ?? path.posix.join(".harness-context", "acceptance-contract.json");
-  const contractPath = path.join(input.workspacePath, ...contractRelativePath.split("/"));
-  const contract = await readFile(contractPath, "utf8");
+  const evalRelativePath =
+    input.evalRelativePath ?? path.posix.join(".harness-context", "eval.json");
+  const evalPath = path.join(input.workspacePath, ...evalRelativePath.split("/"));
+  const evalContent = await readFile(evalPath, "utf8");
   const serverUrl = input.devServer.url;
 
   try {
@@ -73,7 +73,7 @@ export async function runSemanticValidation(input: {
       input.spec.chainValidation?.expose.browserLocalStorageKey ?? "burnerWallet.pk";
     const prompt = await buildValidatorPrompt(
       input.spec,
-      contract,
+      evalContent,
       serverUrl,
       input.chainSigner,
       browserKey,
@@ -180,14 +180,14 @@ function mapVerdictToFindings(verdict: ValidatorVerdict): ValidationFinding[] {
 }
 
 function mapIssueToFinding(issue: ValidatorIssue): ValidationFinding {
-  const assertion = issue.contractAssertion ? ` [${issue.contractAssertion}]` : "";
+  const assertion = issue.assertion ? ` [${issue.assertion}]` : "";
   const route = issue.route ? ` (${issue.route})` : "";
   return {
-    id: `semantic:${issue.id}`,
-    category: "semantic",
+    id: `eval:${issue.id}`,
+    category: "eval",
     message: `${issue.severity}${assertion}${route}: ${issue.message}`,
     details: issue.evidence,
-    contractAssertion: issue.contractAssertion,
+    assertion: issue.assertion,
     route: issue.route,
   };
 }
@@ -196,7 +196,7 @@ function failureResult(
   startedAt: number,
   findings: ValidationFinding[],
   serverUrl?: string,
-): SemanticValidationResult {
+): EvaluationResult {
   return {
     passed: false,
     findings,
@@ -208,7 +208,7 @@ function failureResult(
 function findingFromMessage(id: string, message: string, details?: string): ValidationFinding {
   return {
     id,
-    category: "semantic",
+    category: "eval",
     message,
     details: details ? truncate(details) : undefined,
   };

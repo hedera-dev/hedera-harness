@@ -65,7 +65,7 @@ test("formatOptionalDepError mentions yarn add when project is yarn-only", async
     );
     const message = await optionalDeps.formatOptionalDepError(
       "@hiero-ledger/sdk",
-      "Tier 3.5 on-chain validation",
+      "CHAIN on-chain validation",
       { projectRoot: dir, packageManager: "yarn@3.2.3" },
       new Error("Cannot find package '@hiero-ledger/sdk'"),
     );

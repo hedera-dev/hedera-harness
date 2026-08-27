@@ -1,4 +1,4 @@
-schemaVersion: 2
+schemaVersion: 3
 
 name: my-feature
 description: What you want the agent to build in this project.
@@ -59,19 +59,19 @@ baseline:
 # requiredFiles:
 #   - packages/nextjs/app/my-feature/page.tsx
 #
-# ── Higher tiers (opt-in) ────────────────────────────────────────────────────
+# ── Higher stages (opt-in) ───────────────────────────────────────────────────
 #
-# Tier 2 boots the app and walks its routes.
+# SMOKE boots the app and walks its routes.
 # validators:
 #   playwright: .harness/validators/playwright-smoke.yaml
 #
-# Tier 3 grades the running app against an acceptance contract. The validator
+# EVALUATE grades the running app against an evaluate checklist. The validator
 # inherits the agent preset above, including how it receives Playwright MCP.
-# contract: .harness/acceptance-contract.json
+# eval: .harness/eval.json
 # validator:
 #   enabled: true
 #
-# Tier 3.5 provisions a funded ephemeral testnet account. Testnet only.
+# CHAIN provisions a funded ephemeral testnet account. Testnet only.
 # chainValidation:
 #   enabled: true
 #   network: testnet

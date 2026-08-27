@@ -140,10 +140,10 @@ test("repair scope selects the matching template", async () => {
 
   const semantic = await prompts.buildRepairPrompt(
     spec,
-    [{ id: "semantic:C1", category: "semantic", message: "C1 failed" }],
+    [{ id: "eval:E1", category: "eval", message: "E1 failed" }],
     2,
   );
-  assert.match(semantic, /Repair scope: \*\*semantic-scoped\*\*/);
+  assert.match(semantic, /Repair scope: \*\*eval-scoped\*\*/);
 
   const runtime = await prompts.buildRepairPrompt(
     spec,

@@ -6,8 +6,8 @@ import type {
   AgentRunResult,
   ChainSigner,
   CommandExecutionResult,
+  EvaluationResult,
   PlaywrightGateResult,
-  SemanticValidationResult,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
@@ -15,7 +15,7 @@ import type {
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
-import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
+import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import {
   createDevServerSession,
   loadDevServerConfig,
@@ -43,8 +43,8 @@ export interface AttemptStageContext {
   workspacePath: string;
   layout: RunLayout;
   chainSigner?: ChainSigner;
-  /** Vendored acceptance-contract path, relative to the workspace. */
-  contractRelativePath?: string;
+  /** Vendored eval checklist path, relative to the workspace. */
+  evalRelativePath?: string;
 }
 
 export interface GenerateStageResult {
@@ -226,12 +226,12 @@ export async function runChainDeploy(
   return findings;
 }
 
-/** EVALUATE — adversarial validator grades the live app against the acceptance contract. */
+/** EVALUATE — adversarial validator grades the live app against the evaluate checklist. */
 export async function runEvaluateStage(
   context: AttemptStageContext,
   devServer: DevServerSession,
   extraValidatorArgs: string[] = [],
-): Promise<SemanticValidationResult> {
+): Promise<EvaluationResult> {
   const { attempt, layout } = context;
   const validatorPromptPath = path.join(
     layout.promptsDirectory,
@@ -247,7 +247,7 @@ export async function runEvaluateStage(
   });
   logStage("EVALUATE", devServer.url);
 
-  const semanticValidation = await runSemanticValidation({
+  const evaluation = await runEvaluation({
     workspacePath: context.workspacePath,
     spec: context.spec,
     attempt,
@@ -255,26 +255,26 @@ export async function runEvaluateStage(
     promptsDirectory: layout.promptsDirectory,
     devServer,
     chainSigner: context.chainSigner,
-    contractRelativePath: context.contractRelativePath,
+    evalRelativePath: context.evalRelativePath,
     extraArgs: extraValidatorArgs,
   });
 
   await writeJsonFile(
-    path.join(layout.logsDirectory, `semantic-validation-attempt-${attempt}.json`),
-    semanticValidation,
+    path.join(layout.logsDirectory, `evaluation-attempt-${attempt}.json`),
+    evaluation,
   );
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "validator_finished",
     timestamp: new Date().toISOString(),
     attempt,
-    passed: semanticValidation.passed,
-    findingCount: semanticValidation.findings.length,
-    durationMs: semanticValidation.durationMs,
-    infrastructureFailure: semanticValidation.infrastructureFailure,
-    infrastructureFailureReason: semanticValidation.infrastructureFailureReason,
+    passed: evaluation.passed,
+    findingCount: evaluation.findings.length,
+    durationMs: evaluation.durationMs,
+    infrastructureFailure: evaluation.infrastructureFailure,
+    infrastructureFailureReason: evaluation.infrastructureFailureReason,
   });
 
-  return semanticValidation;
+  return evaluation;
 }
 
 /**
@@ -289,7 +289,8 @@ export async function runValidationStages(
   generateFinding?: ValidationFinding,
 ): Promise<ValidationResult> {
   const hasPlaywright = Boolean(context.spec.validators.playwrightPath);
-  const runEvaluate = hasPlaywright && isValidatorEnabled(context.spec);
+  const runEvaluate =
+    hasPlaywright && isValidatorEnabled(context.spec) && Boolean(context.spec.evalPath);
 
   logStage("ASSERT");
   const deterministic = await runAssertStage(context);
@@ -353,14 +354,14 @@ export async function runValidationStages(
         artifactsDirectory: context.layout.runDirectory,
       },
       async mcpArgs => {
-        const semanticValidation = await runEvaluateStage(context, devServer!, mcpArgs);
-        return semanticValidation.passed
-          ? { ...afterSmoke, semanticValidation }
+        const evaluation = await runEvaluateStage(context, devServer!, mcpArgs);
+        return evaluation.passed
+          ? { ...afterSmoke, evaluation }
           : {
               ...afterSmoke,
               passed: false,
-              findings: [...afterSmoke.findings, ...semanticValidation.findings],
-              semanticValidation,
+              findings: [...afterSmoke.findings, ...evaluation.findings],
+              evaluation,
             };
       },
     );
