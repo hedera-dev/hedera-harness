@@ -14,6 +14,7 @@
     `semanticValidation` on `ValidationResult`/`RunReport` → `evaluation`.
   - Finding category `"semantic"` → `"eval"`, `"semantic-infra"` → `"eval-infra"`.
   - Finding id prefix `semantic:` → `eval:`.
+  - `status.json` key `semanticPassed` → `evaluationPassed`.
   - `ValidatorIssue.contractAssertion` → `assertion`; `ValidationFinding.contractAssertion` → `assertion`.
   - `TemplateSpec.contractPath` → `evalPath`.
   - `VendoredContext.contractRelativePath/contractSourcePath` → `evalRelativePath/evalSourcePath`.

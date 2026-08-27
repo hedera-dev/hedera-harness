@@ -121,7 +121,7 @@ export async function recordAttemptResult(input: {
     findingCount: delta.open.length,
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
-    semanticPassed: validation.evaluation?.passed,
+    evaluationPassed: validation.evaluation?.passed,
     infrastructureFailure: validation.evaluation?.infrastructureFailure ?? false,
   });
 
