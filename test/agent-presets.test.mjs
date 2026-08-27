@@ -54,7 +54,7 @@ test("cursor reads a workspace file; claude takes a config path", () => {
 });
 
 test("agent preset drives the generator invocation and carries onto the spec", async () => {
-  const specPath = await writeRecipe(`schemaVersion: 2
+  const specPath = await writeRecipe(`schemaVersion: 3
 name: claude-run
 agent: claude
 ${MINIMAL_BASELINE}`);
@@ -67,7 +67,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("agent still governs MCP and models when generator is overridden", async () => {
-  const specPath = await writeRecipe(`schemaVersion: 2
+  const specPath = await writeRecipe(`schemaVersion: 3
 name: override
 agent: claude
 generator:
@@ -83,7 +83,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("enabling the validator needs no second copy of the agent invocation", async () => {
-  const specPath = await writeRecipe(`schemaVersion: 2
+  const specPath = await writeRecipe(`schemaVersion: 3
 name: validator-inherits
 agent: claude
 validator:

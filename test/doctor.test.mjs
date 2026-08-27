@@ -107,18 +107,8 @@ test("doctor flags a recipe pointing at a file that does not exist", async () =>
 });
 
 test("recipe warnings surface as warnings, not failures", async () => {
-  // A v1 recipe still runs; doctor should say so without blocking.
   const root = await makeProject({
-    specBody: `name: legacy
-generator:
-  provider: command
-  command: node
-extend:
-  baseline:
-    commands:
-      - name: install
-        command: "true"
-`,
+    specBody: specWith("node", "programme: from-a-newer-recipe\n"),
   });
 
   const report = await runDoctor({

@@ -128,14 +128,14 @@ test("loadTemplateSpec loads a project-centric recipe without a seed block", asy
   await writeFile(path.join(root, ".harness", "validators", "commands.json"), "[]\n");
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `name: no-seed-extend
+    `schemaVersion: 3
+name: no-seed-extend
 prd: .harness/prd.md
 generator:
   provider: command
   command: agent
-extend:
-  baseline:
-    commands:
+baseline:
+  commands:
       - name: install
         command: yarn install
         timeoutMs: 300000
@@ -144,9 +144,6 @@ validators:
   commands: .harness/validators/commands.json
 requiredFiles: []
 forbiddenFiles: []
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
 `,
   );
 
@@ -165,14 +162,14 @@ test("loadTemplateSpec rejects project-centric mode without baseline install com
   await writeFile(path.join(root, ".harness", "validators", "commands.json"), "[]\n");
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `name: missing-install
+    `schemaVersion: 3
+name: missing-install
 prd: .harness/prd.md
 generator:
   provider: command
   command: agent
-extend:
-  baseline:
-    commands:
+baseline:
+  commands:
       - name: lint
         command: yarn lint
 validators:
@@ -180,9 +177,6 @@ validators:
   commands: .harness/validators/commands.json
 requiredFiles: []
 forbiddenFiles: []
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
 `,
   );
 

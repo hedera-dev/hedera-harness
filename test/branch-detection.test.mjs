@@ -5,7 +5,7 @@ import test from "node:test";
 
 const mod = await import(pathToFileURL(path.resolve("dist/branchDetection.js")).href);
 
-test("parseHarnessBranch reads run and legacy extend prefixes", () => {
+test("parseHarnessBranch reads harness/run- prefixes only", () => {
   const run = mod.parseHarnessBranch("harness/run-my-feature-abc123");
   assert.deepEqual(run, {
     prefix: "harness/run-",
@@ -14,11 +14,7 @@ test("parseHarnessBranch reads run and legacy extend prefixes", () => {
     branch: "harness/run-my-feature-abc123",
   });
 
-  const legacy = mod.parseHarnessBranch("harness/extend-bridge-page-dead01");
-  assert.equal(legacy?.prefix, "harness/extend-");
-  assert.equal(legacy?.specSlug, "bridge-page");
-  assert.equal(legacy?.shortId, "dead01");
-
+  assert.equal(mod.parseHarnessBranch("harness/extend-bridge-page-dead01"), null);
   assert.equal(mod.parseHarnessBranch("main"), null);
   assert.equal(mod.parseHarnessBranch("harness/run-only"), null);
 });

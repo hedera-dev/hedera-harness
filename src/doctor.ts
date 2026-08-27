@@ -134,9 +134,7 @@ async function loadRecipe(
       name: "recipe",
       status: "fail",
       detail,
-      fix: /migrate/i.test(detail)
-        ? "Run `hedera-harness migrate` (try `--dry-run` first), then re-check with doctor."
-        : "Fix the recipe, or bootstrap one with `hedera-harness init`.",
+      fix: "Fix the recipe, or bootstrap one with `hedera-harness init`.",
     });
     return undefined;
   }

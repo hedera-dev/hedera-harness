@@ -49,23 +49,6 @@ test("in-place-run layout keeps code in cwd and artifacts under .harness/runs/<i
   assert.equal(reopened.runDirectory, layout.runDirectory);
 });
 
-test("readLayoutMeta normalizes the legacy in-place-extend mode", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-legacy-mode-"));
-  const layout = await createSessionLayout(cwd, "legacy", loggingPaths(cwd));
-
-  await writeFile(
-    path.join(layout.runDirectory, "layout.json"),
-    JSON.stringify({
-      schemaVersion: 1,
-      mode: "in-place-extend",
-      workspacePath: path.resolve(cwd),
-    }),
-  );
-
-  const meta = await readLayoutMeta(layout.runDirectory);
-  assert.equal(meta.mode, LAYOUT_MODE_IN_PLACE_RUN);
-});
-
 test("readLayoutMeta rejects an unknown layout mode", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-bad-mode-"));
   const layout = await createSessionLayout(cwd, "bad", loggingPaths(cwd));

@@ -61,7 +61,7 @@ routes:
   );
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `schemaVersion: 2
+    `schemaVersion: 3
 name: validate-smoke-gate
 agent: claude
 skills: []

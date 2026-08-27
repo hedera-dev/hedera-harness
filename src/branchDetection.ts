@@ -1,13 +1,6 @@
 /** Primary branch prefix for project-centric `run`. New branches always use this. */
 export const HARNESS_RUN_BRANCH_PREFIX = "harness/run-";
 
-/**
- * Legacy prefix from the removed `extend` command.
- * Read-only: still recognized for continue / smart branch detection.
- * Never used when creating new branches.
- */
-export const HARNESS_EXTEND_BRANCH_PREFIX = "harness/extend-";
-
 export function slugifyForBranch(value: string): string {
   const slug = value
     .trim()
@@ -21,7 +14,7 @@ export function slugifyForBranch(value: string): string {
 export type HarnessBranchAction = "continue" | "new";
 
 export interface ParsedHarnessBranch {
-  prefix: typeof HARNESS_RUN_BRANCH_PREFIX | typeof HARNESS_EXTEND_BRANCH_PREFIX;
+  prefix: typeof HARNESS_RUN_BRANCH_PREFIX;
   /** Spec slug embedded in the branch name (between prefix and trailing short id). */
   specSlug: string;
   shortId: string;
@@ -47,33 +40,19 @@ export interface BranchDecision {
   parsedCurrent?: ParsedHarnessBranch;
 }
 
-/**
- * True when `branch` is a harness session branch (`harness/run-*` or legacy `harness/extend-*`).
- */
+/** True when `branch` is a harness session branch (`harness/run-*`). */
 export function isHarnessBranch(branch: string | null | undefined): boolean {
-  return Boolean(
-    branch &&
-      (branch.startsWith(HARNESS_RUN_BRANCH_PREFIX) ||
-        branch.startsWith(HARNESS_EXTEND_BRANCH_PREFIX)),
-  );
+  return Boolean(branch && branch.startsWith(HARNESS_RUN_BRANCH_PREFIX));
 }
 
 /**
- * Parse `harness/run-<slug>-<id>` or `harness/extend-<slug>-<id>`.
+ * Parse `harness/run-<slug>-<id>`.
  * Returns null when the branch is not a harness branch or lacks a trailing id segment.
  */
 export function parseHarnessBranch(branch: string | null | undefined): ParsedHarnessBranch | null {
-  if (!branch) return null;
+  if (!branch?.startsWith(HARNESS_RUN_BRANCH_PREFIX)) return null;
 
-  let prefix: ParsedHarnessBranch["prefix"] | null = null;
-  if (branch.startsWith(HARNESS_RUN_BRANCH_PREFIX)) {
-    prefix = HARNESS_RUN_BRANCH_PREFIX;
-  } else if (branch.startsWith(HARNESS_EXTEND_BRANCH_PREFIX)) {
-    prefix = HARNESS_EXTEND_BRANCH_PREFIX;
-  }
-  if (!prefix) return null;
-
-  const rest = branch.slice(prefix.length);
+  const rest = branch.slice(HARNESS_RUN_BRANCH_PREFIX.length);
   const lastDash = rest.lastIndexOf("-");
   if (lastDash <= 0 || lastDash === rest.length - 1) {
     return null;
@@ -85,7 +64,7 @@ export function parseHarnessBranch(branch: string | null | undefined): ParsedHar
     return null;
   }
 
-  return { prefix, specSlug, shortId, branch };
+  return { prefix: HARNESS_RUN_BRANCH_PREFIX, specSlug, shortId, branch };
 }
 
 export function specSlugMatchesBranch(specName: string, branch: string | null | undefined): boolean {

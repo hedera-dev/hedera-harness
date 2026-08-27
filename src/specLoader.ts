@@ -10,7 +10,6 @@ import type {
 } from "./types.js";
 import {
   AGENT_PRESETS,
-  ASSUMED_SCHEMA_VERSION,
   DEFAULT_AGENT_PRESET,
   DEFAULT_COMMANDS_VALIDATOR_PATH,
   DEFAULT_MAX_ATTEMPTS,
@@ -69,20 +68,13 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     forbiddenFiles: readOptionalStringArray(parsed, "forbiddenFiles") ?? defaultSecretFiles(workspaces),
     secretScan: readSecretScan(parsed, workspaces),
     chainValidation: readChainValidation(parsed),
-    baseline: readBaseline(parsed, warnings),
+    baseline: readBaseline(parsed),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? DEFAULT_MAX_ATTEMPTS,
     logging: {
       jsonlPath: resolveProjectPath(projectRoot, HARNESS_JSONL_LOG_PATH),
       notesPath: resolveProjectPath(projectRoot, HARNESS_NOTES_LOG_PATH),
     },
   };
-
-  if (parsed.logging !== undefined) {
-    warnings.push(
-      "`logging` is ignored — harness logs always live under `.harness/runs/`. " +
-        "Pointing them elsewhere left untracked files that failed the next run's clean-tree check.",
-    );
-  }
 
   assertBaselineHasInstall(spec);
 
@@ -108,7 +100,14 @@ export interface LoadedTemplateSpec {
 
 function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): number {
   const raw = parsed.schemaVersion;
-  if (raw === undefined) return ASSUMED_SCHEMA_VERSION;
+  if (raw === undefined) {
+    throw new Error(
+      [
+        `${specPath} is missing schemaVersion.`,
+        `Set schemaVersion: ${SPEC_SCHEMA_VERSION}.`,
+      ].join(" "),
+    );
+  }
 
   if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
     throw new Error(`"schemaVersion" must be a positive integer in ${specPath} (got ${JSON.stringify(raw)}).`);
@@ -126,9 +125,8 @@ function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): n
   if (raw < MIN_SUPPORTED_SCHEMA_VERSION) {
     throw new Error(
       [
-        `${specPath} declares schemaVersion ${raw}, which this harness no longer supports`,
-        `(minimum ${MIN_SUPPORTED_SCHEMA_VERSION}).`,
-        "Regenerate the recipe with `hedera-harness init` and reapply your edits.",
+        `${specPath} declares schemaVersion ${raw}, which this harness no longer supports.`,
+        `Set schemaVersion: ${SPEC_SCHEMA_VERSION}.`,
       ].join(" "),
     );
   }
@@ -461,24 +459,10 @@ function readSecretScan(
 /**
  * Host-app health commands run once before generation.
  *
- * `baseline:` is the current key. `extend.baseline:` is the original spelling, kept
- * working with a deprecation warning — it named a command (`extend`) that no longer
- * exists, and it is already committed into template branches and users' projects.
+ * Only the top-level `baseline:` key is accepted.
  */
-function readBaseline(
-  parsed: Record<string, unknown>,
-  warnings: string[],
-): BaselineConfig | undefined {
-  let record: unknown = parsed.baseline;
-
-  if (record === undefined && parsed.extend !== undefined) {
-    const extend = parsed.extend;
-    if (!extend || typeof extend !== "object" || Array.isArray(extend)) {
-      throw new Error('Expected object "extend" in template spec.');
-    }
-    warnings.push('`extend.baseline` is deprecated — rename it to a top-level `baseline`.');
-    record = (extend as Record<string, unknown>).baseline;
-  }
+function readBaseline(parsed: Record<string, unknown>): BaselineConfig | undefined {
+  const record = parsed.baseline;
 
   if (record === undefined) return undefined;
   if (!record || typeof record !== "object" || Array.isArray(record)) {

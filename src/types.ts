@@ -4,7 +4,6 @@ export type HarnessCommand =
   | "init"
   | "run"
   | "doctor"
-  | "migrate"
   | "validate"
   | "validate-semantic";
 
@@ -30,8 +29,6 @@ export interface CliOptions {
   forceNew?: boolean;
   /** Explicit harness branch to checkout and continue. */
   continueBranch?: string;
-  /** `migrate` only: report the rewrite without writing it. */
-  dryRun?: boolean;
   /** `doctor` only: check the recipe alone, skipping host and project checks. */
   recipeOnly?: boolean;
 }

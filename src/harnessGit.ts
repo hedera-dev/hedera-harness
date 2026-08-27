@@ -2,7 +2,6 @@ import { access } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
-  HARNESS_EXTEND_BRANCH_PREFIX,
   HARNESS_RUN_BRANCH_PREFIX,
   buildRunBranchName,
   isHarnessBranch,
@@ -12,7 +11,6 @@ import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { ValidationFinding } from "./types.js";
 
 export {
-  HARNESS_EXTEND_BRANCH_PREFIX,
   HARNESS_RUN_BRANCH_PREFIX,
   buildRunBranchName,
   isHarnessBranch,

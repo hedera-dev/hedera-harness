@@ -171,18 +171,36 @@ generator:
 `;
 spec = spec.slice(0, genStart) + genBlock + spec.slice(skillsIdx);
 spec = spec.replace(/\nskills:\n(?:  - .+\n)+/, "\nskills: []\n");
+if (!/^schemaVersion:\s*3\b/m.test(spec)) {
+  spec = spec.replace(/^schemaVersion:\s*\d+\s*$/m, "schemaVersion: 3");
+  if (!/^schemaVersion:\s*3\b/m.test(spec)) {
+    spec = `schemaVersion: 3\n${spec}`;
+  }
+}
 spec = spec.replace(
   /\nextend:\n  baseline:\n    commands:\n(?:      -[\s\S]*?\n)(?=\nvalidators:)/,
   `
-extend:
-  baseline:
-    commands:
+baseline:
+  commands:
       - name: install
         command: "true"
         timeoutMs: 10000
 
 `,
 );
+spec = spec.replace(
+  /\nbaseline:\n  commands:\n(?:      -[\s\S]*?\n)(?=\nvalidators:)/,
+  `
+baseline:
+  commands:
+      - name: install
+        command: "true"
+        timeoutMs: 10000
+
+`,
+);
+// Drop ignored/removed keys the scaffold may still carry.
+spec = spec.replace(/\nlogging:\n(?:  .+\n)+/, "\n");
 writeFileSync(".harness/spec.yaml", spec);
 writeFileSync(
   ".harness/validators/yarn.json",
@@ -229,20 +247,6 @@ RUN1_EC=${PIPESTATUS[0]}
 set -e
 echo "    run#1 exit=$RUN1_EC"
 test "$RUN1_EC" -ne 0
-
-# The scaffolded recipe is still schema v1 (extend.baseline, logging). Backward
-# compatibility is load-bearing until every template branch is regenerated, so
-# assert the deprecation path is actually taken rather than silently skipped.
-if ! grep -qF 'extend.baseline` is deprecated' "$RUN1_LOG"; then
-  echo "FAIL: legacy recipe did not emit the extend.baseline deprecation warning" >&2
-  echo "      (either the warning regressed, or the recipe is no longer v1)" >&2
-  exit 1
-fi
-if ! grep -qF '`logging` is ignored' "$RUN1_LOG"; then
-  echo "FAIL: legacy recipe did not warn that logging is ignored" >&2
-  exit 1
-fi
-echo "    schema v1 deprecation warnings present"
 
 EXT_BRANCH="$(git branch --show-current)"
 echo "    branch=$EXT_BRANCH"

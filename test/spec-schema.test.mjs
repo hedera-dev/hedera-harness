@@ -143,8 +143,8 @@ ${MINIMAL_BASELINE}`);
   assert.ok(warnings.some(w => w.includes("programme")), warnings.join(" | "));
 });
 
-test("removed contract key fails at load and points at migrate", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+test("removed contract key fails at load naming eval", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: still-has-contract
 contract: .harness/acceptance-contract.json
 validator:
@@ -157,39 +157,61 @@ ${MINIMAL_BASELINE}`);
     () => loadTemplateSpec(specPath),
     error => {
       assert.match(String(error), /removed key\(s\): contract/);
-      assert.match(String(error), /hedera-harness migrate/);
+      assert.match(String(error), /use eval: not contract:/);
+      assert.doesNotMatch(String(error), /migrate/);
       assert.doesNotMatch(String(error), /upgrade the harness/);
       return true;
     },
   );
 });
 
-test("a legacy v1 recipe still loads, with deprecation warnings", async () => {
-  const { specPath } = await writeRecipe(`name: legacy
-prd: .harness/prd.md
-generator:
-  provider: command
-  command: agent
+test("removed extend key fails at load naming baseline", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: still-has-extend
 extend:
   baseline:
     commands:
       - name: install
         command: "true"
-validators:
-  static: .harness/validators/static.json
-  commands: .harness/validators/yarn.json
-requiredFiles: []
-forbiddenFiles: []
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
 `);
 
-  const { spec, warnings } = await loadTemplateSpec(specPath);
+  await assert.rejects(
+    () => loadTemplateSpec(specPath),
+    error => {
+      assert.match(String(error), /removed key\(s\): extend/);
+      assert.match(String(error), /use baseline: not extend:/);
+      assert.doesNotMatch(String(error), /migrate/);
+      return true;
+    },
+  );
+});
 
-  assert.equal(spec.schemaVersion, 1, "absent version means the original schema");
-  assert.equal(spec.baseline.commands[0].name, "install", "extend.baseline still maps to baseline");
-  assert.ok(warnings.some(w => w.includes("extend.baseline")), warnings.join(" | "));
+test("missing or older schemaVersion is rejected", async () => {
+  const missing = await writeRecipe(`name: no-version
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(missing.specPath),
+    /missing schemaVersion.*Set schemaVersion: 3/s,
+  );
+
+  const old = await writeRecipe(`schemaVersion: 2
+name: too-old
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(old.specPath),
+    /schemaVersion 2.*Set schemaVersion: 3/s,
+  );
+});
+
+test("logging is an unknown key warning, not a soft ignore", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: has-logging
+logging:
+  jsonl: somewhere-else.jsonl
+  notes: somewhere-else.md
+${MINIMAL_BASELINE}`);
+
+  const { warnings } = await loadTemplateSpec(specPath);
   assert.ok(warnings.some(w => w.includes("logging")), warnings.join(" | "));
 });
 
@@ -241,9 +263,7 @@ baseline:
   await assert.rejects(() => loadTemplateSpec(specPath), /named "install"/);
 });
 
-test("the install error names a key a v2 recipe actually has", async () => {
-  // A v2 recipe has no `extend.baseline`, so naming it sends the reader looking
-  // for a key that cannot be there.
+test("the install error names baseline.commands", async () => {
   const missing = await writeRecipe(`schemaVersion: 3
 name: no-install
 baseline:

@@ -2,43 +2,52 @@
 
 ## Unreleased
 
-### Breaking Changes (schema v3)
+### Breaking Changes
 
-- **Evaluate-checklist vocabulary hard cut (PR5).** Schema version bumped 2 → 3.
-  - Recipe key `contract:` renamed to `eval:`. `hedera-harness migrate` rewrites
-    the key and the `acceptance-contract.json` filename in the value to `eval.json`,
-    and renames that checklist file on disk (warns if the source is missing or both
-    names already exist). An unmigrated `contract:` key is rejected at recipe load
-    (points at `migrate`) so a run cannot burn a generator session before failing.
-  - Internal type `SemanticValidationResult` → `EvaluationResult`; field
-    `semanticValidation` on `ValidationResult`/`RunReport` → `evaluation`.
-  - Finding category `"semantic"` → `"eval"`, `"semantic-infra"` → `"eval-infra"`.
-  - Finding id prefix `semantic:` → `eval:`.
-  - `status.json` key `semanticPassed` → `evaluationPassed`.
-  - `ValidatorIssue.contractAssertion` → `assertion`; `ValidationFinding.contractAssertion` → `assertion`.
-  - `TemplateSpec.contractPath` → `evalPath`.
-  - `VendoredContext.contractRelativePath/contractSourcePath` → `evalRelativePath/evalSourcePath`.
-  - `VENDORED_CONTRACT_PATH` → `VENDORED_EVAL_PATH` (points to `eval.json`).
-  - `harnessContractRelativePath()` → `harnessEvalRelativePath()`.
-  - `runSemanticValidation()` → `runEvaluation()`.
-  - Files `semanticValidator.ts` → `evaluation.ts`, `semanticInfra.ts` → `evalInfra.ts`.
-  - `detectSemanticInfrastructureFailure` → `detectEvalInfrastructureFailure`.
-  - `RepairScope "semantic-scoped"` → `"eval-scoped"`.
-  - Prompt template `repair-semantic` → `repair-eval`; validator mustache
-    `{{contract}}` → `{{eval}}`; other mustache vars updated.
-  - `ASSERTION_ID_PATTERN` now matches `E\d+` (new assertion id prefix).
-  - `KNOWN_SPEC_KEYS`: `"contract"` → `"eval"`.
-  - Stage labels in docs/doctor/SVGs/CLI/optional-dep errors: ASSERT / SMOKE /
-    EVALUATE / CHAIN (no leftover "Tier 2/3/3.5" or "Semantic validation" in
-    user-facing output).
+- **Greenfield schema cut.** Recipes must declare `schemaVersion: 3`. Missing or
+  older versions hard-fail at load (`Set schemaVersion: 3`). Future versions still
+  hard-fail with an upgrade hint.
+- **`hedera-harness migrate` removed.** Pre-current recipes are not rewritten;
+  update them to the current schema (or regenerate with `init`) instead.
+- **Removed keys hard-fail without migrate advice.** `contract:` → use `eval:`;
+  `extend:` → use `baseline:`. `logging` is no longer a known key (unknown-key
+  warning). `extend.baseline` dual-read is gone.
+- **Harness branches are `harness/run-*` only.** Legacy `harness/extend-*` is no
+  longer recognized for continue / smart branch detection.
+- **Layout metadata** no longer normalizes legacy `in-place-extend` mode.
+
+### Breaking Changes (schema v3 — eval vocabulary)
+
+- Recipe key `contract:` renamed to `eval:`. An unmigrated `contract:` key is
+  rejected at recipe load (`use eval: not contract:`) so a run cannot burn a
+  generator session before failing. Checklist file rename
+  (`acceptance-contract.json` → `eval.json`) is the author's responsibility.
+- Internal type `SemanticValidationResult` → `EvaluationResult`; field
+  `semanticValidation` on `ValidationResult`/`RunReport` → `evaluation`.
+- Finding category `"semantic"` → `"eval"`, `"semantic-infra"` → `"eval-infra"`.
+- Finding id prefix `semantic:` → `eval:`.
+- `status.json` key `semanticPassed` → `evaluationPassed`.
+- `ValidatorIssue.contractAssertion` → `assertion`; `ValidationFinding.contractAssertion` → `assertion`.
+- `TemplateSpec.contractPath` → `evalPath`.
+- `VendoredContext.contractRelativePath/contractSourcePath` → `evalRelativePath/evalSourcePath`.
+- `VENDORED_CONTRACT_PATH` → `VENDORED_EVAL_PATH` (points to `eval.json`).
+- `harnessContractRelativePath()` → `harnessEvalRelativePath()`.
+- `runSemanticValidation()` → `runEvaluation()`.
+- Files `semanticValidator.ts` → `evaluation.ts`, `semanticInfra.ts` → `evalInfra.ts`.
+- `detectSemanticInfrastructureFailure` → `detectEvalInfrastructureFailure`.
+- `RepairScope "semantic-scoped"` → `"eval-scoped"`.
+- Prompt template `repair-semantic` → `repair-eval`; validator mustache
+  `{{contract}}` → `{{eval}}`; other mustache vars updated.
+- `ASSERTION_ID_PATTERN` now matches `E\d+` (new assertion id prefix).
+- `KNOWN_SPEC_KEYS`: `"contract"` → `"eval"`.
+- Stage labels in docs/doctor/SVGs/CLI/optional-dep errors: ASSERT / SMOKE /
+  EVALUATE / CHAIN (no leftover "Tier 2/3/3.5" or "Semantic validation" in
+  user-facing output).
 
 ### Changed
 
 - **Claude is the default agent preset.** Recipes that omit `agent:` now select
   Claude instead of Cursor. Explicit `agent: cursor` remains fully supported.
-  `hedera-harness migrate` writes `agent: cursor` when converting a Cursor
-  generator block, and omits `agent:` when converting a Claude one (the new
-  default).
 
 ## 1.2.2
 
