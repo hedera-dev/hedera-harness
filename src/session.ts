@@ -521,16 +521,16 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
  * broken. A missing browser is a prerequisite, not a finding.
  */
 async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promise<void> {
-  if (!spec.contractPath || !spec.validator?.enabled) {
+  if (!spec.evalPath || !spec.validator?.enabled) {
     return;
   }
 
   const { probeMcpBrowser } = await import("./mcpBrowser.js");
-  logPhase("Preflight", "checking the Tier 3 browser");
-  const probe = await probeMcpBrowser(cwd);
+    logPhase("Preflight", "checking the EVALUATE browser");
+    const probe = await probeMcpBrowser(cwd);
 
   if (probe.ok) {
-    logPhase("Preflight", `Tier 3 browser ready — ${probe.choice.detail}`);
+    logPhase("Preflight", `EVALUATE browser ready — ${probe.choice.detail}`);
     return;
   }
 
@@ -542,10 +542,10 @@ async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promis
   throw new SessionError(
     "missing-tier3-browser",
     [
-      "Harness run preflight failed: Tier 3 is enabled but the Playwright MCP browser could not be launched.",
+      "Harness run preflight failed: EVALUATE is enabled but the Playwright MCP browser could not be launched.",
       probe.error ?? "",
       `Fix: ${fix}`,
-      "Or disable Tier 3 by removing `contract` / `validator.enabled` from the recipe.",
+      "Or disable EVALUATE by removing `eval` / `validator.enabled` from the recipe.",
     ]
       .filter(Boolean)
       .join("\n  "),
@@ -567,8 +567,8 @@ async function assertRecipeFilesExist(spec: TemplateSpec): Promise<void> {
   for (const [label, filePath] of required) {
     await assertPathExists(filePath, label);
   }
-  if (spec.contractPath) {
-    await assertPathExists(spec.contractPath, "contract");
+  if (spec.evalPath) {
+    await assertPathExists(spec.evalPath, "eval");
   }
   if (spec.validators.playwrightPath) {
     await assertPathExists(spec.validators.playwrightPath, "validators.playwright");

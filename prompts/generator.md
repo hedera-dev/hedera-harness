@@ -21,9 +21,9 @@ Do not read or copy from harness run directories, seed clones, or repositories o
 
 ## Workspace Context Files (ignored runtime; do not commit)
 The PRD is vendored at `{{prdPath}}`.
-{{#hasContract}}
-The acceptance contract is vendored at `{{contractPath}}`.
-{{/hasContract}}
+{{#hasEval}}
+The evaluate checklist is vendored at `{{evalPath}}`.
+{{/hasEval}}
 Skills (if any) are under `{{skillsRoot}}/`.
 
 {{hardConstraints}}
@@ -49,4 +49,4 @@ After making meaningful changes, append a short note to `GENERATION_NOTES.md` at
 - Do not delete or rewrite unrelated existing features.
 
 ## Completion Standard
-The extended app should pass the extension's deterministic validators and any enabled Playwright/semantic gates.
+The extended app should pass the extension's deterministic validators and any enabled Playwright/evaluate gates.

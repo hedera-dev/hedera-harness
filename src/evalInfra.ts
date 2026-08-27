@@ -1,4 +1,4 @@
-import type { SemanticValidationResult, ValidationFinding } from "./types.js";
+import type { EvaluationResult, ValidationFinding } from "./types.js";
 
 const INFRA_FINDING_ID_PREFIXES = [
   "validator-config",
@@ -15,7 +15,7 @@ const INFRA_TEXT_PATTERNS: RegExp[] = [
   /no playwright mcp/i,
   /playwright\/?mcp.*(unavailable|rejected)/i,
   /browser[_ ]navigate was rejected/i,
-  // A missing browser build is the single most common Tier 3 infrastructure
+  // A missing browser build is the single most common EVALUATE infrastructure
   // failure, and none of the phrasings above matched its actual error text —
   // so it was reported as app defects and burned repair attempts.
   /browser .{0,40}is not installed/i,
@@ -47,11 +47,11 @@ const INFRA_TEXT_PATTERNS: RegExp[] = [
 ];
 
 /**
- * Returns a short reason when semantic validation failed due to harness / agent
+ * Returns a short reason when evaluation failed due to harness / agent
  * tooling (MCP, browser, validator process) rather than the generated app.
  */
-export function detectSemanticInfrastructureFailure(
-  result: SemanticValidationResult,
+export function detectEvalInfrastructureFailure(
+  result: EvaluationResult,
 ): string | undefined {
   if (result.passed) {
     return undefined;
@@ -87,14 +87,14 @@ export function detectSemanticInfrastructureFailure(
 
   return (
     result.verdict?.summary?.trim() ||
-    "Semantic validator could not access a browser / Playwright MCP (infrastructure), not an app defect."
+    "Evaluator could not access a browser / Playwright MCP (infrastructure), not an app defect."
   );
 }
 
 export function annotateInfrastructureFailure(
-  result: SemanticValidationResult,
-): SemanticValidationResult {
-  const reason = detectSemanticInfrastructureFailure(result);
+  result: EvaluationResult,
+): EvaluationResult {
+  const reason = detectEvalInfrastructureFailure(result);
   if (!reason) {
     return result;
   }
@@ -104,10 +104,10 @@ export function annotateInfrastructureFailure(
     infrastructureFailure: true,
     infrastructureFailureReason: truncate(reason, 400),
     findings: result.findings.map(finding =>
-      finding.category === "semantic"
+      finding.category === "eval"
         ? {
             ...finding,
-            category: "semantic-infra",
+            category: "eval-infra",
           }
         : finding,
     ),
@@ -124,7 +124,7 @@ function summarizeExplicitInfraFinding(finding: ValidationFinding): string {
   return truncate(finding.message || finding.id, 400);
 }
 
-function buildFailureCorpus(result: SemanticValidationResult): string {
+function buildFailureCorpus(result: EvaluationResult): string {
   return [
     result.verdict?.summary ?? "",
     ...result.findings.map(finding => `${finding.id}\n${finding.message}\n${finding.details ?? ""}`),
@@ -134,7 +134,7 @@ function buildFailureCorpus(result: SemanticValidationResult): string {
   ].join("\n");
 }
 
-function looksLikeBrowserAccessBlocked(result: SemanticValidationResult, corpus: string): boolean {
+function looksLikeBrowserAccessBlocked(result: EvaluationResult, corpus: string): boolean {
   const issues = result.verdict?.issues ?? [];
   if (issues.length >= 3) {
     const blocked = issues.filter(issue =>
@@ -147,12 +147,12 @@ function looksLikeBrowserAccessBlocked(result: SemanticValidationResult, corpus:
     }
   }
 
-  const semanticFindings = result.findings.filter(finding => finding.category === "semantic");
-  if (semanticFindings.length >= 3) {
-    const blocked = semanticFindings.filter(finding =>
+  const evalFindings = result.findings.filter(finding => finding.category === "eval");
+  if (evalFindings.length >= 3) {
+    const blocked = evalFindings.filter(finding =>
       /browser|mcp|playwright|without browser/i.test(`${finding.message} ${finding.details ?? ""}`),
     );
-    if (blocked.length / semanticFindings.length >= 0.8) {
+    if (blocked.length / evalFindings.length >= 0.8) {
       return true;
     }
   }

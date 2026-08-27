@@ -22,7 +22,7 @@ export const PROMPT_TEMPLATE_NAMES = [
   "generator",
   "generator-continue",
   "repair-preamble",
-  "repair-semantic",
+  "repair-eval",
   "repair-runtime",
   "repair-broad",
   "validator",

@@ -91,7 +91,7 @@ test("a fully default v1 recipe collapses to its template-specific parts", async
     assert.ok(removed.includes(key), `${key} should be removed; got ${removed.join(", ")}`);
   }
   assert.ok(removed.includes("schemaVersion"), "schemaVersion should be added");
-  assert.match(result.after, /^schemaVersion: 2/, "schemaVersion should come first");
+  assert.match(result.after, /^schemaVersion: 3/, "schemaVersion should come first");
 });
 
 test("dry run does not touch the file", async () => {
@@ -194,7 +194,7 @@ test("self-referential requiredFiles entries are dropped, others kept", async ()
   assert.doesNotMatch(result.after, /- \.harness\/prd\.md/);
 });
 
-test("migrating is idempotent and a v2 recipe is left alone", async () => {
+test("migrating is idempotent and a v3 recipe is left alone", async () => {
   const { specPath } = await writeSpec(V1);
 
   await migrateSpecFile(specPath);
@@ -239,4 +239,59 @@ test("the migrated recipe loads to the same spec, apart from intended changes", 
     [],
     "no generator flag should be lost",
   );
+});
+
+test("v2→v3: contract key is renamed to eval and acceptance-contract.json → eval.json", async () => {
+  const { specPath } = await writeSpec(`schemaVersion: 2
+name: with-contract
+contract: .harness/acceptance-contract.json
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: "true"
+`);
+
+  const result = await migrateSpecFile(specPath, { dryRun: true });
+
+  assert.equal(result.fromVersion, 2);
+  assert.equal(result.changed, true);
+  const renamed = keys(result, "changes");
+  assert.ok(renamed.some(k => k.includes("contract") && k.includes("eval")), `contract→eval rename expected; got ${renamed.join(", ")}`);
+  assert.match(result.after, /^eval: .harness\/eval\.json/m, "eval key with eval.json path");
+  assert.doesNotMatch(result.after, /^contract:/m, "contract key must be removed");
+  assert.match(result.after, /^schemaVersion: 3/, "schema bumped to v3");
+});
+
+test("v2→v3: a custom contract path gets its filename rewritten but parent dir preserved", async () => {
+  const { specPath } = await writeSpec(`schemaVersion: 2
+name: custom-contract
+contract: .harness/custom/acceptance-contract.json
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: "true"
+`);
+
+  const result = await migrateSpecFile(specPath, { dryRun: true });
+
+  assert.match(result.after, /eval: .harness\/custom\/eval\.json/m);
+  assert.doesNotMatch(result.after, /contract:/m);
+});
+
+test("v2→v3: a contract path with a non-standard filename is preserved as-is", async () => {
+  const { specPath } = await writeSpec(`schemaVersion: 2
+name: non-standard
+contract: .harness/my-assertions.json
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: "true"
+`);
+
+  const result = await migrateSpecFile(specPath, { dryRun: true });
+
+  assert.match(result.after, /eval: .harness\/my-assertions\.json/m);
 });

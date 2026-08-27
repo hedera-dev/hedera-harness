@@ -50,7 +50,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
     prdPaths: readPrdPaths(parsed, projectRoot),
-    contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
+    evalPath: readOptionalProjectPath(projectRoot, parsed, "eval"),
     agent,
     generator: readGenerator(parsed, agent),
     validator: readOptionalValidator(parsed, agent),

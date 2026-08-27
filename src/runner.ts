@@ -8,7 +8,7 @@ import {
 } from "./runArtifacts.js";
 import { logPhase } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
-import type { ChainSigner, CliOptions, SemanticValidationResult, ValidationResult } from "./types.js";
+import type { ChainSigner, CliOptions, EvaluationResult, ValidationResult } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { isReadyForPlaywrightSmoke, runDeterministicValidation } from "./validation/index.js";
 import {
@@ -21,7 +21,7 @@ import {
   assertChainValidationOperatorEnv,
   provisionChainSigner,
 } from "./validation/chainSigner.js";
-import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
+import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { withValidatorMcp } from "./validatorMcp.js";
 
 export async function validateWorkspace(options: CliOptions): Promise<ValidationResult> {
@@ -64,11 +64,11 @@ export async function validateWorkspace(options: CliOptions): Promise<Validation
 }
 
 /**
- * Run Tier 3 semantic validation alone against an existing workspace
- * (skips generator + deterministic gates). Re-vendors PRD/contract so older
+ * Run EVALUATE alone against an existing workspace
+ * (skips generator + deterministic gates). Re-vendors PRD/eval.json so older
  * runs pick up current harness context.
  */
-export async function validateSemanticWorkspace(options: CliOptions): Promise<SemanticValidationResult> {
+export async function validateSemanticWorkspace(options: CliOptions): Promise<EvaluationResult> {
   // Project-centric default: validate the current project (cwd), like `run`.
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
   await access(workspacePath);
@@ -78,17 +78,17 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
 
   if (!isValidatorEnabled(spec)) {
     throw new Error(
-      "Semantic validator is not enabled in the spec (set validator.enabled: true or configure validator).",
+      "Evaluator is not enabled in the spec (set validator.enabled: true or configure validator).",
     );
   }
 
-  if (!spec.contractPath) {
-    throw new Error("Semantic validation requires spec.contract to be configured.");
+  if (!spec.evalPath) {
+    throw new Error("EVALUATE requires spec.eval to be configured.");
   }
 
   if (!spec.validators.playwrightPath) {
     throw new Error(
-      "Semantic validation requires validators.playwright so the harness can start the dev server.",
+      "EVALUATE requires validators.playwright so the harness can start the dev server.",
     );
   }
 
@@ -98,11 +98,11 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
 
   const vendored = await vendorHarnessContext(workspacePath, {
     prdPath: spec.prdPaths[0],
-    contractPath: spec.contractPath,
+    evalPath: spec.evalPath,
   });
   logPhase(
-    "Harness context refreshed for semantic validation",
-    vendored.contractRelativePath ?? vendored.prdRelativePath,
+    "Harness context refreshed for evaluation",
+    vendored.evalRelativePath ?? vendored.prdRelativePath,
   );
 
   const artifactDirs = await resolveArtifactDirsForWorkspace(workspacePath);
@@ -128,7 +128,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
     );
   }
 
-  logPhase(`Semantic validation attempt ${attempt} started`, workspacePath);
+  logPhase(`Evaluation attempt ${attempt} started`, workspacePath);
 
   const serverConfig = await loadDevServerConfig(spec.validators.playwrightPath);
   let devServer: DevServerSession | null = null;
@@ -142,7 +142,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
           artifactDirs.runDirectory ?? path.join(workspacePath, ".harness-semantic"),
       },
       extraArgs =>
-        runSemanticValidation({
+        runEvaluation({
           workspacePath,
           spec,
           attempt,
@@ -156,12 +156,12 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Se
 
     const resultPath = path.join(
       artifactDirs.logsDirectory,
-      `semantic-validation-attempt-${attempt}.json`,
+      `evaluation-attempt-${attempt}.json`,
     );
     await writeJsonFile(resultPath, result);
 
     logPhase(
-      `Semantic validation ${result.passed ? "passed" : "failed"}`,
+      `Evaluation ${result.passed ? "passed" : "failed"}`,
       `${result.findings.length} finding(s), ${Math.round(result.durationMs / 1000)}s — ${resultPath}`,
     );
 

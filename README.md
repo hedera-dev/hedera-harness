@@ -89,18 +89,18 @@ Each is delivered onto the same branch with its own attempt budget and its own c
 
 One large PRD with three repair attempts is a poor fit for a real feature: the work exceeds the budget, and a failure loses all of it.
 
-## Validation tiers
+## Validation stages
 
-| Tier | Enable with | What it proves | Cost |
+| Stage | Enable with | What it proves | Cost |
 |---|---|---|---|
-| **0–1 deterministic** | on by default | files present, static assertions, no secrets, build passes | seconds |
-| **2 Playwright gate** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
-| **3 semantic** | `contract` + `validator.enabled` | an adversarial agent drives the live app and grades numbered assertions | an agent session |
-| **3.5 on-chain** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
+| **ASSERT** | on by default | files present, static assertions, no secrets, build passes | seconds |
+| **SMOKE** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
+| **EVALUATE** | `eval` + `validator.enabled` | an adversarial agent drives the live app against the evaluate checklist | an agent session |
+| **CHAIN** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
 
-Start at the bottom. Add a tier when the one below stops catching your failures.
+Start at the bottom. Add a stage when the one below stops catching your failures.
 
-The Tier 3 validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
+The EVALUATE validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
 
 ## Branch behaviour
 
@@ -138,9 +138,9 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 
 `--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
 
-**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, optional peer deps for the enabled tiers, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
+**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, optional peer deps for the enabled stages, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
 
-**`migrate`** rewrites a pre-v2 recipe in place. A key is removed only when its value equals what the harness would default it to — anything you customised is kept and reported.
+**`migrate`** rewrites a pre-v3 recipe in place. A key is removed only when its value equals what the harness would default it to — anything you customised is kept and reported.
 
 ## Configuration
 
@@ -169,23 +169,23 @@ npm install -D hedera-harness
 npx hedera-harness doctor
 ```
 
-Playwright and the Hedera SDK are **optional peer dependencies**, needed only by the higher tiers:
+Playwright and the Hedera SDK are **optional peer dependencies**, needed only by the higher stages:
 
 ```bash
-# Tier 2 — the browser API; no separate Chromium download is required
+# SMOKE — the browser API; no separate Chromium download is required
 npm install -D playwright
 
-# Tier 3.5
+# CHAIN
 npm install -D @hiero-ledger/sdk
 export HEDERA_OPERATOR_ID=0.0.xxxx
 export HEDERA_OPERATOR_KEY=0x...      # ECDSA — ED25519 has no EVM alias
 ```
 
-**Tier 2 and Tier 3 share one browser policy.** The harness uses the project's
+**SMOKE and EVALUATE share one browser policy.** The harness uses the project's
 existing Playwright Chromium when available and otherwise launches system
-Chrome. Tier 2 still needs the `playwright` package for its browser API, but
-neither tier requires a separate Chromium download when Chrome is installed.
-For Tier 3, the harness launches its pinned `@playwright/mcp` version through
+Chrome. SMOKE still needs the `playwright` package for its browser API, but
+neither stage requires a separate Chromium download when Chrome is installed.
+For EVALUATE, the harness launches its pinned `@playwright/mcp` version through
 `npx` and supplies the MCP configuration itself; do not copy an `.mcp.json`
 into the project. Run `npx hedera-harness doctor` to launch-probe the selected
 browser.
@@ -235,7 +235,7 @@ To author recipes with an agent, install the marketplace plugin:
 ├── prompts/                  # agent prompts (shipped; overridable per project)
 ├── skeletons/project-harness # provisioned by `init`
 ├── skills-index.json
-├── scripts/                  # e2e, template-recipe check, tier 3 verification
+├── scripts/                  # e2e, template-recipe check, EVALUATE verification
 ├── docs/                     # authoring-a-recipe.md, prds/, implementation-plan.md
 └── test/
 ```

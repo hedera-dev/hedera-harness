@@ -4,7 +4,7 @@ import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
 import { resolvePackageInstallTool } from "./optionalDeps.js";
-import { isValidatorEnabled } from "./semanticValidator.js";
+import { isValidatorEnabled } from "./evaluation.js";
 import {
   PROJECT_PROMPTS_DIR,
   PROMPT_TEMPLATE_NAMES,
@@ -209,7 +209,7 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<DoctorCheck[]> {
     ["validators.static", spec.validators.staticPath],
     ["validators.commands", spec.validators.commandsPath],
     ["validators.playwright", spec.validators.playwrightPath],
-    ["contract", spec.contractPath],
+    ["eval", spec.evalPath],
   ];
 
   const checks: DoctorCheck[] = [];
@@ -263,19 +263,19 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
     packageManager: spec.constraints?.packageManager,
   });
 
-  let tier2PlaywrightAvailable = false;
+  let smokePlaywrightAvailable = false;
   if (spec.validators.playwrightPath) {
-    const dependency = await checkImport("playwright", "Tier 2 Playwright gate", tool);
+    const dependency = await checkImport("playwright", "SMOKE Playwright gate", tool);
     checks.push(dependency);
-    tier2PlaywrightAvailable = dependency.status === "ok";
+    smokePlaywrightAvailable = dependency.status === "ok";
   }
   if (isValidatorEnabled(spec)) {
     checks.push(await checkMcpBrowser(cwd, tool));
-  } else if (tier2PlaywrightAvailable) {
+  } else if (smokePlaywrightAvailable) {
     checks.push(await checkTier2Browser(cwd));
   }
   if (spec.chainValidation?.enabled) {
-    checks.push(await checkImport("@hiero-ledger/sdk", "Tier 3.5 on-chain validation", tool));
+    checks.push(await checkImport("@hiero-ledger/sdk", "CHAIN on-chain validation", tool));
   }
   return checks;
 }
@@ -293,20 +293,20 @@ async function checkMcpBrowser(projectRoot: string, installTool: string): Promis
 
   if (probe.ok) {
     return {
-      name: "Tier 3 browser (Playwright MCP)",
+      name: "EVALUATE browser (Playwright MCP)",
       status: "ok",
       detail: probe.choice.detail,
     };
   }
 
   return {
-    name: "Tier 3 browser (Playwright MCP)",
+    name: "EVALUATE browser (Playwright MCP)",
     status: "fail",
     detail: probe.error ?? "the Playwright MCP browser could not be launched",
     fix:
       probe.choice.source === "project-playwright"
         ? "Reinstall the project's browser: npx playwright install chromium"
-        : `Install Playwright in the project so Tier 2 and Tier 3 share one browser: ${installTool} add -D playwright && npx playwright install chromium`,
+        : `Install Playwright in the project so SMOKE and EVALUATE share one browser: ${installTool} add -D playwright && npx playwright install chromium`,
   };
 }
 

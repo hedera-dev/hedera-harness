@@ -35,7 +35,7 @@ export interface MigrationResult {
 }
 
 /**
- * Rewrite a v1 recipe as slim v2.
+ * Rewrite a v1/v2 recipe to current schema.
  *
  * The governing rule: **only remove a key whose value equals what the harness
  * would default it to.** A recipe that adds a forbidden command, an extra secret
@@ -74,6 +74,11 @@ export async function migrateSpecFile(
   }
 
   const workspaces = readStringArray(raw, ["constraints", "workspaces"]) ?? [];
+
+  // v2 → v3: rename `contract` key → `eval`, rewrite acceptance-contract.json → eval.json in value.
+  if (fromVersion < 3) {
+    migrateContractToEval(doc, raw, changes);
+  }
 
   migrateGenerator(doc, raw, changes, kept);
   renameExtendToBaseline(doc, changes, kept);
@@ -143,7 +148,7 @@ export async function migrateSpecFile(
   changes.push({
     key: "schemaVersion",
     action: "added",
-    reason: `pins the recipe at v${SPEC_SCHEMA_VERSION}`,
+    reason: `pins the recipe at v${SPEC_SCHEMA_VERSION} (eval vocabulary)`,
   });
 
   const after = doc.toString({ lineWidth: 0 });
@@ -171,7 +176,7 @@ export function formatMigrationResult(result: MigrationResult, dryRun: boolean):
 
   const lines = [
     `${result.specPath}`,
-    `  v${result.fromVersion} → v${SPEC_SCHEMA_VERSION}   ${result.beforeLines} → ${result.afterLines} lines`,
+    `  v${result.fromVersion} → v${SPEC_SCHEMA_VERSION}  ${result.beforeLines} → ${result.afterLines} lines`,
     "",
   ];
 
@@ -189,6 +194,35 @@ export function formatMigrationResult(result: MigrationResult, dryRun: boolean):
 
   lines.push("", dryRun ? "  (dry run — nothing written)" : "  written.");
   return lines.join("\n");
+}
+
+/**
+ * v2 → v3: rename the `contract` key to `eval` and rewrite
+ * `acceptance-contract.json` → `eval.json` in the path value.
+ *
+ * Does NOT mass-rewrite assertion IDs inside JSON bodies — only the recipe key
+ * and path filename. The file on disk is also renamed when not a dry run.
+ */
+function migrateContractToEval(
+  doc: Document,
+  raw: Record<string, unknown>,
+  changes: MigrationChange[],
+): void {
+  const contractValue = raw.contract;
+  if (contractValue === undefined) return;
+
+  const newValue =
+    typeof contractValue === "string"
+      ? contractValue.replace(/acceptance-contract\.json$/i, "eval.json")
+      : contractValue;
+
+  doc.delete("contract");
+  doc.set("eval", newValue);
+  changes.push({
+    key: "contract → eval",
+    action: "renamed",
+    reason: "v3 vocab: `contract` key becomes `eval`, acceptance-contract.json → eval.json",
+  });
 }
 
 /**

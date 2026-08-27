@@ -28,14 +28,14 @@ async function writeRecipe(body, { prefix = "spec-", extraFiles = {} } = {}) {
   return { root, specPath: path.join(root, ".harness", "spec.yaml") };
 }
 
-test("a minimal v2 recipe loads on defaults alone", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+test("a minimal v3 recipe loads on defaults alone", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: my-feature
 ${MINIMAL_BASELINE}`);
 
   const { spec, warnings } = await loadTemplateSpec(specPath);
 
-  assert.equal(spec.schemaVersion, 2);
+  assert.equal(spec.schemaVersion, 3);
   assert.equal(spec.name, "my-feature");
   assert.equal(spec.maxAttempts, defaults.DEFAULT_MAX_ATTEMPTS);
   assert.match(spec.prdPaths[0], /\.harness\/prd\.md$/);
@@ -47,7 +47,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("agent preset supplies the generator; explicit generator still wins", async () => {
-  const preset = await writeRecipe(`schemaVersion: 2
+  const preset = await writeRecipe(`schemaVersion: 3
 name: preset
 agent: claude
 ${MINIMAL_BASELINE}`);
@@ -55,7 +55,7 @@ ${MINIMAL_BASELINE}`);
   assert.equal(spec.generator.command, "claude");
   assert.ok(spec.generator.args.includes("{prompt}"));
 
-  const explicit = await writeRecipe(`schemaVersion: 2
+  const explicit = await writeRecipe(`schemaVersion: 3
 name: explicit
 agent: claude
 generator:
@@ -69,7 +69,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("default agent preset is used when none is named", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: default-agent
 ${MINIMAL_BASELINE}`);
   const { spec } = await loadTemplateSpec(specPath);
@@ -80,7 +80,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("explicit agent: cursor still selects the Cursor preset", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: cursor-override
 agent: cursor
 ${MINIMAL_BASELINE}`);
@@ -90,7 +90,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("an unknown agent preset names the available ones", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: bad-agent
 agent: copilot
 ${MINIMAL_BASELINE}`);
@@ -98,7 +98,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("forbiddenCommands and secret files derive from the package manager and workspaces", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: derived
 constraints:
   packageManager: yarn@3.2.3
@@ -122,7 +122,7 @@ name: too-new
 ${MINIMAL_BASELINE}`);
   await assert.rejects(
     () => loadTemplateSpec(specPath),
-    /understands up to 2.*npm install hedera-harness@latest/s,
+    /understands up to 3.*npm install hedera-harness@latest/s,
   );
 });
 
@@ -134,7 +134,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("unknown top-level keys warn instead of being silently dropped", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: unknown-keys
 programme: something-from-a-newer-recipe
 ${MINIMAL_BASELINE}`);
@@ -173,14 +173,14 @@ logging:
 });
 
 test("prd accepts a scalar, a single-entry list, or an ordered list of increments", async () => {
-  const single = await writeRecipe(`schemaVersion: 2
+  const single = await writeRecipe(`schemaVersion: 3
 name: one-prd
 prd:
   - .harness/prd.md
 ${MINIMAL_BASELINE}`);
   assert.equal((await loadTemplateSpec(single.specPath)).spec.prdPaths.length, 1);
 
-  const many = await writeRecipe(`schemaVersion: 2
+  const many = await writeRecipe(`schemaVersion: 3
 name: many-prds
 prd:
   - .harness/01-foundation.md
@@ -195,13 +195,13 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("prd rejects an empty list and non-string entries", async () => {
-  const empty = await writeRecipe(`schemaVersion: 2
+  const empty = await writeRecipe(`schemaVersion: 3
 name: empty-prd
 prd: []
 ${MINIMAL_BASELINE}`);
   await assert.rejects(() => loadTemplateSpec(empty.specPath), /at least one PRD/);
 
-  const bad = await writeRecipe(`schemaVersion: 2
+  const bad = await writeRecipe(`schemaVersion: 3
 name: bad-prd
 prd:
   - 42
@@ -210,7 +210,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("baseline without an install command is still rejected", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 2
+  const { specPath } = await writeRecipe(`schemaVersion: 3
 name: no-install
 baseline:
   commands:
@@ -223,7 +223,7 @@ baseline:
 test("the install error names a key a v2 recipe actually has", async () => {
   // A v2 recipe has no `extend.baseline`, so naming it sends the reader looking
   // for a key that cannot be there.
-  const missing = await writeRecipe(`schemaVersion: 2
+  const missing = await writeRecipe(`schemaVersion: 3
 name: no-install
 baseline:
   commands:
@@ -236,7 +236,7 @@ baseline:
     return true;
   });
 
-  const empty = await writeRecipe(`schemaVersion: 2
+  const empty = await writeRecipe(`schemaVersion: 3
 name: empty-baseline
 baseline:
   commands: []

@@ -235,14 +235,14 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       // Re-vendor per increment so the agent sees only the brief it is delivering.
       const vendoredContext = await vendorHarnessContext(
         workspaceRoot,
-        { prdPath: spec.prdPaths[sliceIndex], contractPath: spec.contractPath },
+        { prdPath: spec.prdPaths[sliceIndex], evalPath: spec.evalPath },
         { contextDir: HARNESS_CONTEXT_DIR },
       );
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "context_vendored",
         timestamp: new Date().toISOString(),
         prdPath: vendoredContext.prdRelativePath,
-        contractPath: vendoredContext.contractRelativePath,
+        evalPath: vendoredContext.evalRelativePath,
         workspaceContextDir: path.join(workspaceRoot, HARNESS_CONTEXT_DIR),
       });
 
@@ -306,7 +306,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       openFindingIds: report.openFindingIds,
       gateStatus: report.passed
         ? "passed"
-        : report.semanticValidation?.infrastructureFailure
+        : report.evaluation?.infrastructureFailure
           ? "aborted"
           : "failed",
     });
@@ -380,7 +380,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     lastAttempt: report.attempts,
     gateStatus: report.passed
       ? "passed"
-      : report.semanticValidation?.infrastructureFailure
+      : report.evaluation?.infrastructureFailure
         ? "aborted"
         : "failed",
   };

@@ -121,15 +121,15 @@ export async function recordAttemptResult(input: {
     findingCount: delta.open.length,
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
-    semanticPassed: validation.semanticValidation?.passed,
-    infrastructureFailure: validation.semanticValidation?.infrastructureFailure ?? false,
+    semanticPassed: validation.evaluation?.passed,
+    infrastructureFailure: validation.evaluation?.infrastructureFailure ?? false,
   });
 
-  const summary = validation.semanticValidation
-    ? validation.semanticValidation.passed
-      ? (validation.semanticValidation.verdict?.summary ?? "semantic validation passed")
-      : validation.semanticValidation.infrastructureFailure
-        ? `infrastructure: ${validation.semanticValidation.infrastructureFailureReason}`
+  const summary = validation.evaluation
+    ? validation.evaluation.passed
+      ? (validation.evaluation.verdict?.summary ?? "evaluate checklist passed")
+      : validation.evaluation.infrastructureFailure
+        ? `infrastructure: ${validation.evaluation.infrastructureFailureReason}`
         : formatFindingDelta(delta)
     : validation.passed
       ? (validation.playwrightGate
@@ -149,8 +149,8 @@ export async function abortOnInfrastructureFailure(input: {
 }): Promise<void> {
   const { layout, attempt, validation } = input;
   const reason =
-    validation.semanticValidation?.infrastructureFailureReason ??
-    "semantic infrastructure failure";
+    validation.evaluation?.infrastructureFailureReason ??
+    "evaluation infrastructure failure";
 
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "validator_infra_aborted",
@@ -160,16 +160,16 @@ export async function abortOnInfrastructureFailure(input: {
   });
   await appendHarnessNote(
     layout.notesLogPath,
-    `Attempt ${attempt} semantic infrastructure abort`,
+    `Attempt ${attempt} evaluation infrastructure abort`,
     [
       "Repair loop aborted: failure is harness/agent tooling, not the generated app.",
       reason,
-      ...(validation.semanticValidation?.findings ?? []).map(
+      ...(validation.evaluation?.findings ?? []).map(
         finding => `- [${finding.category}] ${finding.message}`,
       ),
     ].join("\n"),
   );
-  logPhase("Aborting repair loop after semantic infrastructure failure", reason);
+  logPhase("Aborting repair loop after evaluation infrastructure failure", reason);
 }
 
 export async function checkpoint(input: {
@@ -234,7 +234,7 @@ export async function finishRun(input: {
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - input.startedAt.getTime(),
     validation,
-    semanticValidation: validation.semanticValidation,
+    evaluation: validation.evaluation,
   };
 
   await writeJsonFile(layout.reportPath, report);

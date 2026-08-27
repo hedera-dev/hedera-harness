@@ -47,7 +47,7 @@ async function makeProject({ specBody, files = {} } = {}) {
  * different generator does not end up with two `generator:` keys.
  */
 const specWith = (command, extra = "") =>
-  `schemaVersion: 2
+  `schemaVersion: 3
 name: doctor-demo
 generator:
   provider: command
@@ -94,7 +94,7 @@ test("doctor fails, rather than throws, when the recipe is missing", async () =>
 
 test("doctor flags a recipe pointing at a file that does not exist", async () => {
   const root = await makeProject({
-    specBody: specWith("node", "contract: .harness/missing.json\n"),
+    specBody: specWith("node", "eval: .harness/missing.json\n"),
   });
 
   const report = await runDoctor({
@@ -102,7 +102,7 @@ test("doctor flags a recipe pointing at a file that does not exist", async () =>
     workspacePath: root,
   });
 
-  assert.equal(statusOf(report, "contract"), "fail");
+  assert.equal(statusOf(report, "eval"), "fail");
   assert.equal(report.passed, false);
 });
 

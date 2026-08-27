@@ -8,8 +8,9 @@ import type { CommandAgentConfig, SecretScanConfig } from "./types.js";
  *
  * v1  original: required `generator`/`logging`, scalar `prd`, `extend.baseline`
  * v2  slim: `agent` preset, defaulted plumbing, `prd` list, `baseline`
+ * v3  eval vocabulary: `contract` → `eval`, acceptance-contract.json → eval.json
  */
-export const SPEC_SCHEMA_VERSION = 2;
+export const SPEC_SCHEMA_VERSION = 3;
 export const MIN_SUPPORTED_SCHEMA_VERSION = 1;
 
 /** Recipes predate the field; treat an absent version as the original schema. */
@@ -170,7 +171,7 @@ export const KNOWN_SPEC_KEYS = new Set([
   "name",
   "description",
   "prd",
-  "contract",
+  "eval",
   "agent",
   "generator",
   "validator",

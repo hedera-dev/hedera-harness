@@ -2,11 +2,11 @@
 
 A PRD says **what to build**, in product terms. It is the brief handed to the
 generator agent. It is not the thing the run is graded against — that is the
-acceptance contract, if you enable Tier 3.
+evaluate checklist, if you enable EVALUATE.
 
 Keeping those separate matters: the PRD can describe intent loosely, while the
-contract has to be checkable in a browser. Mixing them produces a PRD full of
-assertions the agent optimises against, and a contract too vague to grade.
+checklist has to be checkable in a browser. Mixing them produces a PRD full of
+assertions the agent optimises against, and a checklist too vague to grade.
 
 ## Where it lives
 
@@ -49,17 +49,17 @@ usually maps directly onto increments.
 One large PRD with three repair attempts is a poor fit for a real feature: the
 work exceeds the budget, and a failure loses all of it.
 
-## PRD vs acceptance contract
+## PRD vs evaluate checklist
 
-| | PRD | Acceptance contract |
+| | PRD | Evaluate checklist |
 |---|---|---|
 | Audience | the generator | the validator |
 | Style | product prose | numbered, checkable claims |
 | Question | what should exist | is it actually true in a browser |
-| Required | yes | only for Tier 3 |
+| Required | yes | only for EVALUATE |
 
 If you find yourself writing "the page must show X" in the PRD, that sentence
-belongs in the contract as an assertion with a `howToVerify`.
+belongs in the checklist as an assertion with a `howToVerify`.
 
 ## Examples
 

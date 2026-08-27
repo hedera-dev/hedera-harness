@@ -152,7 +152,7 @@ export interface ChainValidationDeployConfig {
 }
 
 /**
- * Optional Tier 3.5 on-chain validation: provision an ephemeral funded ECDSA
+ * Optional on-chain validation: provision an ephemeral funded ECDSA
  * testnet account, inject it as a burner wallet, and verify txs via mirror node.
  */
 export interface ChainValidationConfig {
@@ -196,7 +196,7 @@ export interface TemplateSpec {
    * delivery is not implemented yet, so exactly one entry is accepted today.
    */
   prdPaths: string[];
-  contractPath?: string;
+  evalPath?: string;
   /**
    * Which agent CLI family this run targets. Drives MCP delivery and model
    * selection even when `generator:` overrides the invocation itself.
@@ -246,7 +246,7 @@ export interface PlaywrightGateResult {
 
 export interface ValidatorIssue {
   id: string;
-  contractAssertion?: string;
+  assertion?: string;
   severity: "critical" | "major" | "minor";
   route?: string;
   message: string;
@@ -259,7 +259,7 @@ export interface ValidatorVerdict {
   issues: ValidatorIssue[];
 }
 
-export interface SemanticValidationResult {
+export interface EvaluationResult {
   passed: boolean;
   verdict?: ValidatorVerdict;
   findings: ValidationFinding[];
@@ -279,8 +279,8 @@ export interface ValidationFinding {
     | "commands"
     | "agent"
     | "playwright"
-    | "semantic"
-    | "semantic-infra";
+    | "eval"
+    | "eval-infra";
   message: string;
   details?: string;
   /**
@@ -288,9 +288,9 @@ export interface ValidationFinding {
    * attempt to show what the last repair closed; they are not failures.
    */
   status?: "open" | "fixed";
-  /** Acceptance-contract assertion id when category is semantic (e.g. C7). */
-  contractAssertion?: string;
-  /** Route associated with a semantic finding, when known. */
+  /** Evaluate-checklist assertion id when category is eval (e.g. E7). */
+  assertion?: string;
+  /** Route associated with an eval finding, when known. */
   route?: string;
 }
 
@@ -299,7 +299,7 @@ export interface ValidationResult {
   findings: ValidationFinding[];
   commandResults: CommandExecutionResult[];
   playwrightGate?: PlaywrightGateResult;
-  semanticValidation?: SemanticValidationResult;
+  evaluation?: EvaluationResult;
 }
 
 /** Outcome of one increment in an ordered `prd:` list. */
@@ -324,7 +324,7 @@ export interface RunReport {
   cycle?: number;
   /** Attempts consumed in this kick only (fresh maxAttempts budget). */
   attemptsThisCycle?: number;
-  /** True when deterministic, playwright gate, and semantic validation (if configured) all pass. */
+  /** True when deterministic, playwright gate, and evaluation (if configured) all pass. */
   passed: boolean;
   /** Finding ids still failing when the run stopped. */
   openFindingIds: string[];
@@ -336,7 +336,7 @@ export interface RunReport {
   finishedAt: string;
   durationMs: number;
   validation: ValidationResult;
-  semanticValidation?: SemanticValidationResult;
+  evaluation?: EvaluationResult;
 }
 
 export type HarnessLogEvent =
@@ -379,7 +379,7 @@ export type HarnessLogEvent =
       type: "context_vendored";
       timestamp: string;
       prdPath: string;
-      contractPath?: string;
+      evalPath?: string;
       workspaceContextDir: string;
     }
   | {
