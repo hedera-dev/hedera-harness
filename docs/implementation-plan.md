@@ -210,7 +210,7 @@ named `HARNESS_CONTEXT_DIR` — `.harness/runtime/context` in `runtimePaths.ts` 
 run actually vendors) and `.harness-context` in `contextVendor.ts`. `promptBuilder.ts`
 imports both. `buildSessionRepairPrompt` accepted a `VendoredContext` and never forwarded
 it, so every repair attempt fell through to the `.harness-context/` defaults and told the
-agent to read a PRD and acceptance contract at paths a project run never creates. Only
+agent to read a PRD and evaluate checklist at paths a project run never creates. Only
 the initial and continue prompts used the real ones.
 
 Worth watching: 3 of 11 recorded runs exhausted their attempt budget, and repair was
