@@ -44,18 +44,13 @@
   EVALUATE / CHAIN (no leftover "Tier 2/3/3.5" or "Semantic validation" in
   user-facing output).
 
-### Added
-
-- **`doctor` reports the two legacy artifacts the schema cut cannot reach.**
-  Assertion ids in the evaluate checklist that are not `E<number>` (they still
-  grade, but repair prompts lose the correlation back to the checklist), and
-  files in `.harness/prompts/` whose name matches no prompt — resolved by name,
-  so a stale `repair-semantic.md` is silently skipped for the bundled prompt.
-
 ### Changed
 
 - **Claude is the default agent preset.** Recipes that omit `agent:` now select
   Claude instead of Cursor. Explicit `agent: cursor` remains fully supported.
+- Dropped `docs/implementation-plan.md` (historical phase notes, not product docs).
+- Removed doctor warnings for non-`E*` checklist ids and stale prompt override
+  filenames — greenfield recipes use current names; old files are ignored.
 
 ## 1.2.2
 
