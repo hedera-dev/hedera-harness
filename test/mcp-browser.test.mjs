@@ -31,7 +31,7 @@ test("the resolved browser prefers the project's Playwright, else system Chrome"
   assert.ok(choice.args.includes(HARNESS_MCP_MARKER), "carries the harness marker");
 
   if (choice.source === "project-playwright") {
-    // Tier 2 and Tier 3 must drive the same binary, or a route can render for
+    // SMOKE and EVALUATE must drive the same binary, or a route can render for
     // one and not the other.
     assert.ok(choice.executablePath, "records the shared browser path");
     const at = choice.args.indexOf("--executable-path");
@@ -73,7 +73,7 @@ test("a project Playwright browser is selected by executable path, not an undocu
   assert.equal(args.indexOf("--browser"), -1);
 });
 
-test("Tier 2 launches the same browser choice as Tier 3", () => {
+test("SMOKE launches the same browser choice as EVALUATE", () => {
   assert.deepEqual(
     playwrightLaunchOptionsForBrowser({
       source: "project-playwright",

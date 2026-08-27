@@ -147,7 +147,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     const result = await validateSemanticWorkspace(parsed.options);
     console.log(
       [
-        `Semantic validation finished`,
+        `EVALUATE finished`,
         `passed=${result.passed}`,
         `findings=${result.findings.length}`,
         `durationMs=${result.durationMs}`,

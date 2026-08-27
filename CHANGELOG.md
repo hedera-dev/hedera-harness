@@ -27,7 +27,9 @@
     `{{contract}}` → `{{eval}}`; other mustache vars updated.
   - `ASSERTION_ID_PATTERN` now matches `E\d+` (new assertion id prefix).
   - `KNOWN_SPEC_KEYS`: `"contract"` → `"eval"`.
-  - Stage/tier labels in docs/doctor/SVGs: ASSERT / SMOKE / EVALUATE / CHAIN.
+  - Stage labels in docs/doctor/SVGs/CLI/optional-dep errors: ASSERT / SMOKE /
+    EVALUATE / CHAIN (no leftover "Tier 2/3/3.5" or "Semantic validation" in
+    user-facing output).
 
 ### Changed
 

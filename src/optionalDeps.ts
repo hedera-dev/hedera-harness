@@ -61,7 +61,7 @@ export async function importPlaywright(
     return await import("playwright");
   } catch (error) {
     throw new Error(
-      await formatOptionalDepError("playwright", "Tier 2 Playwright gate", options, error),
+      await formatOptionalDepError("playwright", "SMOKE Playwright gate", options, error),
     );
   }
 }
@@ -75,7 +75,7 @@ export async function importHieroSdk(
     throw new Error(
       await formatOptionalDepError(
         "@hiero-ledger/sdk",
-        "Tier 3.5 on-chain validation",
+        "CHAIN on-chain validation",
         options,
         error,
       ),

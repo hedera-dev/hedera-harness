@@ -275,7 +275,7 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
   if (isValidatorEnabled(spec)) {
     checks.push(await checkMcpBrowser(cwd, tool));
   } else if (smokePlaywrightAvailable) {
-    checks.push(await checkTier2Browser(cwd));
+    checks.push(await checkSmokeBrowser(cwd));
   }
   if (spec.chainValidation?.enabled) {
     checks.push(await checkImport("@hiero-ledger/sdk", "CHAIN on-chain validation", tool));
@@ -286,7 +286,7 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
 /**
  * Start the MCP server and navigate for real.
  *
- * The Tier 2 gate passing says nothing about Tier 3: they used to resolve
+ * The SMOKE gate passing says nothing about EVALUATE: they used to resolve
  * different browsers, so the gate could go green while the validator had
  * nothing to drive — surfacing only after a paid agent session.
  */
@@ -313,20 +313,20 @@ async function checkMcpBrowser(projectRoot: string, installTool: string): Promis
   };
 }
 
-async function checkTier2Browser(projectRoot: string): Promise<DoctorCheck> {
+async function checkSmokeBrowser(projectRoot: string): Promise<DoctorCheck> {
   const { launchSharedBrowser, resolveMcpBrowser } = await import("./mcpBrowser.js");
   const choice = await resolveMcpBrowser(projectRoot);
   try {
     const browser = await launchSharedBrowser(projectRoot);
     await browser.close();
     return {
-      name: "Tier 2 browser",
+      name: "SMOKE browser",
       status: "ok",
       detail: choice.detail,
     };
   } catch (error) {
     return {
-      name: "Tier 2 browser",
+      name: "SMOKE browser",
       status: "fail",
       detail: error instanceof Error ? error.message : String(error),
       fix:

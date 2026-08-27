@@ -61,12 +61,12 @@ export function playwrightLaunchOptionsForBrowser(
 }
 
 /**
- * Choose the browser the Tier 3 validator drives.
+ * Choose the browser the EVALUATE validator drives.
  *
  * Preference is the browser the project's own Playwright already downloaded —
- * the same binary the Tier 2 gate uses. That keeps both tiers on one browser
+ * the same binary the SMOKE gate uses. That keeps both stages on one browser
  * (a route that renders for the gate renders for the evaluator) and costs no
- * extra download, since Tier 2 already required it.
+ * extra download, since SMOKE already required it.
  *
  * The fallback is the system Chrome channel, which needs no download either but
  * is whatever version the machine happens to have.
@@ -80,7 +80,7 @@ export async function resolveMcpBrowser(projectRoot: string): Promise<McpBrowser
       args: mcpArgsForBrowser({ source: "project-playwright", executablePath }),
       source: "project-playwright",
       executablePath,
-      detail: `project Playwright browser (shared with the Tier 2 gate) — ${executablePath}`,
+      detail: `project Playwright browser (shared with the SMOKE gate) — ${executablePath}`,
     };
   } catch {
     // Playwright missing from the project, or installed without its browser.
@@ -88,12 +88,12 @@ export async function resolveMcpBrowser(projectRoot: string): Promise<McpBrowser
       args: mcpArgsForBrowser({ source: "system-chrome" }),
       source: "system-chrome",
       detail:
-        "system Chrome — shared by Tier 2 and Tier 3 because the project's Playwright browser was unavailable",
+        "system Chrome — shared by SMOKE and EVALUATE because the project's Playwright browser was unavailable",
     };
   }
 }
 
-/** Launch the exact browser choice shared with the Tier 3 MCP server. */
+/** Launch the exact browser choice shared with the EVALUATE MCP server. */
 export async function launchSharedBrowser(projectRoot: string): Promise<Browser> {
   const [{ chromium }, choice] = await Promise.all([
     importPlaywright({ projectRoot }),
@@ -152,7 +152,7 @@ export async function probeMcpBrowser(
     const collect = (chunk: Buffer) => {
       output += chunk.toString();
       // Settle as soon as the answer is known. Waiting for the timeout put a
-      // full minute in front of every Tier 3 run.
+      // full minute in front of every EVALUATE run.
       if (verdictFrom(output) !== undefined) finish();
     };
     child.stdout.on("data", collect);
