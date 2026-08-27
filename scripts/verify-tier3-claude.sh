@@ -90,7 +90,7 @@ cat > .harness/acceptance-contract.json <<'JSON'
 JSON
 
 cat > .harness/spec.yaml <<JSON
-schemaVersion: 2
+schemaVersion: 3
 name: tier3-verify
 agent: claude
 contract: .harness/acceptance-contract.json

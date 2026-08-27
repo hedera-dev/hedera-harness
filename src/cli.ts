@@ -1,11 +1,10 @@
 import { runInit } from "./initRunner.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
-import { formatMigrationResult, migrateSpecFile } from "./migrate.js";
 import { validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import { runSession } from "./sessionRunner.js";
 import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "migrate", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "validate", "validate-semantic"]);
 const DEFAULT_RUN_SPEC = ".harness/spec.yaml";
 
 export function parseCliArgs(argv: string[]): ParsedCli {
@@ -13,7 +12,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
     throw new Error(
-      `Expected command "init", "run", "doctor", "migrate", "validate", or "validate-semantic".`,
+      `Expected command "init", "run", "doctor", "validate", or "validate-semantic".`,
     );
   }
 
@@ -40,7 +39,6 @@ Usage:
   hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <name>] [--skip-install]
   hedera-harness run [spec] [--max-attempts <count>] [--new] [--continue <branch>]
   hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
-  hedera-harness migrate [spec] [--dry-run]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
 
@@ -53,14 +51,13 @@ Examples:
   hedera-harness run .harness/spec.yaml --new
   hedera-harness run .harness/spec.yaml --continue harness/run-my-feature-abc123
   hedera-harness doctor
-  hedera-harness migrate --dry-run
   hedera-harness validate
   hedera-harness validate .harness/spec.yaml
   hedera-harness validate-semantic .harness/spec.yaml
 
 Project-centric run notes:
   - Workspace is the current directory (cwd). Bootstrap with \`init\` first (or use an existing app with .harness/).
-  - On a matching harness/run-* (or legacy harness/extend-*) branch + same spec, continues automatically.
+  - On a matching harness/run-* branch + same spec, continues automatically.
   - On a normal branch, or when the spec differs, creates harness/run-<slug>-<id>.
   - --new forces a fresh harness branch; --continue <branch> checks out that branch and resumes.
   - Does not auto-stash, push, open a PR, merge, or delete branches.`);
@@ -103,17 +100,6 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     const report = await runDoctor(parsed.options, { recipeOnly: parsed.options.recipeOnly });
     console.log(formatDoctorReport(report));
     if (!report.passed) {
-      process.exitCode = 1;
-    }
-    return;
-  }
-
-  if (parsed.command === "migrate") {
-    const result = await migrateSpecFile(parsed.options.specPath, {
-      dryRun: parsed.options.dryRun,
-    });
-    console.log(formatMigrationResult(result, Boolean(parsed.options.dryRun)));
-    if (result.warnings.length > 0) {
       process.exitCode = 1;
     }
     return;
@@ -186,7 +172,6 @@ function takeSpecPath(
   if (
     command === "run" ||
     command === "doctor" ||
-    command === "migrate" ||
     command === "validate" ||
     command === "validate-semantic"
   ) {
@@ -250,12 +235,6 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
           throw new Error(`${arg} is only valid for doctor.`);
         }
         options.recipeOnly = true;
-        break;
-      case "--dry-run":
-        if (command !== "migrate") {
-          throw new Error(`${arg} is only valid for migrate.`);
-        }
-        options.dryRun = true;
         break;
       case "--workspace":
         options.workspacePath = readValue(args, ++index, arg);

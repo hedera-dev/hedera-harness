@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="520" height="920" viewBox="0 0 520 920" role="img" aria-labelledby="title desc">
   <title id="title">hedera-harness vertical run graph</title>
-  <desc id="desc">Vertical happy-path graph: Inputs to Seed to Vendor to Generate to Validate tiers to Outcome, with a repair loop back to Generate.</desc>
+  <desc id="desc">Vertical happy-path graph: Inputs to Seed to Vendor to Generate to Validate stages to Outcome, with a repair loop back to Generate.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">

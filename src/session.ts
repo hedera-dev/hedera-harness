@@ -218,7 +218,7 @@ async function checkoutContinueBranch(workspacePath: string, branch: string): Pr
     throw new SessionError(
       "invalid-continue-branch",
       [
-        `--continue expects a harness branch (harness/run-* or legacy harness/extend-*).`,
+        `--continue expects a harness branch (harness/run-*).`,
         `Got ${JSON.stringify(branch)}.`,
       ].join(" "),
     );
@@ -530,7 +530,7 @@ async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promis
       "missing-eval",
       [
         "Harness run preflight failed: EVALUATE is enabled (`validator.enabled`) but `eval` is not set.",
-        "Add `eval: .harness/eval.json`, or run `hedera-harness migrate` if the recipe still has `contract:`.",
+        "Add `eval: .harness/eval.json`.",
         "Or disable EVALUATE by removing `validator.enabled`.",
       ].join("\n"),
     );

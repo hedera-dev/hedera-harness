@@ -36,7 +36,7 @@ test("buildRunBranchName uses harness/run-<slug>-<id>", () => {
   const name = gitMod.buildRunBranchName("My Demo App!", "abc123");
   assert.equal(name, "harness/run-my-demo-app-abc123");
   assert.equal(gitMod.isHarnessBranch(name), true);
-  assert.equal(gitMod.isHarnessBranch("harness/extend-legacy-abc123"), true);
+  assert.equal(gitMod.isHarnessBranch("harness/extend-legacy-abc123"), false);
   assert.equal(gitMod.isHarnessBranch("main"), false);
 });
 

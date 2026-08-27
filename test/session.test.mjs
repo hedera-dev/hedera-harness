@@ -25,18 +25,15 @@ async function writeMinimalRecipe(root) {
   await writeFile(path.join(root, ".harness", "validators", "commands.json"), "[]\n");
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `name: demo-extend
+    `schemaVersion: 3
+name: demo-extend
 description: session fixture
 prd: .harness/prd.md
-seed:
-  repo: https://github.com/hedera-dev/scaffold-hbar.git
-  ref: main
 generator:
   provider: command
   command: agent
-extend:
-  baseline:
-    commands:
+baseline:
+  commands:
       - name: install
         command: yarn install
         timeoutMs: 300000
@@ -46,9 +43,6 @@ validators:
 requiredFiles: []
 forbiddenFiles: []
 maxAttempts: 2
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
 constraints:
   packageManager: yarn
 `,
@@ -226,14 +220,14 @@ test("different-spec on harness branch starts a new harness/run-* branch", async
   const { writeFile } = await import("node:fs/promises");
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `name: other-feature
+    `schemaVersion: 3
+name: other-feature
 prd: .harness/prd.md
 generator:
   provider: command
   command: agent
-extend:
-  baseline:
-    commands:
+baseline:
+  commands:
       - name: install
         command: yarn install
 validators:
@@ -241,9 +235,6 @@ validators:
   commands: .harness/validators/commands.json
 requiredFiles: []
 forbiddenFiles: []
-logging:
-  jsonl: .harness/runs/harness.log.jsonl
-  notes: .harness/runs/harness-notes.md
 constraints:
   packageManager: yarn
 `,

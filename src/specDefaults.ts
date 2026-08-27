@@ -1,20 +1,20 @@
 import type { CommandAgentConfig, SecretScanConfig } from "./types.js";
 
 /**
- * Version of `.harness/spec.yaml` this harness writes.
+ * Version of `.harness/spec.yaml` this harness writes and accepts.
  *
  * Bump only on breaking schema changes — a field removed, renamed, or given a
  * different meaning. Additive fields with safe defaults do not bump it.
+ *
+ * Older schema versions are not loaded. Recipes must declare the current version.
  *
  * v1  original: required `generator`/`logging`, scalar `prd`, `extend.baseline`
  * v2  slim: `agent` preset, defaulted plumbing, `prd` list, `baseline`
  * v3  eval vocabulary: `contract` → `eval`, acceptance-contract.json → eval.json
  */
 export const SPEC_SCHEMA_VERSION = 3;
-export const MIN_SUPPORTED_SCHEMA_VERSION = 1;
-
-/** Recipes predate the field; treat an absent version as the original schema. */
-export const ASSUMED_SCHEMA_VERSION = 1;
+/** Greenfield: only the current schema loads. */
+export const MIN_SUPPORTED_SCHEMA_VERSION = SPEC_SCHEMA_VERSION;
 
 export const DEFAULT_PRD_PATH = ".harness/prd.md";
 export const DEFAULT_STATIC_VALIDATOR_PATH = ".harness/validators/static.json";
@@ -184,9 +184,7 @@ export const KNOWN_SPEC_KEYS = new Set([
   "secretScan",
   "chainValidation",
   "baseline",
-  "extend",
   "maxAttempts",
-  "logging",
 ]);
 
 /**
@@ -194,6 +192,10 @@ export const KNOWN_SPEC_KEYS = new Set([
  * a silent drop would burn a generator session before EVALUATE noticed.
  */
 export const REMOVED_SPEC_KEYS: Readonly<Record<string, string>> = {
-  contract:
-    "`contract` was renamed to `eval` in schema v3. Run `hedera-harness migrate` to rewrite the recipe (and rename acceptance-contract.json → eval.json).",
+  contract: "use eval: not contract:",
+  extend: "use baseline: not extend:",
+  // v1 required `logging`, so it is the likeliest survivor after contract/extend.
+  // Pointing logs outside .harness/runs/ left untracked files that failed the next
+  // run's clean-tree check, which is why the key went rather than gaining a default.
+  logging: "remove logging: — harness logs always live under .harness/runs/",
 };

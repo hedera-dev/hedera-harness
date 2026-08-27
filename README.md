@@ -49,7 +49,7 @@ Attempt 3 FAILED — 2 open, 3 fixed, 1 new
 `.harness/` inside your project. Everything the harness can default, it defaults:
 
 ```yaml
-schemaVersion: 2
+schemaVersion: 3
 
 name: my-feature
 description: What you want the agent to build.
@@ -62,7 +62,7 @@ baseline:
       command: yarn next:build
 ```
 
-That is a complete, working recipe. `generator`, `logging`, `secretScan`, `forbiddenFiles`, validator paths, `prd` and `maxAttempts` all have defaults, and `constraints.forbiddenCommands` is derived from your package manager. The generated skeleton lists every default as a comment so you can see the full surface without carrying it.
+That is a complete, working recipe. `generator`, `secretScan`, `forbiddenFiles`, validator paths, `prd` and `maxAttempts` all have defaults, and `constraints.forbiddenCommands` is derived from your package manager. The generated skeleton lists every default as a comment so you can see the full surface without carrying it.
 
 Pick the agent with one line:
 
@@ -123,7 +123,6 @@ The harness never pushes, opens a PR, merges, deletes a branch, or switches away
 hedera-harness init [dir] [--repo URL] [--ref branch] [--template name] [--skip-install] [--skills a,b]
 hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
 hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
-hedera-harness migrate [spec] [--dry-run]
 hedera-harness validate [spec] [--workspace <path>]
 hedera-harness validate-semantic [spec] [--workspace <path>]
 ```
@@ -139,8 +138,6 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 `--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
 
 **`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, optional peer deps for the enabled stages, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
-
-**`migrate`** rewrites a pre-v3 recipe in place. A key is removed only when its value equals what the harness would default it to — anything you customised is kept and reported.
 
 ## Configuration
 

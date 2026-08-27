@@ -48,7 +48,7 @@ async function makeProject(prdNames, { failOn } = {}) {
   );
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `schemaVersion: 2
+    `schemaVersion: 3
 name: slice-demo
 prd:
 ${prdNames.map(n => `  - .harness/${n}.md`).join("\n")}

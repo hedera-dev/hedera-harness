@@ -50,7 +50,7 @@ baseline:
       command: yarn next:build
 ```
 
-Only declare a key when it differs from the default. `generator`, `logging`,
+Only declare a key when it differs from the default. `generator`,
 `secretScan`, `forbiddenFiles`, validator paths, `prd` and `maxAttempts` all
 have sensible defaults; `constraints.forbiddenCommands` is derived from your
 package manager. The generated skeleton lists every default as a comment, so
@@ -211,28 +211,10 @@ hedera-harness validate-semantic   # run EVALUATE only, against a workspace you 
 
 `doctor` reports everything at once rather than stopping at the first problem.
 
-## Upgrading an older recipe
-
-Pre-v3 recipes that still declare `contract:` **do not load** — the harness
-rejects the removed key at parse time and points at migrate (so a run never
-burns a generator session discovering it). Other older shapes may still load
-with deprecation warnings.
-
-```bash
-hedera-harness migrate --dry-run   # show what would change
-hedera-harness migrate             # rewrite in place
-```
-
-v2→v3 renames `contract` → `eval`, rewrites `acceptance-contract.json` → `eval.json`
-in the path value, **and renames that file on disk**. Assertion IDs inside JSON
-bodies are not mass-rewritten; new checklists use E1, E2, … identifiers. If the
-source file is missing (or both names already exist), migrate still rewrites the
-recipe and prints a warning — resolve the file before running.
-
-A key is only removed when its value equals what the harness would default it
-to. Anything you customised — extra forbidden commands, extra secret patterns,
-a non-standard validator path — is kept and reported, so the diff is reviewable
-rather than trusted.
+Recipes must declare `schemaVersion: 3`. Older keys such as `contract:` or
+`extend:` are rejected at load (`use eval:` / `use baseline:`). Regenerating
+with `hedera-harness init` and reapplying edits is the supported path when a
+recipe is too far behind.
 
 ## Design tips
 
