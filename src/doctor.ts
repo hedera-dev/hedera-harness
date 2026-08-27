@@ -94,9 +94,12 @@ export async function runDoctor(
 
 export function formatDoctorReport(report: DoctorReport): string {
   const symbol: Record<CheckStatus, string> = { ok: "✔", warn: "!", fail: "✘" };
+  // Only the first line of a check carries its symbol, so any continuation —
+  // in the detail or the fix — has to be indented to stay inside the report.
+  const indent = (text: string) => text.split("\n").join("\n      ");
   const lines = report.checks.map(check => {
-    const head = `  ${symbol[check.status]} ${check.name} — ${check.detail}`;
-    return check.status === "ok" || !check.fix ? head : `${head}\n      ${check.fix}`;
+    const head = `  ${symbol[check.status]} ${check.name} — ${indent(check.detail)}`;
+    return check.status === "ok" || !check.fix ? head : `${head}\n      ${indent(check.fix)}`;
   });
 
   const failed = report.checks.filter(check => check.status === "fail").length;
@@ -115,52 +118,19 @@ export function formatDoctorReport(report: DoctorReport): string {
   ].join("\n");
 }
 
+/**
+ * `detail` is already the doctor-facing rendering — `runDetail` carries the
+ * run-oriented one. Doctor used to recover its short form by regexing the run
+ * sentence, which meant rewording a message in preflight.ts silently degraded
+ * this report with no test failing.
+ */
 function toDoctorCheck(verdict: PreflightVerdict): DoctorCheck {
   return {
     name: verdict.name,
     status: verdict.status,
-    detail: doctorDetail(verdict),
+    detail: verdict.detail,
     fix: verdict.fix,
   };
-}
-
-/** Prefer short doctor-facing detail when the shared fail message is run-oriented. */
-function doctorDetail(verdict: PreflightVerdict): string {
-  if (verdict.status === "ok" || verdict.status === "warn") {
-    return verdict.detail;
-  }
-
-  switch (verdict.id) {
-    case "node":
-      return `v${process.versions.node} is too old`;
-    case "git":
-      return "not on PATH";
-    case "git-repo":
-      if (verdict.runErrorCode === "detached-head") return "HEAD is detached";
-      if (verdict.runErrorCode === "git-operation-in-progress") {
-        const match = /git (\S+) is in progress/.exec(verdict.detail);
-        return match ? `a ${match[1]} is in progress` : verdict.detail;
-      }
-      if (verdict.runErrorCode === "missing-branch" && verdict.detail.startsWith("Unable")) {
-        return verdict.detail;
-      }
-      return verdict.detail;
-    case "agent": {
-      const match = /generator command "([^"]+)" on PATH/.exec(verdict.detail);
-      return match ? `${match[1]} is not on PATH` : verdict.detail;
-    }
-    case "package-manager": {
-      if (verdict.detail.includes("is not on PATH")) return verdict.detail;
-      const match = /package manager "([^"]+)" on PATH/.exec(verdict.detail);
-      return match ? `${match[1]} is not on PATH` : verdict.detail;
-    }
-    default:
-      if (verdict.id.startsWith("recipe-file:")) {
-        const match = /does not exist: (.+)$/.exec(verdict.detail);
-        return match ? `missing: ${match[1]}` : verdict.detail;
-      }
-      return verdict.detail;
-  }
 }
 
 function takeShared(shared: PreflightVerdict[], ids: string[]): PreflightVerdict[] {

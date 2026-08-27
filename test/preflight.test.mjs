@@ -30,7 +30,7 @@ function firstFailure(verdicts, { skipHostTooling = false } = {}) {
     if (verdict.status !== "fail") continue;
     return {
       code: verdict.runErrorCode ?? "preflight-failed",
-      message: verdict.detail,
+      message: verdict.runDetail ?? verdict.detail,
     };
   }
   return null;
@@ -133,10 +133,63 @@ test("EVALUATE enabled without eval fails with missing-eval", async () => {
     spec: loaded.spec,
   });
 
-  const evaluate = byId(verdicts, "evaluate-browser");
+  // Reported as `eval` config, not as a browser problem: no browser is involved,
+  // and it must survive skipToolChecks the way other recipe checks do.
+  const evaluate = byId(verdicts, "eval-config");
   assert.equal(evaluate?.status, "fail");
   assert.equal(evaluate?.runErrorCode, "missing-eval");
-  assert.match(evaluate?.detail ?? "", /`eval` is not set/);
+  assert.equal(evaluate?.name, "eval");
+  assert.doesNotMatch(evaluate?.detail ?? "", /\n/, "doctor detail must be one line");
+  assert.match(evaluate?.runDetail ?? "", /`eval` is not set/);
+  assert.equal(byId(verdicts, "evaluate-browser"), undefined, "no probe without an eval path");
+});
+
+test("doctor and run agree that EVALUATE without eval is a failure", async () => {
+  const root = await makeProject({ specExtra: "validator:\n  enabled: true\n" });
+  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
+
+  const report = await runDoctor({
+    specPath: path.join(root, ".harness", "spec.yaml"),
+    workspacePath: root,
+  });
+  assert.equal(statusOf(report, "eval"), "fail");
+  assert.equal(report.passed, false);
+
+  // skipToolChecks skips host tooling, not recipe configuration — which is the
+  // whole reason this verdict is not filed under the browser probe's id.
+  await assert.rejects(
+    () =>
+      sessionMod.prepareSession({
+        workspacePath: root,
+        loaded,
+        skipToolChecks: true,
+        skipBaseline: true,
+      }),
+    error => {
+      assert.equal(error.code, "missing-eval");
+      assert.match(error.message, /`eval` is not set/);
+      return true;
+    },
+  );
+});
+
+test("a skipped rule is never evaluated", async () => {
+  const root = await makeProject({ specExtra: "validator:\n  enabled: true\neval: .harness/eval.json\n" });
+  await writeFile(path.join(root, ".harness", "eval.json"), '{"assertions":[]}');
+  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
+
+  // The browser probe launches a real browser, so "skipped" has to mean not run
+  // rather than run-and-discarded. Nothing else in preflight takes this long.
+  const startedAt = Date.now();
+  const verdicts = await checkSharedPreflight({
+    workspacePath: root,
+    spec: loaded.spec,
+    skipIds: new Set(["evaluate-browser"]),
+  });
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(byId(verdicts, "evaluate-browser"), undefined);
+  assert.ok(elapsed < 1000, `expected no browser probe, took ${elapsed}ms`);
 });
 
 test("doctor and session-style assert agree on a missing recipe file", async () => {

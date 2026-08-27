@@ -15,48 +15,103 @@ import type { TemplateSpec } from "./types.js";
 export type PreflightStatus = "ok" | "warn" | "fail";
 
 export interface PreflightVerdict {
-  /** Stable machine id, e.g. "node", "git", "git-repo", "agent", "package-manager", "recipe-file:prd", "evaluate-browser" */
+  /** Stable machine id, e.g. "node", "git", "git-repo", "agent", "package-manager", "recipe-file:prd", "eval-config", "evaluate-browser" */
   id: string;
   /** Human label for doctor output */
   name: string;
   status: PreflightStatus;
+  /**
+   * Short, doctor-facing. One line: doctor indents only `fix`, so a newline here
+   * would land unindented in the report.
+   */
   detail: string;
+  /**
+   * The message `run` throws, when it differs from `detail`. Both renderings are
+   * carried as data rather than recovered from each other — doctor used to regex
+   * its short form out of the run sentence, which put the two surfaces one
+   * reworded string away from drifting apart again.
+   */
+  runDetail?: string;
   fix?: string;
   /** SessionError.code when run throws on this failure */
   runErrorCode?: string;
 }
 
-/**
- * Shared rule list for `doctor` and `run` (session prepare).
- *
- * Both surfaces must agree on these checks; doctor renders them as a report,
- * run throws SessionError on the first fail.
- */
-export async function checkSharedPreflight(input: {
+export interface PreflightInput {
   workspacePath: string;
   spec: TemplateSpec;
   /** Optional; if omitted, read via readGitRepoSnapshot */
   gitSnapshot?: GitRepoSnapshot;
-}): Promise<PreflightVerdict[]> {
+  /**
+   * Rules to leave unevaluated. A skipped rule is never run, so callers do not
+   * pay for its side effects — `run` skips the browser probe under
+   * `skipToolChecks`, and skipping it must not still cost a browser launch.
+   */
+  skipIds?: ReadonlySet<string>;
+  /** Called before a rule that can take seconds, so a silent wait is explained. */
+  onProgress?: (message: string) => void;
+}
+
+/** The message `run` should throw for a verdict. */
+export function runMessage(verdict: PreflightVerdict): string {
+  return verdict.runDetail ?? verdict.detail;
+}
+
+/**
+ * Shared rule list for `doctor` and `run` (session prepare).
+ *
+ * Yielded lazily: doctor drains the whole list to report everything, while run
+ * stops at the first failure and never pays for the rules after it. The browser
+ * probe is last and costs seconds — a minute when `@playwright/mcp` is cold —
+ * which a run aborting on a missing PRD should not be charged for.
+ */
+export async function* iterSharedPreflight(
+  input: PreflightInput,
+): AsyncGenerator<PreflightVerdict> {
   const { workspacePath, spec } = input;
+  const skip = input.skipIds ?? new Set<string>();
+
+  if (!skip.has("node")) yield checkNodeVersion();
+  if (!skip.has("git")) yield await checkGitOnPath(workspacePath);
+  if (!skip.has("git-repo")) yield await checkGitRepo(workspacePath, input.gitSnapshot);
+  if (!skip.has("agent")) yield await checkAgentCli(spec, workspacePath);
+  if (!skip.has("package-manager")) yield await checkPackageManager(spec, workspacePath);
+
+  for (const verdict of await checkRecipeFiles(spec)) {
+    if (!skip.has(verdict.id)) yield verdict;
+  }
+
+  // `eval` is recipe configuration, not host tooling: it is checked even when
+  // the browser probe below is skipped.
+  if (isValidatorEnabled(spec)) {
+    if (!spec.evalPath) {
+      if (!skip.has("eval-config")) yield missingEvalConfig();
+      return;
+    }
+    if (!skip.has("evaluate-browser")) {
+      input.onProgress?.("checking the EVALUATE browser");
+      yield await checkEvaluateBrowser(spec, workspacePath);
+    }
+  }
+}
+
+/** Every verdict, for doctor's report. */
+export async function checkSharedPreflight(
+  input: PreflightInput,
+): Promise<PreflightVerdict[]> {
   const verdicts: PreflightVerdict[] = [];
-
-  verdicts.push(checkNodeVersion());
-  verdicts.push(await checkGitOnPath(workspacePath));
-  verdicts.push(await checkGitRepo(workspacePath, input.gitSnapshot));
-  verdicts.push(await checkAgentCli(spec, workspacePath));
-  verdicts.push(await checkPackageManager(spec, workspacePath));
-  verdicts.push(...(await checkRecipeFiles(spec)));
-  verdicts.push(...(await checkEvaluateBrowser(spec, workspacePath)));
-
+  for await (const verdict of iterSharedPreflight(input)) {
+    verdicts.push(verdict);
+  }
   return verdicts;
 }
 
 /**
  * Host-tooling verdict ids that `prepareSession({ skipToolChecks: true })` skips.
- * Git-repo and recipe-file checks still apply.
+ * Git-repo, recipe-file and eval-config checks still apply — they are properties
+ * of the repository and the recipe, not of the machine.
  */
-export const SKIPPABLE_HOST_PREFLIGHT_IDS = new Set([
+export const SKIPPABLE_HOST_PREFLIGHT_IDS: ReadonlySet<string> = new Set([
   "node",
   "git",
   "agent",
@@ -78,7 +133,8 @@ function checkNodeVersion(): PreflightVerdict {
     id: "node",
     name: "node",
     status: "fail",
-    detail: `Harness run requires Node.js >= 20 (found ${process.versions.node}).`,
+    detail: `v${process.versions.node} is too old`,
+    runDetail: `Harness run requires Node.js >= 20 (found ${process.versions.node}).`,
     fix: "The harness requires Node.js 20 or newer.",
     runErrorCode: "node-version",
   };
@@ -92,7 +148,8 @@ async function checkGitOnPath(cwd: string): Promise<PreflightVerdict> {
     id: "git",
     name: "git",
     status: "fail",
-    detail: "Harness run requires `git` on PATH.",
+    detail: "not on PATH",
+    runDetail: "Harness run requires `git` on PATH.",
     fix: "git is required for branch and checkpoint handling.",
     runErrorCode: "missing-git",
   };
@@ -109,7 +166,8 @@ async function checkGitRepo(
         id: "git-repo",
         name: "git repo",
         status: "fail",
-        detail: "Harness run requires an attached HEAD (checkout a branch before running).",
+        detail: "HEAD is detached",
+        runDetail: "Harness run requires an attached HEAD (checkout a branch before running).",
         fix: "Check out a branch — the harness records its work on one.",
         runErrorCode: "detached-head",
       };
@@ -119,7 +177,8 @@ async function checkGitRepo(
         id: "git-repo",
         name: "git repo",
         status: "fail",
-        detail: `Harness run refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
+        detail: `a ${snapshot.inProgressOperation} is in progress`,
+        runDetail: `Harness run refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
         fix: "Finish or abort it first.",
         runErrorCode: "git-operation-in-progress",
       };
@@ -179,7 +238,8 @@ async function checkAgentCli(spec: TemplateSpec, cwd: string): Promise<Preflight
     id: "agent",
     name,
     status: "fail",
-    detail: `Harness run requires generator command ${JSON.stringify(command)} on PATH.`,
+    detail: `${command} is not on PATH`,
+    runDetail: `Harness run requires generator command ${JSON.stringify(command)} on PATH.`,
     fix: `Install and authenticate the ${spec.agent} CLI, or set a different \`agent:\` in the recipe.`,
     runErrorCode: "missing-agent",
   };
@@ -207,9 +267,10 @@ async function checkPackageManager(
     id: "package-manager",
     name: "package manager",
     status: "fail",
-    detail: declared
+    detail: `${binary} is not on PATH`,
+    runDetail: declared
       ? `Harness run requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`
-      : `${binary} is not on PATH`,
+      : `Harness run requires package manager ${JSON.stringify(binary)} on PATH.`,
     fix: declared
       ? `The recipe declares constraints.packageManager: ${declared}.`
       : "Detected from the project's lockfile.",
@@ -245,7 +306,8 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]>
         id: `recipe-file:${label}`,
         name: label,
         status: "fail",
-        detail: `Harness run preflight failed: required ${label} path does not exist: ${target}`,
+        detail: `missing: ${target}`,
+        runDetail: `Harness run preflight failed: required ${label} path does not exist: ${target}`,
         fix: "The recipe points at a file that does not exist.",
         runErrorCode: "missing-recipe-file",
       });
@@ -255,33 +317,34 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]>
 }
 
 /**
- * EVALUATE prerequisites: eval path when enabled, then a real MCP browser probe.
+ * EVALUATE is enabled but the recipe never says what to grade against.
+ *
+ * Reported as `eval`, not as a browser problem: no browser is involved, and
+ * filing it under the probe's id would let `skipToolChecks` suppress a recipe
+ * error and would leave it undrivable from a test that skips host tooling.
  */
+function missingEvalConfig(): PreflightVerdict {
+  return {
+    id: "eval-config",
+    name: "eval",
+    status: "fail",
+    detail: "`validator.enabled` is set but `eval` is not",
+    runDetail: [
+      "Harness run preflight failed: EVALUATE is enabled (`validator.enabled`) but `eval` is not set.",
+      "Add `eval: .harness/eval.json`.",
+      "Or disable EVALUATE by removing `validator.enabled`.",
+    ].join("\n"),
+    fix: "Add `eval: .harness/eval.json`, or remove `validator.enabled` to turn EVALUATE off.",
+    runErrorCode: "missing-eval",
+  };
+}
+
+/** Probe the MCP browser EVALUATE will drive. Costs seconds; runs last. */
 async function checkEvaluateBrowser(
   spec: TemplateSpec,
   cwd: string,
-): Promise<PreflightVerdict[]> {
-  if (!isValidatorEnabled(spec)) {
-    return [];
-  }
-
+): Promise<PreflightVerdict> {
   const name = "EVALUATE browser (Playwright MCP)";
-
-  if (!spec.evalPath) {
-    return [
-      {
-        id: "evaluate-browser",
-        name,
-        status: "fail",
-        detail: [
-          "Harness run preflight failed: EVALUATE is enabled (`validator.enabled`) but `eval` is not set.",
-          "Add `eval: .harness/eval.json`.",
-          "Or disable EVALUATE by removing `validator.enabled`.",
-        ].join("\n"),
-        runErrorCode: "missing-eval",
-      },
-    ];
-  }
 
   const installTool = await resolvePackageInstallTool({
     projectRoot: cwd,
@@ -293,40 +356,36 @@ async function checkEvaluateBrowser(
   const probe = await probeMcpBrowser(cwd);
 
   if (probe.ok) {
-    return [
-      {
-        id: "evaluate-browser",
-        name,
-        status: "ok",
-        detail: probe.choice.detail,
-      },
-    ];
-  }
-
-  const fix =
-    probe.choice.source === "project-playwright"
-      ? "Reinstall the project's browser: npx playwright install chromium"
-      : `Install Playwright in the project so SMOKE and EVALUATE share one browser: ${installCmd} && npx playwright install chromium`;
-
-  return [
-    {
+    return {
       id: "evaluate-browser",
       name,
-      status: "fail",
-      detail: [
-        "Harness run preflight failed: EVALUATE is enabled but the Playwright MCP browser could not be launched.",
-        probe.error ?? "the Playwright MCP browser could not be launched",
-        `Fix: ${
-          probe.choice.source === "project-playwright"
-            ? "npx playwright install chromium"
-            : `${installCmd} && npx playwright install chromium`
-        }`,
-        "Or disable EVALUATE by removing `eval` / `validator.enabled` from the recipe.",
-      ]
-        .filter(Boolean)
-        .join("\n  "),
-      fix,
-      runErrorCode: "missing-tier3-browser",
-    },
-  ];
+      status: "ok",
+      detail: probe.choice.detail,
+    };
+  }
+
+  const repair =
+    probe.choice.source === "project-playwright"
+      ? "npx playwright install chromium"
+      : `${installCmd} && npx playwright install chromium`;
+
+  return {
+    id: "evaluate-browser",
+    name,
+    status: "fail",
+    detail: probe.error ?? "the Playwright MCP browser could not be launched",
+    runDetail: [
+      "Harness run preflight failed: EVALUATE is enabled but the Playwright MCP browser could not be launched.",
+      probe.error ?? "",
+      `Fix: ${repair}`,
+      "Or disable EVALUATE by removing `eval` / `validator.enabled` from the recipe.",
+    ]
+      .filter(Boolean)
+      .join("\n  "),
+    fix:
+      probe.choice.source === "project-playwright"
+        ? `Reinstall the project's browser: ${repair}`
+        : `Install Playwright in the project so SMOKE and EVALUATE share one browser: ${repair}`,
+    runErrorCode: "missing-tier3-browser",
+  };
 }

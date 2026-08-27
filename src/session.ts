@@ -12,7 +12,8 @@ import {
   type GitRepoSnapshot,
 } from "./harnessGit.js";
 import {
-  checkSharedPreflight,
+  iterSharedPreflight,
+  runMessage,
   SKIPPABLE_HOST_PREFLIGHT_IDS,
 } from "./preflight.js";
 import {
@@ -459,7 +460,11 @@ export async function findMatchingSession(input: {
 
 /**
  * Shared doctor/run preflight — throw SessionError on the first fail.
- * `skipHostTooling` mirrors prepareSession's skipToolChecks (tests).
+ *
+ * Consumed lazily so a run that aborts early is not charged for the rules after
+ * it. That matters for the browser probe, which costs seconds and is last.
+ * `skipHostTooling` mirrors prepareSession's skipToolChecks (tests); skipped
+ * rules are never evaluated, so skipping the probe also skips its cost.
  */
 async function assertSharedPreflight(input: {
   workspacePath: string;
@@ -467,20 +472,15 @@ async function assertSharedPreflight(input: {
   gitSnapshot: GitRepoSnapshot;
   skipHostTooling: boolean;
 }): Promise<void> {
-  const verdicts = await checkSharedPreflight({
+  const verdicts = iterSharedPreflight({
     workspacePath: input.workspacePath,
     spec: input.spec,
     gitSnapshot: input.gitSnapshot,
+    skipIds: input.skipHostTooling ? SKIPPABLE_HOST_PREFLIGHT_IDS : undefined,
+    onProgress: message => logPhase("Preflight", message),
   });
 
-  for (const verdict of verdicts) {
-    if (
-      input.skipHostTooling &&
-      SKIPPABLE_HOST_PREFLIGHT_IDS.has(verdict.id)
-    ) {
-      continue;
-    }
-
+  for await (const verdict of verdicts) {
     if (verdict.id === "evaluate-browser" && verdict.status === "ok") {
       logPhase("Preflight", `EVALUATE browser ready — ${verdict.detail}`);
     }
@@ -489,7 +489,7 @@ async function assertSharedPreflight(input: {
 
     throw new SessionError(
       verdict.runErrorCode ?? "preflight-failed",
-      verdict.detail,
+      runMessage(verdict),
     );
   }
 }
