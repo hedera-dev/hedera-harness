@@ -514,15 +514,26 @@ async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void>
 }
 
 /**
- * Fail before the first agent call when Tier 3 cannot open a browser.
+ * Fail before the first agent call when EVALUATE cannot run.
  *
  * This used to surface only at EVALUATE, after a full generator session, and
  * the repair loop then spent further attempts "fixing" app code that was never
- * broken. A missing browser is a prerequisite, not a finding.
+ * broken. A missing browser (or missing eval checklist) is a prerequisite, not a finding.
  */
 async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promise<void> {
-  if (!spec.evalPath || !spec.validator?.enabled) {
+  if (!spec.validator?.enabled) {
     return;
+  }
+
+  if (!spec.evalPath) {
+    throw new SessionError(
+      "missing-eval",
+      [
+        "Harness run preflight failed: EVALUATE is enabled (`validator.enabled`) but `eval` is not set.",
+        "Add `eval: .harness/eval.json`, or run `hedera-harness migrate` if the recipe still has `contract:`.",
+        "Or disable EVALUATE by removing `validator.enabled`.",
+      ].join("\n"),
+    );
   }
 
   const { probeMcpBrowser } = await import("./mcpBrowser.js");

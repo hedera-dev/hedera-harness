@@ -21,6 +21,7 @@ import {
   HARNESS_NOTES_LOG_PATH,
   KNOWN_SPEC_KEYS,
   MIN_SUPPORTED_SCHEMA_VERSION,
+  REMOVED_SPEC_KEYS,
   SPEC_SCHEMA_VERSION,
   defaultForbiddenCommands,
   defaultSecretFiles,
@@ -38,6 +39,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
   const warnings: string[] = [];
 
   const schemaVersion = readSchemaVersion(parsed, absoluteSpecPath);
+  rejectRemovedKeys(parsed, absoluteSpecPath);
   warnUnknownKeys(parsed, warnings);
 
   const constraints = readConstraints(parsed);
@@ -135,11 +137,30 @@ function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): n
 }
 
 /**
+ * Hard-cut removals must fail at load. Treating them as unknown keys would warn
+ * "upgrade the harness" (wrong fix) and then burn a generator session before
+ * EVALUATE noticed `eval` was never set.
+ */
+function rejectRemovedKeys(parsed: Record<string, unknown>, specPath: string): void {
+  const removed = Object.keys(parsed).filter(key => key in REMOVED_SPEC_KEYS);
+  if (removed.length === 0) return;
+
+  throw new Error(
+    [
+      `${specPath} uses removed key(s): ${removed.join(", ")}.`,
+      ...removed.map(key => REMOVED_SPEC_KEYS[key]),
+    ].join(" "),
+  );
+}
+
+/**
  * Unknown keys were silently ignored, so a recipe written for a newer harness could
  * lose an entire block — a renamed `baseline` would simply not run — with no error.
  */
 function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): void {
-  const unknown = Object.keys(parsed).filter(key => !KNOWN_SPEC_KEYS.has(key));
+  const unknown = Object.keys(parsed).filter(
+    key => !KNOWN_SPEC_KEYS.has(key) && !(key in REMOVED_SPEC_KEYS),
+  );
   if (unknown.length > 0) {
     warnings.push(
       `ignoring unknown key(s): ${unknown.join(", ")}. ` +

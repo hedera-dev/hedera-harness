@@ -8,7 +8,8 @@
   - Recipe key `contract:` renamed to `eval:`. `hedera-harness migrate` rewrites
     the key and the `acceptance-contract.json` filename in the value to `eval.json`,
     and renames that checklist file on disk (warns if the source is missing or both
-    names already exist).
+    names already exist). An unmigrated `contract:` key is rejected at recipe load
+    (points at `migrate`) so a run cannot burn a generator session before failing.
   - Internal type `SemanticValidationResult` → `EvaluationResult`; field
     `semanticValidation` on `ValidationResult`/`RunReport` → `evaluation`.
   - Finding category `"semantic"` → `"eval"`, `"semantic-infra"` → `"eval-infra"`.

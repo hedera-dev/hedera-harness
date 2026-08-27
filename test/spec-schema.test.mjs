@@ -143,6 +143,27 @@ ${MINIMAL_BASELINE}`);
   assert.ok(warnings.some(w => w.includes("programme")), warnings.join(" | "));
 });
 
+test("removed contract key fails at load and points at migrate", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 2
+name: still-has-contract
+contract: .harness/acceptance-contract.json
+validator:
+  enabled: true
+validators:
+  playwright: .harness/validators/playwright-smoke.yaml
+${MINIMAL_BASELINE}`);
+
+  await assert.rejects(
+    () => loadTemplateSpec(specPath),
+    error => {
+      assert.match(String(error), /removed key\(s\): contract/);
+      assert.match(String(error), /hedera-harness migrate/);
+      assert.doesNotMatch(String(error), /upgrade the harness/);
+      return true;
+    },
+  );
+});
+
 test("a legacy v1 recipe still loads, with deprecation warnings", async () => {
   const { specPath } = await writeRecipe(`name: legacy
 prd: .harness/prd.md

@@ -289,7 +289,8 @@ export async function runValidationStages(
   generateFinding?: ValidationFinding,
 ): Promise<ValidationResult> {
   const hasPlaywright = Boolean(context.spec.validators.playwrightPath);
-  const runEvaluate = hasPlaywright && isValidatorEnabled(context.spec);
+  const runEvaluate =
+    hasPlaywright && isValidatorEnabled(context.spec) && Boolean(context.spec.evalPath);
 
   logStage("ASSERT");
   const deterministic = await runAssertStage(context);

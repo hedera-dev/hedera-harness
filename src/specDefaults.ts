@@ -188,3 +188,12 @@ export const KNOWN_SPEC_KEYS = new Set([
   "maxAttempts",
   "logging",
 ]);
+
+/**
+ * Keys removed in a hard schema cut. Presence throws at load (do not warn-and-ignore):
+ * a silent drop would burn a generator session before EVALUATE noticed.
+ */
+export const REMOVED_SPEC_KEYS: Readonly<Record<string, string>> = {
+  contract:
+    "`contract` was renamed to `eval` in schema v3. Run `hedera-harness migrate` to rewrite the recipe (and rename acceptance-contract.json → eval.json).",
+};

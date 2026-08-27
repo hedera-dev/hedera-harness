@@ -213,7 +213,10 @@ hedera-harness validate-semantic   # run EVALUATE only, against a workspace you 
 
 ## Upgrading an older recipe
 
-Recipes written before schema v3 still load, with deprecation warnings:
+Pre-v3 recipes that still declare `contract:` **do not load** — the harness
+rejects the removed key at parse time and points at migrate (so a run never
+burns a generator session discovering it). Other older shapes may still load
+with deprecation warnings.
 
 ```bash
 hedera-harness migrate --dry-run   # show what would change

@@ -129,11 +129,14 @@ async function loadRecipe(
     });
     return loaded;
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     checks.push({
       name: "recipe",
       status: "fail",
-      detail: error instanceof Error ? error.message : String(error),
-      fix: "Fix the recipe, or bootstrap one with `hedera-harness init`.",
+      detail,
+      fix: /migrate/i.test(detail)
+        ? "Run `hedera-harness migrate` (try `--dry-run` first), then re-check with doctor."
+        : "Fix the recipe, or bootstrap one with `hedera-harness init`.",
     });
     return undefined;
   }
