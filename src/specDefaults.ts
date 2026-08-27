@@ -194,4 +194,8 @@ export const KNOWN_SPEC_KEYS = new Set([
 export const REMOVED_SPEC_KEYS: Readonly<Record<string, string>> = {
   contract: "use eval: not contract:",
   extend: "use baseline: not extend:",
+  // v1 required `logging`, so it is the likeliest survivor after contract/extend.
+  // Pointing logs outside .harness/runs/ left untracked files that failed the next
+  // run's clean-tree check, which is why the key went rather than gaining a default.
+  logging: "remove logging: — harness logs always live under .harness/runs/",
 };

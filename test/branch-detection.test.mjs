@@ -8,7 +8,6 @@ const mod = await import(pathToFileURL(path.resolve("dist/branchDetection.js")).
 test("parseHarnessBranch reads harness/run- prefixes only", () => {
   const run = mod.parseHarnessBranch("harness/run-my-feature-abc123");
   assert.deepEqual(run, {
-    prefix: "harness/run-",
     specSlug: "my-feature",
     shortId: "abc123",
     branch: "harness/run-my-feature-abc123",

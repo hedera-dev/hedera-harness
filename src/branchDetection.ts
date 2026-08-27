@@ -14,7 +14,6 @@ export function slugifyForBranch(value: string): string {
 export type HarnessBranchAction = "continue" | "new";
 
 export interface ParsedHarnessBranch {
-  prefix: typeof HARNESS_RUN_BRANCH_PREFIX;
   /** Spec slug embedded in the branch name (between prefix and trailing short id). */
   specSlug: string;
   shortId: string;
@@ -64,7 +63,7 @@ export function parseHarnessBranch(branch: string | null | undefined): ParsedHar
     return null;
   }
 
-  return { prefix: HARNESS_RUN_BRANCH_PREFIX, specSlug, shortId, branch };
+  return { specSlug, shortId, branch };
 }
 
 export function specSlugMatchesBranch(specName: string, branch: string | null | undefined): boolean {

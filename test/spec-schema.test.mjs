@@ -186,6 +186,27 @@ extend:
   );
 });
 
+// v1 required `logging`, so it outlives contract/extend in hand-written recipes.
+// As an unknown key it drew "upgrade the harness" — the opposite of the fix.
+test("removed logging key fails at load instead of warning", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: still-has-logging
+logging:
+  jsonlPath: .harness/custom.jsonl
+${MINIMAL_BASELINE}`);
+
+  await assert.rejects(
+    () => loadTemplateSpec(specPath),
+    error => {
+      assert.match(String(error), /removed key\(s\): logging/);
+      assert.match(String(error), /\.harness\/runs\//);
+      assert.doesNotMatch(String(error), /upgrade the harness/);
+      assert.doesNotMatch(String(error), /migrate/);
+      return true;
+    },
+  );
+});
+
 test("missing or older schemaVersion is rejected", async () => {
   const missing = await writeRecipe(`name: no-version
 ${MINIMAL_BASELINE}`);
@@ -201,18 +222,6 @@ ${MINIMAL_BASELINE}`);
     () => loadTemplateSpec(old.specPath),
     /schemaVersion 2.*Set schemaVersion: 3/s,
   );
-});
-
-test("logging is an unknown key warning, not a soft ignore", async () => {
-  const { specPath } = await writeRecipe(`schemaVersion: 3
-name: has-logging
-logging:
-  jsonl: somewhere-else.jsonl
-  notes: somewhere-else.md
-${MINIMAL_BASELINE}`);
-
-  const { warnings } = await loadTemplateSpec(specPath);
-  assert.ok(warnings.some(w => w.includes("logging")), warnings.join(" | "));
 });
 
 test("prd accepts a scalar, a single-entry list, or an ordered list of increments", async () => {

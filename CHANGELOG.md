@@ -10,8 +10,8 @@
 - **`hedera-harness migrate` removed.** Pre-current recipes are not rewritten;
   update them to the current schema (or regenerate with `init`) instead.
 - **Removed keys hard-fail without migrate advice.** `contract:` → use `eval:`;
-  `extend:` → use `baseline:`. `logging` is no longer a known key (unknown-key
-  warning). `extend.baseline` dual-read is gone.
+  `extend:` → use `baseline:`; `logging:` → remove it, harness logs always live
+  under `.harness/runs/`. `extend.baseline` dual-read is gone.
 - **Harness branches are `harness/run-*` only.** Legacy `harness/extend-*` is no
   longer recognized for continue / smart branch detection.
 - **Layout metadata** no longer normalizes legacy `in-place-extend` mode.
