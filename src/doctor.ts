@@ -1,5 +1,5 @@
 import path from "node:path";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
@@ -63,7 +63,6 @@ export async function runDoctor(
     checks.push(await checkAgentCli(spec, workspacePath));
     checks.push(await checkPackageManager(spec, workspacePath));
     checks.push(...(await checkRecipeFiles(spec)));
-    checks.push(...(await checkEvalAssertionIds(spec)));
     checks.push(await checkPromptOverrides(spec.projectRoot));
     checks.push(...(await checkOptionalDeps(spec, workspacePath)));
     checks.push(...checkChainEnv(spec));
@@ -246,20 +245,6 @@ async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
     if (resolved.overridden) overridden.push(name);
   }
 
-  const stale = await findStalePromptOverrides(projectRoot);
-
-  if (stale.length > 0) {
-    return {
-      name: "prompts",
-      status: "warn",
-      detail: `${stale.length} override(s) match no prompt and are ignored: ${stale.join(", ")}`,
-      fix:
-        `Rename to one of: ${PROMPT_TEMPLATE_NAMES.join(", ")}, or delete. ` +
-        "A renamed prompt leaves the old override in place, where it is silently " +
-        "skipped in favour of the bundled prompt.",
-    };
-  }
-
   if (overridden.length === 0) {
     return { name: "prompts", status: "ok", detail: "using bundled prompts" };
   }
@@ -270,63 +255,6 @@ async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
     detail: `${overridden.length} override(s): ${overridden.join(", ")}`,
     fix: `Overrides in ${PROJECT_PROMPTS_DIR}/ do not track harness updates — re-check them after upgrading.`,
   };
-}
-
-/**
- * Overrides are resolved by name, so an override whose name no longer exists is
- * unreachable rather than wrong — nothing reads it and nothing reports it. That
- * is how `repair-semantic.md` survived the v3 rename as a dead file.
- */
-async function findStalePromptOverrides(projectRoot: string): Promise<string[]> {
-  const known = new Set<string>(PROMPT_TEMPLATE_NAMES);
-  try {
-    const entries = await readdir(path.join(projectRoot, ...PROJECT_PROMPTS_DIR.split("/")));
-    return entries
-      .filter(entry => entry.endsWith(".md") && !known.has(entry.slice(0, -".md".length)))
-      .sort();
-  } catch {
-    // No override directory is the normal case.
-    return [];
-  }
-}
-
-/**
- * The evaluate checklist is author-written data, so the schema cut could not
- * rewrite its assertion ids. Ids outside `E*` still grade — the judge reads the
- * statements — but `extractAssertionId` can only recover a non-`E` id when the
- * judge fills in `assertion`, and without it repair prompts silently lose the
- * route, severity and statement for that assertion. Worth a warning, not a stop.
- */
-async function checkEvalAssertionIds(spec: TemplateSpec): Promise<DoctorCheck[]> {
-  if (!spec.evalPath) return [];
-
-  let assertions: Array<{ id?: unknown }>;
-  try {
-    const parsed = JSON.parse(await readFile(spec.evalPath, "utf8")) as {
-      assertions?: Array<{ id?: unknown }>;
-    };
-    assertions = parsed.assertions ?? [];
-  } catch {
-    // Missing or unparseable is already reported by the `eval` file check.
-    return [];
-  }
-
-  const offenders = assertions
-    .map(assertion => assertion.id)
-    .filter((id): id is string => typeof id === "string" && !/^E\d+$/i.test(id));
-
-  if (offenders.length === 0) {
-    return [{ name: "eval assertion ids", status: "ok", detail: `${assertions.length} assertion(s)` }];
-  }
-
-  return [
-    {
-      name: "eval assertion ids",
-      status: "warn",
-      detail: `${offenders.length} id(s) are not E<number>: ${offenders.slice(0, 5).join(", ")}`,
-      fix: "Renumber them E1, E2, … so repair prompts can correlate findings back to the checklist.",
-    },
-  ];
 }
 
 async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {

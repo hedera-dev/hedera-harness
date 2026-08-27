@@ -233,7 +233,7 @@ To author recipes with an agent, install the marketplace plugin:
 ├── skeletons/project-harness # provisioned by `init`
 ├── skills-index.json
 ├── scripts/                  # e2e, template-recipe check, EVALUATE verification
-├── docs/                     # authoring-a-recipe.md, prds/, implementation-plan.md
+├── docs/                     # authoring-a-recipe.md, prds/
 └── test/
 ```
 
