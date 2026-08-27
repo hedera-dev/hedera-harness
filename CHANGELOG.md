@@ -6,7 +6,9 @@
 
 - **Evaluate-checklist vocabulary hard cut (PR5).** Schema version bumped 2 → 3.
   - Recipe key `contract:` renamed to `eval:`. `hedera-harness migrate` rewrites
-    the key and the `acceptance-contract.json` filename in the value to `eval.json`.
+    the key and the `acceptance-contract.json` filename in the value to `eval.json`,
+    and renames that checklist file on disk (warns if the source is missing or both
+    names already exist).
   - Internal type `SemanticValidationResult` → `EvaluationResult`; field
     `semanticValidation` on `ValidationResult`/`RunReport` → `evaluation`.
   - Finding category `"semantic"` → `"eval"`, `"semantic-infra"` → `"eval-infra"`.

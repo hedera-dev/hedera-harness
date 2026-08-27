@@ -113,6 +113,9 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
       dryRun: parsed.options.dryRun,
     });
     console.log(formatMigrationResult(result, Boolean(parsed.options.dryRun)));
+    if (result.warnings.length > 0) {
+      process.exitCode = 1;
+    }
     return;
   }
 

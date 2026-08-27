@@ -258,6 +258,10 @@ extend:
   assert.equal(result.changed, true);
   const renamed = keys(result, "changes");
   assert.ok(renamed.some(k => k.includes("contract") && k.includes("eval")), `contract→eval rename expected; got ${renamed.join(", ")}`);
+  assert.ok(
+    renamed.some(k => k.includes("acceptance-contract.json") && k.includes("eval.json")),
+    `on-disk rename should be reported on dry-run; got ${renamed.join(", ")}`,
+  );
   assert.match(result.after, /^eval: .harness\/eval\.json/m, "eval key with eval.json path");
   assert.doesNotMatch(result.after, /^contract:/m, "contract key must be removed");
   assert.match(result.after, /^schemaVersion: 3/, "schema bumped to v3");
@@ -294,4 +298,75 @@ extend:
   const result = await migrateSpecFile(specPath, { dryRun: true });
 
   assert.match(result.after, /eval: .harness\/my-assertions\.json/m);
+  assert.ok(
+    !keys(result, "changes").some(k => k.includes("acceptance-contract.json")),
+    "non-standard filenames must not invent an on-disk rename",
+  );
+});
+
+test("v2→v3: write path renames acceptance-contract.json on disk", async () => {
+  const { root, specPath } = await writeSpec(`schemaVersion: 2
+name: with-contract-file
+contract: .harness/acceptance-contract.json
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: "true"
+`);
+  const oldPath = path.join(root, ".harness", "acceptance-contract.json");
+  const newPath = path.join(root, ".harness", "eval.json");
+  await writeFile(oldPath, JSON.stringify({ assertions: [{ id: "C1", claim: "x" }] }, null, 2));
+
+  const result = await migrateSpecFile(specPath);
+
+  assert.equal(result.warnings.length, 0, result.warnings.join("; "));
+  assert.match(await readFile(specPath, "utf8"), /^eval: .harness\/eval\.json/m);
+  assert.equal(await readFile(newPath, "utf8"), JSON.stringify({ assertions: [{ id: "C1", claim: "x" }] }, null, 2));
+  await assert.rejects(() => readFile(oldPath, "utf8"), "old checklist filename must be gone");
+  assert.ok(
+    keys(result, "changes").some(k => k.includes("acceptance-contract.json") && k.includes("eval.json")),
+    "report must mention the on-disk rename",
+  );
+});
+
+test("v2→v3: write path warns when the checklist file is missing", async () => {
+  const { root, specPath } = await writeSpec(`schemaVersion: 2
+name: missing-contract-file
+contract: .harness/acceptance-contract.json
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: "true"
+`);
+
+  const result = await migrateSpecFile(specPath);
+
+  assert.match(await readFile(specPath, "utf8"), /^eval: .harness\/eval\.json/m);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /neither|missing|create/i);
+  await assert.rejects(() => readFile(path.join(root, ".harness", "eval.json"), "utf8"));
+});
+
+test("v2→v3: write path renames under a nested custom directory", async () => {
+  const { root, specPath } = await writeSpec(`schemaVersion: 2
+name: nested-contract-file
+contract: .harness/custom/acceptance-contract.json
+extend:
+  baseline:
+    commands:
+      - name: install
+        command: "true"
+`);
+  const oldPath = path.join(root, ".harness", "custom", "acceptance-contract.json");
+  const newPath = path.join(root, ".harness", "custom", "eval.json");
+  await mkdir(path.dirname(oldPath), { recursive: true });
+  await writeFile(oldPath, "{}\n");
+
+  const result = await migrateSpecFile(specPath);
+
+  assert.equal(result.warnings.length, 0, result.warnings.join("; "));
+  assert.equal(await readFile(newPath, "utf8"), "{}\n");
+  await assert.rejects(() => readFile(oldPath, "utf8"));
 });

@@ -220,9 +220,11 @@ hedera-harness migrate --dry-run   # show what would change
 hedera-harness migrate             # rewrite in place
 ```
 
-v2→v3 renames `contract` → `eval` and `acceptance-contract.json` → `eval.json`
-in the path value. Assertion IDs inside JSON bodies are not mass-rewritten;
-new checklists use E1, E2, … identifiers.
+v2→v3 renames `contract` → `eval`, rewrites `acceptance-contract.json` → `eval.json`
+in the path value, **and renames that file on disk**. Assertion IDs inside JSON
+bodies are not mass-rewritten; new checklists use E1, E2, … identifiers. If the
+source file is missing (or both names already exist), migrate still rewrites the
+recipe and prints a warning — resolve the file before running.
 
 A key is only removed when its value equals what the harness would default it
 to. Anything you customised — extra forbidden commands, extra secret patterns,
