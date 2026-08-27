@@ -85,22 +85,22 @@
   <!-- VALIDATE -->
   <text x="40" y="500" fill="#4f46e5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10" font-weight="700">VALIDATE</text>
   <path d="M 246 514 L 286 514 L 286 530 L 246 530" fill="none" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="294" y="526" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">oracle audit (informational)</text>
+  <text x="294" y="526" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">integrity check (informational)</text>
 
   <line x1="246" y1="550" x2="834" y2="550" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="540" y="544" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">Tier 0-1 deterministic</text>
+  <text x="540" y="544" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">ASSERT</text>
   <line x1="840" y1="574" x2="546" y2="574" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
   <text x="693" y="568" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">assert files / yarn / secrets</text>
   <line x1="834" y1="598" x2="246" y2="598" stroke="#64748b" stroke-width="1.35" stroke-dasharray="5 3" marker-end="url(#arrowMuted)"/>
   <text x="540" y="592" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">pass / fail</text>
 
   <line x1="246" y1="622" x2="834" y2="622" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="540" y="616" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">Tier 2 Playwright (if enabled)</text>
+  <text x="540" y="616" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">SMOKE (if enabled)</text>
   <line x1="834" y1="646" x2="246" y2="646" stroke="#64748b" stroke-width="1.35" stroke-dasharray="5 3" marker-end="url(#arrowMuted)"/>
   <text x="540" y="640" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">pass / fail</text>
 
   <line x1="246" y1="670" x2="834" y2="670" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="540" y="664" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">Tier 3 semantic (+ 3.5 if on)</text>
+  <text x="540" y="664" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">EVALUATE (+ CHAIN if on)</text>
   <line x1="834" y1="694" x2="246" y2="694" stroke="#64748b" stroke-width="1.35" stroke-dasharray="5 3" marker-end="url(#arrowMuted)"/>
   <text x="540" y="688" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" font-weight="500">pass / fail / infra abort</text>
 

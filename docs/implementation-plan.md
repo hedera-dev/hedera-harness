@@ -16,7 +16,7 @@
 | 5 — provisioning + migration | ✅ complete (rescoped — see below) |
 | 6 — CI matrix | ✅ complete |
 | 7 — increments | ✅ complete |
-| Claude Tier 3 verified | ✅ real agent drove a real browser |
+| Claude EVALUATE verified | ✅ real agent drove a real browser |
 | **Release 1.2.0** | ⬜ **blocks the scaffold-hbar push** |
 
 ### Phase 5 was rescoped mid-flight
@@ -79,9 +79,9 @@ run in CI.**
 
 SMOKE and EVALUATE never ran: the template recipe configures neither `validator` nor
 `validators.playwright`, so `usesSharedDevServer` is false and the runtime stages are
-skipped. Dev-server teardown, the Playwright gate, and semantic validation are covered
+skipped. Dev-server teardown, the Playwright gate, and EVALUATE are covered
 only by unit and integration tests. Phase 6 should include one template whose recipe
-enables the higher tiers.
+enables the higher stages.
 
 ---
 
@@ -90,12 +90,12 @@ enables the higher tiers.
 The harness began as an **evaluation harness**: clone a scaffold-hbar template into an
 isolated workspace, have an agent rebuild it from a PRD, and score the result without
 letting the agent peek at the reference implementation. That explains `seed`, the
-blind-integrity oracle audit, the per-template acceptance contracts, and the adversarial
+blind-integrity audit, the per-template evaluate checklists, and the adversarial
 QA validator.
 
 It has since become a **developer tool**: the user's own repo is the workspace, the PRD
 describes a novel feature, and there is no reference implementation to peek at. The
-oracle is obsolete by construction.
+blind-integrity audit is obsolete by construction.
 
 Both architectures still ship. Roughly 1,000 source lines and 450 test lines encode the
 retired product, and they are entangled with the live path — they are why
@@ -123,7 +123,7 @@ came to exist.
 | **D1** | Recipe ownership | **Harness package** | Per-branch footprint collapses to dependency + script + README + identity marker — one PR per branch, never revisited. Alternative was committing a recipe to 8+ `templates/*` branches, each hand-maintained and subject to rebase conflicts from `main`. |
 | **D2** | Manifest shape | **Ordered slices; minimal sequential runner in scope** | "Build my dapp idea" decomposes badly into one PRD with 3 attempts and well into N accumulating slices on one branch. Run logs support this: 3 of 11 recorded runs died at exactly `maxAttempts: 3`, and the two 4-attempt passes were both `--continue` rescues. Originally sized L by importing the reference harness's full programme/slice/pass state model; rescoped to M by building on the existing session + cycle machinery instead. See Phase 7 for what is in and out. |
 | **D3** | Vocabulary | **Keep `spec.yaml` / `prd.md`** | Declined the rename to manifest/spec. Note the collision: in the stakeholder's harness, `specs/*.md` are feature descriptions and `programmes/*.yaml` is config — the word "spec" means the opposite thing there. Expect friction in cross-team discussion. |
-| **D4** | Convergence scope | **Architecture, not code shape** | Adopt stages, findings contract, prompts-as-files, slim config. Do not pursue line-count parity: the reference harness has no chain provisioning, tiered validators, init/scaffolding, or skills vendoring. |
+| **D4** | Convergence scope | **Architecture, not code shape** | Adopt stages, findings contract, prompts-as-files, slim config. Do not pursue line-count parity: the reference harness has no chain provisioning, staged validators, init/scaffolding, or skills vendoring. |
 
 ### Consequence of D2 + D3
 
@@ -381,7 +381,7 @@ Commits `6138322`, `ccc167e`, `b20e0c6`, `63bf26f`.
 - MCP config per role as files; delete `withPlaywrightMcpSnapshot`
 - Agent presets ship the correct MCP file per agent — **this is what fixes the Claude
   Code gap**: README documents Claude as first-class, but `ensurePlaywrightMcp` writes
-  only `.cursor/mcp.json`, so the semantic validator has no browser tools under Claude
+  only `.cursor/mcp.json`, so the EVALUATE validator has no browser tools under Claude
   and is instructed to fail assertions when they are absent
 - Model escalation — default model on pass 1, cheaper on repairs, escalate when stuck
 - Env-var knobs for timeouts / max attempts / models
@@ -389,7 +389,7 @@ Commits `6138322`, `ccc167e`, `b20e0c6`, `63bf26f`.
 
 **Exit criteria**
 - ✅ switching Cursor ↔ Claude is a one-line change (`agent:`), and the validator
-  inherits it — enabling Tier 3 is `validator: { enabled: true }`
+  inherits it — enabling EVALUATE is `validator: { enabled: true }`
 - ⬜ **the Claude path works end to end** — verified by unit tests only. The
   `hedera-demo` recipe enables neither `validator` nor `validators.playwright`, so
   SMOKE and EVALUATE never run in the e2e. This is the one change in Phases 0–4
@@ -440,7 +440,7 @@ Requires D1.
 - **Rewrite the authoring docs rather than delete them.** `docs/authoring-a-template.md`,
   `docs/prds/README.md`, and `skeletons/new-template/` all target the directories Phase 0
   removed (`specs/`, `contracts/`, `validators/`, `playwright/`), so they are broken as
-  written. The tier strategy and validator guidance in them is still valid — only the
+  written. The stage strategy and validator guidance in them is still valid — only the
   destinations changed. They become the overlay-authoring guide. (Decided rather than
   deleting in Phase 0; the skeleton is marked stale in the README tree meanwhile.)
 - Fix `--template`: `initRunner.ts:23` maps it straight to a git ref, so
@@ -521,7 +521,7 @@ Everything else can move. Phase 7 can ship well after Phase 6.
 **Testing rides along rather than forming a phase.** Coverage today is inverted relative
 to risk: the deepest coverage is on the dead isolated path, while `chainSigner.ts` (431
 lines, handles live keys and funds), `promptBuilder.ts` (723), `validation/index.ts`
-(370), `semanticValidator.ts`, and `command.ts` have none. As each phase touches those
+(370), `evaluation.ts`, and `command.ts` have none. As each phase touches those
 files, they get their first real tests.
 
 ---

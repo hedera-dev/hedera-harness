@@ -70,7 +70,7 @@ Pick the agent with one line:
 agent: cursor        # or omit for claude (default)
 ```
 
-That governs the whole run — how the generator is invoked, how the validator receives Playwright MCP, and which models are used. Enabling the semantic tier is then `validator: { enabled: true }`, not a second copy of the agent flags.
+That governs the whole run — how the generator is invoked, how the validator receives Playwright MCP, and which models are used. Enabling EVALUATE is then `validator: { enabled: true }`, not a second copy of the agent flags.
 
 See [docs/authoring-a-recipe.md](docs/authoring-a-recipe.md) for the full format.
 
