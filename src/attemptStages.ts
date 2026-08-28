@@ -16,6 +16,7 @@ import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
+import { specHasEval } from "./sliceSelection.js";
 import {
   createDevServerSession,
   loadDevServerConfig,
@@ -290,7 +291,7 @@ export async function runValidationStages(
 ): Promise<ValidationResult> {
   const hasPlaywright = Boolean(context.spec.validators.playwrightPath);
   const runEvaluate =
-    hasPlaywright && isValidatorEnabled(context.spec) && Boolean(context.spec.evalPath);
+    hasPlaywright && isValidatorEnabled(context.spec) && specHasEval(context.spec);
 
   logStage("ASSERT");
   const deterministic = await runAssertStage(context);

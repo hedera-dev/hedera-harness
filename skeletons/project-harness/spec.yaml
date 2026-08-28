@@ -28,6 +28,14 @@ baseline:
 #   - .harness/prds/01-foundation.md
 #   - .harness/prds/02-ui.md
 #
+# Evaluate checklist. Scalar grades every slice with one file; list form must
+# be 1:1 with prd: for true incremental grading.
+# eval: .harness/eval.json
+#
+# eval:
+#   - .harness/evals/01-foundation.json
+#   - .harness/evals/02-ui.json
+#
 # maxAttempts: 3             # repair attempts per run before stopping
 #
 # Each baseline command may set timeoutMs; the default is 10 minutes.
@@ -67,6 +75,7 @@ baseline:
 #
 # EVALUATE grades the running app against an evaluate checklist. The validator
 # inherits the agent preset above, including how it receives Playwright MCP.
+# (Also see the eval: examples near prd: above for list form.)
 # eval: .harness/eval.json
 # validator:
 #   enabled: true

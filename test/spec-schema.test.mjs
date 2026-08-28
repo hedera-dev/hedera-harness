@@ -261,6 +261,69 @@ ${MINIMAL_BASELINE}`);
   await assert.rejects(() => loadTemplateSpec(bad.specPath), /path or a non-empty list/);
 });
 
+test("eval accepts a scalar path or a list matching prd length", async () => {
+  const scalar = await writeRecipe(`schemaVersion: 3
+name: scalar-eval
+eval: .harness/eval.json
+${MINIMAL_BASELINE}`);
+  const loadedScalar = await loadTemplateSpec(scalar.specPath);
+  assert.equal(loadedScalar.spec.evalPaths?.length, 1);
+  assert.match(loadedScalar.spec.evalPaths[0], /\.harness\/eval\.json$/);
+
+  const list = await writeRecipe(
+    `schemaVersion: 3
+name: list-eval
+prd:
+  - .harness/01.md
+  - .harness/02.md
+eval:
+  - .harness/eval-01.json
+  - .harness/eval-02.json
+${MINIMAL_BASELINE}`,
+    {
+      extraFiles: {
+        ".harness/01.md": "# 1\n",
+        ".harness/02.md": "# 2\n",
+        ".harness/eval-01.json": "{}\n",
+        ".harness/eval-02.json": "{}\n",
+      },
+    },
+  );
+  const loadedList = await loadTemplateSpec(list.specPath);
+  assert.equal(loadedList.spec.evalPaths?.length, 2);
+  assert.match(loadedList.spec.evalPaths[0], /eval-01\.json$/);
+  assert.match(loadedList.spec.evalPaths[1], /eval-02\.json$/);
+});
+
+test("eval list must be 1:1 with prd length; empty list is rejected", async () => {
+  const mismatch = await writeRecipe(`schemaVersion: 3
+name: mismatch-eval
+prd:
+  - .harness/a.md
+  - .harness/b.md
+eval:
+  - .harness/only.json
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(mismatch.specPath),
+    /eval.*1 path.*prd.*2|list form must be 1:1/s,
+  );
+
+  const empty = await writeRecipe(`schemaVersion: 3
+name: empty-eval
+eval: []
+${MINIMAL_BASELINE}`);
+  await assert.rejects(() => loadTemplateSpec(empty.specPath), /at least one path/);
+});
+
+test("absent eval leaves evalPaths undefined", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: no-eval
+${MINIMAL_BASELINE}`);
+  const { spec } = await loadTemplateSpec(specPath);
+  assert.equal(spec.evalPaths, undefined);
+});
+
 test("baseline without an install command is still rejected", async () => {
   const { specPath } = await writeRecipe(`schemaVersion: 3
 name: no-install

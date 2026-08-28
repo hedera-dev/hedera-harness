@@ -9,6 +9,7 @@ import type { VendoredSkill } from "./skillVendor.js";
 import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 import { renderPrompt } from "./promptTemplates.js";
 import type { SliceContext } from "./attemptLoop.js";
+import { selectActiveSlice } from "./sliceSelection.js";
 
 /**
  * Assembles prompt inputs; the prose lives in `prompts/*.md`.
@@ -59,16 +60,17 @@ export async function buildSessionPrompt(
   vendoredContext?: VendoredContext,
   slice?: SliceContext,
 ): Promise<string> {
-  const prdPath = spec.prdPaths[slice?.index ?? 0];
-  const prd = await readFile(prdPath, "utf8");
+  const active = selectActiveSlice(spec, slice?.index ?? 0);
+  const prd = await readFile(active.prdPath, "utf8");
   const paths = runtimeContextPaths(vendoredSkills, vendoredContext);
+  const hasEval = Boolean(vendoredContext?.evalRelativePath ?? active.evalPath);
 
   return renderPrompt(spec.projectRoot, "generator", {
     attempt: String(attempt),
     prd: prd.trim(),
     ...sliceVars(slice),
     ...paths,
-    hasEval: Boolean(spec.evalPath),
+    hasEval,
     hardConstraints: formatHardConstraints(spec),
     hasRequiredFiles: spec.requiredFiles.length > 0,
     requiredFiles: formatBulletList(spec.requiredFiles),
@@ -85,13 +87,15 @@ export async function buildSessionContinuePrompt(
   vendoredContext?: VendoredContext,
   slice?: SliceContext,
 ): Promise<string> {
+  const active = selectActiveSlice(spec, slice?.index ?? 0);
   const paths = runtimeContextPaths(vendoredSkills, vendoredContext);
+  const hasEval = Boolean(vendoredContext?.evalRelativePath ?? active.evalPath);
 
   return renderPrompt(spec.projectRoot, "generator-continue", {
     cycle: String(cycle),
     ...sliceVars(slice),
     ...paths,
-    hasEval: Boolean(spec.evalPath),
+    hasEval,
     hardConstraints: formatHardConstraints(spec),
     hasRequiredFiles: spec.requiredFiles.length > 0,
     requiredFiles: formatBulletList(spec.requiredFiles),
@@ -130,11 +134,13 @@ export async function buildRepairPrompt(
   const scope = classifyRepairScope(actionable);
   const evalPath = vendoredContext?.evalRelativePath ?? VENDORED_EVAL_PATH;
   const prdPath = vendoredContext?.prdRelativePath ?? VENDORED_PRD_PATH;
+  const fallbackActive = selectActiveSlice(spec, Math.max(0, spec.prdPaths.length - 1));
   const assertions = await loadEvalAssertions(
-    vendoredContext?.evalSourcePath ?? spec.evalPath,
+    vendoredContext?.evalSourcePath ?? fallbackActive.evalPath,
   );
 
   const hasEvalFindings = actionable.some(finding => finding.category === "eval");
+  const hasEval = Boolean(vendoredContext?.evalRelativePath ?? fallbackActive.evalPath);
   const shared = {
     attempt: String(attempt),
     prdPath,
@@ -143,7 +149,7 @@ export async function buildRepairPrompt(
     findingsList: formatFindingsList(actionable),
     hasEvalFindings,
     evalTargets: formatEvalTargets(actionable, assertions),
-    hasEval: Boolean(spec.evalPath),
+    hasEval,
     hasMetadata: Boolean(
       spec.templateMetadata?.name ??
         spec.templateMetadata?.frontend ??
@@ -160,7 +166,7 @@ export async function buildRepairPrompt(
   if (scope === "runtime") {
     return renderPrompt(spec.projectRoot, "repair-runtime", {
       ...shared,
-      hasEvalChecklist: hasEvalFindings && Boolean(spec.evalPath),
+      hasEvalChecklist: hasEvalFindings && hasEval,
     });
   }
   return renderPrompt(spec.projectRoot, "repair-broad", shared);

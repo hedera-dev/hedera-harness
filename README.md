@@ -87,6 +87,17 @@ prd:
 
 Each is delivered onto the same branch with its own attempt budget and its own checkpoint commits, and the agent is told which increment it is on and that the earlier ones are done. A failure stops the sequence; `--continue` resumes there rather than redoing delivered work.
 
+For true per-increment grading, pair a checklist with each PRD:
+
+```yaml
+eval:
+  - .harness/evals/01-foundation.json
+  - .harness/evals/02-ui.json
+  - .harness/evals/03-onchain.json
+```
+
+List `eval:` must be 1:1 with `prd:`. A scalar `eval: .harness/eval.json` still works and grades every slice against the same checklist. Only the active PRD/eval pair is vendored each increment — later checklists are not visible to earlier slices.
+
 One large PRD with three repair attempts is a poor fit for a real feature: the work exceeds the budget, and a failure loses all of it.
 
 ## Validation stages

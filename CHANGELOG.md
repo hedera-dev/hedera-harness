@@ -28,7 +28,9 @@
 - Finding id prefix `semantic:` → `eval:`.
 - `status.json` key `semanticPassed` → `evaluationPassed`.
 - `ValidatorIssue.contractAssertion` → `assertion`; `ValidationFinding.contractAssertion` → `assertion`.
-- `TemplateSpec.contractPath` → `evalPath`.
+- `TemplateSpec.contractPath` → `evalPaths` (normalized list; scalar `eval:` becomes length 1).
+- `selectActiveSlice` / `specHasEval` / `allEvalPaths` are the selection seam for the active PRD/eval pair — callers must not index `prdPaths[i]` / `evalPaths[i]` ad hoc.
+- List `eval:` must be 1:1 with `prd:` or load fails; scalar `eval:` grades every slice with one checklist. Only the active pair is vendored per increment.
 - `VendoredContext.contractRelativePath/contractSourcePath` → `evalRelativePath/evalSourcePath`.
 - `VENDORED_CONTRACT_PATH` → `VENDORED_EVAL_PATH` (points to `eval.json`).
 - `harnessContractRelativePath()` → `harnessEvalRelativePath()`.
@@ -45,6 +47,11 @@
   user-facing output).
 
 ### Changed
+
+- **Per-slice evaluate checklists.** `eval:` accepts a scalar path (same
+  checklist every increment) or a list 1:1 with `prd:`. `validate-semantic`
+  uses the last slice pair for a completed workspace. Preflight labels list
+  paths as `eval[i]` when more than one is configured.
 
 - **Preflight rules are evaluated lazily on the run path.** `run` stops at the
   first failure instead of computing every rule first, so a run aborting on a
