@@ -46,11 +46,28 @@
 
 ### Changed
 
+- **Preflight rules are evaluated lazily on the run path.** `run` stops at the
+  first failure instead of computing every rule first, so a run aborting on a
+  missing recipe file no longer pays for the EVALUATE browser probe (~2.2s warm,
+  up to a minute when `@playwright/mcp` is cold). `doctor` still reports all of
+  them. `skipToolChecks` now skips rules rather than discarding their results.
+- **EVALUATE preflight now triggers on the same condition that runs it.** It
+  gated on `spec.validator?.enabled`, while `runValidationStages` gates on
+  `isValidatorEnabled()`; the two disagreed for `validator: {}`, which therefore
+  skipped preflight and failed after a paid GENERATE.
+- **Missing `eval` reports as `eval`, not as a browser failure.** It is recipe
+  configuration, so it is no longer filed under the browser probe's id, no
+  longer suppressed by `skipToolChecks`, and no longer labelled
+  "EVALUATE browser (Playwright MCP)".
+
 - **Claude is the default agent preset.** Recipes that omit `agent:` now select
   Claude instead of Cursor. Explicit `agent: cursor` remains fully supported.
 - Dropped `docs/implementation-plan.md` (historical phase notes, not product docs).
 - Removed doctor warnings for non-`E*` checklist ids and stale prompt override
   filenames — greenfield recipes use current names; old files are ignored.
+- **Shared preflight for `doctor` and `run`.** Host tooling, git-repo usability,
+  recipe path presence, and EVALUATE browser checks live in one module so both
+  surfaces agree (including package-manager-aware EVALUATE install hints).
 
 ## 1.2.2
 
