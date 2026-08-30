@@ -48,6 +48,12 @@
 
 ### Changed
 
+- **Generator idle/timeout no longer skips SMOKE/EVALUATE.** A Cursor hang after
+  `THINKING completed` still records an agent finding, but ASSERT pass continues
+  into the product gates (agent findings were already ignored for smoke readiness
+  and for attempt `passed` after SMOKE). Default agent idle timeout is **90s**
+  (was 10m); override with `HARNESS_AGENT_IDLE_TIMEOUT_MS`.
+
 - **Per-slice evaluate checklists.** `eval:` accepts a scalar path (same
   checklist every increment) or a list 1:1 with `prd:`. `validate-semantic`
   uses the last slice pair for a completed workspace. Preflight labels list

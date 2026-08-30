@@ -296,18 +296,13 @@ export async function runValidationStages(
   logStage("ASSERT");
   const deterministic = await runAssertStage(context);
 
-  const validation: ValidationResult = generateFinding
-    ? {
-        passed: false,
-        findings: [generateFinding, ...deterministic.findings],
-        commandResults: deterministic.commandResults,
-        playwrightGate: deterministic.playwrightGate,
-      }
-    : deterministic;
+  // Generator exit/timeout findings are recorded but must not fail ASSERT or skip
+  // SMOKE/EVALUATE — Cursor often hangs after finishing work; the gates decide pass.
+  const validation = mergeGenerateFinding(deterministic, generateFinding);
 
-  if (generateFinding || !isReadyForPlaywrightSmoke(validation)) {
+  if (!isReadyForPlaywrightSmoke(validation)) {
     logStage("SMOKE", "skipped — deterministic gates are not clean");
-    return validation;
+    return { ...validation, passed: false };
   }
   if (!hasPlaywright) {
     return validation;
@@ -369,6 +364,24 @@ export async function runValidationStages(
   } finally {
     await devServer?.stop();
   }
+}
+
+/**
+ * Attach a GENERATE process finding without failing ASSERT.
+ * `isReadyForPlaywrightSmoke` already ignores `category: "agent"`; after SMOKE,
+ * `passed` ignores agent findings too. Skipping SMOKE solely because GENERATE
+ * timed out left green work ungraded (Cursor hang-after-done).
+ */
+export function mergeGenerateFinding(
+  deterministic: ValidationResult,
+  generateFinding?: ValidationFinding,
+): ValidationResult {
+  if (!generateFinding) return deterministic;
+  return {
+    ...deterministic,
+    findings: [generateFinding, ...deterministic.findings],
+    passed: deterministic.passed,
+  };
 }
 
 function truncate(value: string, maxLength = 1200): string {

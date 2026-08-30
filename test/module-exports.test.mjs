@@ -21,6 +21,7 @@ test("refactored modules export the shared attempt loop and both runners", async
     assert.equal(typeof stages[stage], "function", `${stage} should be exported`);
   }
   assert.equal(typeof stages.runValidationStages, "function");
+  assert.equal(typeof stages.mergeGenerateFinding, "function");
 
   assert.equal(typeof attemptLoop.runAttemptLoop, "function");
   assert.equal(typeof attemptLoop.createSessionPromptStrategy, "function");

@@ -8,6 +8,9 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 const { isReadyForPlaywrightSmoke } = await import(
   pathToFileURL(path.resolve("dist/validation/index.js")).href
 );
+const { mergeGenerateFinding } = await import(
+  pathToFileURL(path.resolve("dist/attemptStages.js")).href
+);
 const { validateWorkspace } = await import(pathToFileURL(path.resolve("dist/runner.js")).href);
 
 test("isReadyForPlaywrightSmoke ignores agent findings and blocks everything else", () => {
@@ -30,6 +33,33 @@ test("isReadyForPlaywrightSmoke ignores agent findings and blocks everything els
     }),
     false,
   );
+});
+
+test("mergeGenerateFinding keeps ASSERT pass and does not block smoke readiness", () => {
+  const deterministic = {
+    passed: true,
+    findings: [],
+    commandResults: [],
+  };
+  const merged = mergeGenerateFinding(deterministic, {
+    id: "generator-timeout:1",
+    category: "agent",
+    message: "Generator agent timed out after 90s",
+  });
+  assert.equal(merged.passed, true);
+  assert.equal(merged.findings.length, 1);
+  assert.equal(isReadyForPlaywrightSmoke(merged), true);
+
+  const dirty = mergeGenerateFinding(
+    {
+      passed: false,
+      findings: [{ id: "command:build", category: "commands", message: "build failed" }],
+      commandResults: [],
+    },
+    { id: "generator-timeout:1", category: "agent", message: "timed out" },
+  );
+  assert.equal(dirty.passed, false);
+  assert.equal(isReadyForPlaywrightSmoke(dirty), false);
 });
 
 test("validate skips Playwright when a non-command deterministic finding is open", async () => {

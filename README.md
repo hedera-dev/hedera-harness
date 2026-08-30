@@ -158,7 +158,7 @@ Operational knobs live in the environment, not the recipe. Editing a recipe to s
 |---|---|
 | `HARNESS_MAX_ATTEMPTS` | repair attempts per run |
 | `HARNESS_AGENT_TIMEOUT_S` | wall-clock budget per agent invocation |
-| `HARNESS_AGENT_IDLE_TIMEOUT_MS` | kill an agent that stops producing output |
+| `HARNESS_AGENT_IDLE_TIMEOUT_MS` | kill an agent that stops producing output (default 90000) |
 | `HARNESS_MODEL` / `HARNESS_FIX_MODEL` | override the preset's models |
 | `HARNESS_NO_MODEL_SWITCH` | disable dropping to a cheaper model on repairs |
 

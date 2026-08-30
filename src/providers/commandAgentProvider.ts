@@ -7,14 +7,20 @@ import type { AgentProvider, AgentRunInput, AgentRunResult, CommandAgentConfig }
 const PROMPT_PLACEHOLDER = "{prompt}";
 const WORKSPACE_PLACEHOLDER = "{workspace}";
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
-/** Kill agent if stream output goes silent (stuck after THINKING completed). */
-const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Kill agent if stream output goes silent (stuck after THINKING completed).
+ * Cursor often finishes tools then never exits; 10m of silence was bad UX.
+ * Override with HARNESS_AGENT_IDLE_TIMEOUT_MS.
+ */
+export const DEFAULT_AGENT_IDLE_TIMEOUT_MS = 90 * 1000;
 
-function readIdleTimeoutMs(): number {
-  const raw = process.env.HARNESS_AGENT_IDLE_TIMEOUT_MS;
-  if (!raw) return DEFAULT_IDLE_TIMEOUT_MS;
+export function readAgentIdleTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env.HARNESS_AGENT_IDLE_TIMEOUT_MS;
+  if (!raw) return DEFAULT_AGENT_IDLE_TIMEOUT_MS;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_IDLE_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AGENT_IDLE_TIMEOUT_MS;
 }
 
 export class CommandAgentProvider implements AgentProvider {
@@ -46,7 +52,7 @@ export class CommandAgentProvider implements AgentProvider {
       workspacePath: input.workspacePath,
     });
     const timeoutMs = input.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const idleTimeoutMs = readIdleTimeoutMs();
+    const idleTimeoutMs = readAgentIdleTimeoutMs();
     const streamLogger = input.activityLogPath
       ? new AgentStreamLogger(input.activityLogPath, input.onProgress)
       : null;
