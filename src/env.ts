@@ -52,3 +52,13 @@ export function envRepairModel(): string | undefined {
 export function envDisableModelEscalation(): boolean {
   return readString("HARNESS_NO_MODEL_SWITCH") === "1";
 }
+
+/** Skills git remote. Default is hedera-dev/hedera-skills. */
+export function envSkillsRepo(): string | undefined {
+  return readString("HARNESS_SKILLS_REPO");
+}
+
+/** Skills git ref. Default is master. */
+export function envSkillsRef(): string | undefined {
+  return readString("HARNESS_SKILLS_REF");
+}

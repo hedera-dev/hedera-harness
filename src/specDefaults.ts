@@ -198,7 +198,7 @@ export const REMOVED_SPEC_KEYS: Readonly<Record<string, string>> = {
   // run's clean-tree check, which is why the key went rather than gaining a default.
   logging: "remove logging: — harness logs always live under .harness/runs/",
   // A per-recipe list required the author to know the index, and being short by one
-  // skill degraded the app silently. Curate skills-index.json instead; every entry
-  // is offered to the generator, which picks what the PRD needs.
-  skills: "remove skills: — every skill in skills-index.json is loaded automatically",
+  // skill degraded the app silently. Product skills from hedera-skills are discovered
+  // automatically; authoring/CLI plugins are not offered to the generator.
+  skills: "remove skills: — product skills from hedera-skills are loaded automatically",
 };

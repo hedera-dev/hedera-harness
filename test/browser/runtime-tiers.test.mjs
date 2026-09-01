@@ -6,6 +6,7 @@ import test from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { makeTestTempDir } from "../tmpDir.mjs";
+import { writeProductSkillsRepo } from "../skillFixture.mjs";
 
 const run = promisify(execFile);
 const { runSession } = await import(pathToFileURL(path.resolve("dist/sessionRunner.js")).href);
@@ -73,16 +74,8 @@ routes:
   await writeFile(path.join(root, "validator.mjs"), MOCK_VALIDATOR);
   await writeFile(path.join(root, ".harness", "prd.md"), "Serve a home page.\n");
 
-  // A run loads every registered skill; a local index keeps that offline.
-  await mkdir(path.join(root, "skills", "demo"), { recursive: true });
-  await writeFile(
-    path.join(root, "skills", "demo", "SKILL.md"),
-    "---\nname: demo-skill\ndescription: Demo skill.\n---\n# Demo\n",
-  );
-  await writeFile(
-    path.join(root, "skills-index.json"),
-    JSON.stringify({ skills: [{ name: "demo-skill", path: "./skills/demo/SKILL.md" }] }),
-  );
+  const skillsRepo = await writeProductSkillsRepo(await makeTestTempDir("tiers-skills-"));
+  const skillsEnv = { HARNESS_SKILLS_REPO: skillsRepo, HARNESS_SKILLS_REF: "master" };
 
   await writeFile(
     path.join(root, ".harness", "validators", "static.json"),
@@ -148,11 +141,11 @@ baseline:
     ["-c", "user.email=t@e", "-c", "user.name=T", "commit", "-q", "--no-gpg-sign", "-m", "init"],
     { cwd: root },
   );
-  return root;
+  return { root, skillsEnv };
 }
 
 test("SMOKE and EVALUATE run against a real dev server and browser", async () => {
-  const root = await makeTier3Project();
+  const { root, skillsEnv } = await makeTier3Project();
   const argvFile = path.join(root, "validator-argv.json");
 
   const previous = { ...process.env };
@@ -160,6 +153,7 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
     MOCK_WS: root,
     MOCK_VALIDATOR_ARGV: argvFile,
     HUSKY: "0",
+    ...skillsEnv,
   });
 
   let result;
@@ -170,7 +164,7 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
       skipToolChecks: true,
     });
   } finally {
-    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
     Object.assign(process.env, previous);
   }
 
@@ -195,11 +189,11 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
 }, { timeout: 180_000 });
 
 test("a claude validator is handed --mcp-config and the project is not touched", async () => {
-  const root = await makeTier3Project();
+  const { root, skillsEnv } = await makeTier3Project();
   const argvFile = path.join(root, "validator-argv.json");
 
   const previous = { ...process.env };
-  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0" });
+  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0", ...skillsEnv });
   try {
     await runSession({
       specPath: path.join(root, ".harness", "spec.yaml"),
@@ -207,7 +201,7 @@ test("a claude validator is handed --mcp-config and the project is not touched",
       skipToolChecks: true,
     });
   } finally {
-    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
     Object.assign(process.env, previous);
   }
 
@@ -229,7 +223,7 @@ test("a claude validator is handed --mcp-config and the project is not touched",
 test("a Cursor SMOKE failure never writes .cursor/mcp.json", async () => {
   // agent: cursor would snapshot .cursor/mcp.json around EVALUATE. If SMOKE
   // fails first, withValidatorMcp must not run at all — no write, no restore.
-  const root = await makeTier3Project({
+  const { root, skillsEnv } = await makeTier3Project({
     agent: "cursor",
     playwrightBody: `name: fixture-smoke
 server:
@@ -247,7 +241,7 @@ routes:
   const argvFile = path.join(root, "validator-argv.json");
 
   const previous = { ...process.env };
-  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0" });
+  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0", ...skillsEnv });
   let result;
   try {
     result = await runSession({
@@ -257,7 +251,7 @@ routes:
       maxAttempts: 1,
     });
   } finally {
-    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
     Object.assign(process.env, previous);
   }
 

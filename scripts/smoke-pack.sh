@@ -73,10 +73,10 @@ if [[ -d node_modules/@hiero-ledger ]]; then
   exit 1
 fi
 
-# Bundled skills index must be present next to the installed package.
+# Bundled prompts and skeletons must be present next to the installed package.
 PKG_DIR="$(node --input-type=module -e "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url); console.log(require('path').dirname(require.resolve('hedera-harness/package.json')));")"
-if [[ ! -f "$PKG_DIR/skills-index.json" ]]; then
-  echo "Smoke failed: installed package missing skills-index.json at $PKG_DIR" >&2
+if [[ ! -d "$PKG_DIR/prompts" ]]; then
+  echo "Smoke failed: installed package missing prompts/ at $PKG_DIR" >&2
   exit 1
 fi
 

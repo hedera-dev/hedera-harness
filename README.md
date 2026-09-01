@@ -211,7 +211,6 @@ my-app/
 │   ├── prompts/               # optional per-project prompt overrides
 │   ├── runtime/               # every skill + context, vendored per run (gitignored)
 │   └── runs/                  # artifacts + session.json (gitignored)
-├── skills-index.json
 └── packages/
 ```
 
@@ -219,9 +218,9 @@ Harness logs always live under `.harness/runs/` and are not configurable — poi
 
 ## Skills
 
-Recipes do not list skills. Every entry in [`skills-index.json`](skills-index.json) is resolved (fetched from git when needed, cached under `.skill-cache/`) and vendored into `.harness/runtime/skills/` for the run, and the generator picks the ones its PRD calls for.
+Recipes do not list skills. Each run clones [`hedera-dev/hedera-skills`](https://github.com/hedera-dev/hedera-skills) (cached under `.skill-cache/`) and vendors every `SKILL.md` from the product plugins (`native-services-js`, `system-contracts`, `cross-chain`, `dev-intelligence`) into `.harness/runtime/skills/`. The generator picks what the PRD calls for.
 
-The index is therefore the curation point: add a skill there to offer it to every run in the project, and drop it to take it away. Entries under `unmerged-skills` are documentation only and are never loaded.
+Authoring, CLI, hackathon, and agent-kit plugins are not offered to the generator — those stay Cursor marketplace skills. Override the source with `HARNESS_SKILLS_REPO` / `HARNESS_SKILLS_REF`.
 
 To author recipes with an agent, install the marketplace plugin:
 
@@ -237,7 +236,6 @@ To author recipes with an agent, install the marketplace plugin:
 ├── src/                      # implementation
 ├── prompts/                  # agent prompts (shipped; overridable per project)
 ├── skeletons/project-harness # provisioned by `init`
-├── skills-index.json
 ├── scripts/                  # e2e and EVALUATE verification helpers
 ├── docs/                     # authoring-a-recipe.md, prds/
 └── test/

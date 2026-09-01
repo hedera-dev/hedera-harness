@@ -40,7 +40,7 @@ test("package.json declares playwright and SDK as optional peers, not runtime de
   assert.equal(pkg.peerDependenciesMeta.playwright.optional, true);
   assert.equal(pkg.peerDependenciesMeta["@hiero-ledger/sdk"].optional, true);
   // Everything the harness reads at runtime has to be in the published tarball.
-  for (const entry of ["dist", "skills-index.json", "prompts", "skeletons", "LICENSE"]) {
+  for (const entry of ["dist", "prompts", "skeletons", "LICENSE"]) {
     assert.ok(pkg.files.includes(entry), `files should include ${entry}`);
   }
   assert.equal(pkg.bin["hedera-harness"], "./dist/index.js");

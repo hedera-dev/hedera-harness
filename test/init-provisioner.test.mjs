@@ -45,13 +45,12 @@ test("provisionHarnessProject writes .harness recipe and gitignore", async () =>
 
   const result = await provisioner.provisionHarnessProject({
     targetDir: root,
-    copySkillsIndex: true,
   });
 
   assert.equal(await pathExists(path.join(root, ".harness", "spec.yaml")), true);
   assert.equal(await pathExists(path.join(root, ".harness", "prd.md")), true);
   assert.equal(await pathExists(path.join(root, ".harness", "validators", "static.json")), true);
-  assert.equal(await pathExists(path.join(root, "skills-index.json")), true);
+  assert.equal(await pathExists(path.join(root, "skills-index.json")), false);
   assert.equal(result.gitignoreUpdated, true);
   assert.equal(result.packageJsonUpdated, true);
 
