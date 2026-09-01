@@ -23,7 +23,7 @@ flowchart TD
   baseline --> generate[1 GENERATE - coding agent]
   generate --> assert[2 ASSERT - files, static, secrets, commands]
   assert --> smoke[3 SMOKE - dev server + Playwright routes]
-  smoke --> evaluate[4 EVALUATE - adversarial validator vs contract]
+  smoke --> evaluate[4 EVALUATE - adversarial validator vs evaluate checklist]
   evaluate --> outcome[Pass / Fail / Abort]
   outcome --> artifacts[.harness/runs/ artifacts + checkpoint commits]
   assert -.->|fail + attempts left| generate
@@ -243,7 +243,7 @@ To author recipes with an agent, install the marketplace plugin:
 ├── prompts/                  # agent prompts (shipped; overridable per project)
 ├── skeletons/project-harness # provisioned by `init`
 ├── skills-index.json
-├── scripts/                  # e2e, template-recipe check, EVALUATE verification
+├── scripts/                  # e2e and EVALUATE verification helpers
 ├── docs/                     # authoring-a-recipe.md, prds/
 └── test/
 ```
