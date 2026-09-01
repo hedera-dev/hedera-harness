@@ -11,6 +11,7 @@ import {
 } from "./optionalDeps.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
 import type { TemplateSpec } from "./types.js";
+import { allEvalPaths, specHasEval } from "./sliceSelection.js";
 
 export type PreflightStatus = "ok" | "warn" | "fail";
 
@@ -84,7 +85,7 @@ export async function* iterSharedPreflight(
   // `eval` is recipe configuration, not host tooling: it is checked even when
   // the browser probe below is skipped.
   if (isValidatorEnabled(spec)) {
-    if (!spec.evalPath) {
+    if (!specHasEval(spec)) {
       if (!skip.has("eval-config")) yield missingEvalConfig();
       return;
     }
@@ -279,6 +280,7 @@ async function checkPackageManager(
 }
 
 async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]> {
+  const evalTargets = allEvalPaths(spec);
   const targets: Array<[string, string | undefined]> = [
     ...spec.prdPaths.map((prd, i): [string, string] => [
       spec.prdPaths.length > 1 ? `prd[${i}]` : "prd",
@@ -287,7 +289,10 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]>
     ["validators.static", spec.validators.staticPath],
     ["validators.commands", spec.validators.commandsPath],
     ["validators.playwright", spec.validators.playwrightPath],
-    ["eval", spec.evalPath],
+    ...evalTargets.map((evalPath, i): [string, string] => [
+      evalTargets.length > 1 ? `eval[${i}]` : "eval",
+      evalPath,
+    ]),
   ];
 
   const verdicts: PreflightVerdict[] = [];

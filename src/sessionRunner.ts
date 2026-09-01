@@ -10,6 +10,7 @@ import { loadTemplateSpec } from "./specLoader.js";
 import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
+import { selectActiveSlice } from "./sliceSelection.js";
 import { resolveSkillPaths } from "./skillResolver.js";
 import { vendorSkills } from "./skillVendor.js";
 import {
@@ -230,12 +231,13 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     let attemptCursor = startingAttempt;
 
     for (let sliceIndex = firstSlice; sliceIndex < sliceCount; sliceIndex += 1) {
-      const slice = { index: sliceIndex, count: sliceCount };
+      const active = selectActiveSlice(spec, sliceIndex);
+      const slice = { index: active.index, count: active.count };
 
       // Re-vendor per increment so the agent sees only the brief it is delivering.
       const vendoredContext = await vendorHarnessContext(
         workspaceRoot,
-        { prdPath: spec.prdPaths[sliceIndex], evalPath: spec.evalPath },
+        { prdPath: active.prdPath, evalPath: active.evalPath },
         { contextDir: HARNESS_CONTEXT_DIR },
       );
       await appendHarnessLog(layout.jsonlLogPath, {
@@ -249,7 +251,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       if (sliceCount > 1) {
         logPhase(
           `Increment ${sliceIndex + 1}/${sliceCount}`,
-          path.relative(projectRoot, spec.prdPaths[sliceIndex]),
+          path.relative(projectRoot, active.prdPath),
         );
       }
 
@@ -273,7 +275,8 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
 
       slices.push({
         index: sliceIndex,
-        prdPath: spec.prdPaths[sliceIndex],
+        prdPath: active.prdPath,
+        evalPath: active.evalPath,
         passed: sliceReport.passed,
         attempts: sliceReport.attemptsThisCycle ?? sliceReport.attempts,
         openFindingIds: sliceReport.openFindingIds,

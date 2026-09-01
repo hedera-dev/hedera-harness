@@ -233,3 +233,34 @@ test("doctor and session-style assert agree on a missing recipe file", async () 
     },
   );
 });
+
+test("list eval labels recipe files as eval[i]", async () => {
+  const root = await makeProject({
+    files: {
+      ".harness/prd-a.md": "# a\n",
+      ".harness/prd-b.md": "# b\n",
+      ".harness/eval-a.json": "{}\n",
+      ".harness/eval-b.json": "{}\n",
+    },
+    specExtra: `prd:
+  - .harness/prd-a.md
+  - .harness/prd-b.md
+eval:
+  - .harness/eval-a.json
+  - .harness/eval-b.json
+`,
+  });
+
+  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
+  const verdicts = await checkSharedPreflight({
+    workspacePath: root,
+    spec: loaded.spec,
+    skipIds: new Set(["evaluate-browser"]),
+  });
+
+  assert.equal(byId(verdicts, "recipe-file:prd[0]")?.status, "ok");
+  assert.equal(byId(verdicts, "recipe-file:prd[1]")?.status, "ok");
+  assert.equal(byId(verdicts, "recipe-file:eval[0]")?.status, "ok");
+  assert.equal(byId(verdicts, "recipe-file:eval[1]")?.status, "ok");
+  assert.equal(byId(verdicts, "recipe-file:eval"), undefined);
+});

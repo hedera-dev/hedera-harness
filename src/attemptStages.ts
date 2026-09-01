@@ -16,6 +16,7 @@ import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
+import { specHasEval } from "./sliceSelection.js";
 import {
   createDevServerSession,
   loadDevServerConfig,
@@ -290,23 +291,18 @@ export async function runValidationStages(
 ): Promise<ValidationResult> {
   const hasPlaywright = Boolean(context.spec.validators.playwrightPath);
   const runEvaluate =
-    hasPlaywright && isValidatorEnabled(context.spec) && Boolean(context.spec.evalPath);
+    hasPlaywright && isValidatorEnabled(context.spec) && specHasEval(context.spec);
 
   logStage("ASSERT");
   const deterministic = await runAssertStage(context);
 
-  const validation: ValidationResult = generateFinding
-    ? {
-        passed: false,
-        findings: [generateFinding, ...deterministic.findings],
-        commandResults: deterministic.commandResults,
-        playwrightGate: deterministic.playwrightGate,
-      }
-    : deterministic;
+  // Generator exit/timeout findings are recorded but must not fail ASSERT or skip
+  // SMOKE/EVALUATE — Cursor often hangs after finishing work; the gates decide pass.
+  const validation = mergeGenerateFinding(deterministic, generateFinding);
 
-  if (generateFinding || !isReadyForPlaywrightSmoke(validation)) {
+  if (!isReadyForPlaywrightSmoke(validation)) {
     logStage("SMOKE", "skipped — deterministic gates are not clean");
-    return validation;
+    return { ...validation, passed: false };
   }
   if (!hasPlaywright) {
     return validation;
@@ -347,7 +343,9 @@ export async function runValidationStages(
 
     // MCP delivery is EVALUATE-only: Cursor's .cursor/mcp.json snapshot must not
     // span deploy/boot/SMOKE (longer blast radius if the process is killed).
-    return withValidatorMcp(
+    // Must `await` — bare `return promise` runs `finally` (and stops the server)
+    // before EVALUATE, which is exactly the SMOKE-green / EVALUATE-refused bug.
+    return await withValidatorMcp(
       {
         agent: context.spec.agent,
         workspacePath: context.workspacePath,
@@ -368,6 +366,24 @@ export async function runValidationStages(
   } finally {
     await devServer?.stop();
   }
+}
+
+/**
+ * Attach a GENERATE process finding without failing ASSERT.
+ * `isReadyForPlaywrightSmoke` already ignores `category: "agent"`; after SMOKE,
+ * `passed` ignores agent findings too. Skipping SMOKE solely because GENERATE
+ * timed out left green work ungraded (Cursor hang-after-done).
+ */
+export function mergeGenerateFinding(
+  deterministic: ValidationResult,
+  generateFinding?: ValidationFinding,
+): ValidationResult {
+  if (!generateFinding) return deterministic;
+  return {
+    ...deterministic,
+    findings: [generateFinding, ...deterministic.findings],
+    passed: deterministic.passed,
+  };
 }
 
 function truncate(value: string, maxLength = 1200): string {

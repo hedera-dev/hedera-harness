@@ -188,12 +188,14 @@ export interface TemplateSpec {
   projectRoot: string;
   name: string;
   description?: string;
-  /**
-   * Ordered feature descriptions. The list form is the slice format; sequential
-   * delivery is not implemented yet, so exactly one entry is accepted today.
-   */
+  /** Ordered feature descriptions delivered as increments onto one branch. */
   prdPaths: string[];
-  evalPath?: string;
+  /**
+   * Absolute evaluate-checklist paths. Undefined = no eval configured.
+   * Length 1 (scalar) grades every slice with the same checklist; length N
+   * must match `prdPaths` for per-slice grading.
+   */
+  evalPaths?: string[];
   /**
    * Which agent CLI family this run targets. Drives MCP delivery and model
    * selection even when `generator:` overrides the invocation itself.
@@ -304,6 +306,8 @@ export interface SliceReport {
   /** Zero-based position in `prd:`. */
   index: number;
   prdPath: string;
+  /** Absolute eval path for this slice, when EVALUATE is configured. */
+  evalPath?: string;
   passed: boolean;
   /** Attempts consumed by this increment alone. */
   attempts: number;

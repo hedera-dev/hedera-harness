@@ -145,6 +145,9 @@ The validator is adversarial by design and is told to fail on uncertainty. If
 it cannot reach the browser it will say so and fail the assertion rather than
 guess, so a passing EVALUATE verdict means something.
 
+A scalar `eval:` path grades every increment with the same checklist. For
+true incremental grading, use a list 1:1 with `prd:` (see below).
+
 ### CHAIN — on-chain validation
 
 The harness provisions an **ephemeral funded ECDSA testnet account** per run,
@@ -193,6 +196,19 @@ Each increment is delivered onto the same branch with its own attempt budget
 and its own checkpoint commits, and the agent is told which increment it is on
 and that earlier ones are already done. A failing increment stops the sequence,
 and `--continue` resumes there rather than redoing delivered work.
+
+For true per-increment grading, list evaluate checklists 1:1 with the PRDs:
+
+```yaml
+eval:
+  - .harness/evals/01-foundation.json
+  - .harness/evals/02-ui.json
+  - .harness/evals/03-onchain.json
+```
+
+Only the active PRD/eval pair is vendored, prompted, and graded each
+increment — slice 1 never sees checklist 2. A scalar `eval: .harness/eval.json`
+still grades every slice against one shared checklist.
 
 This matters because one large PRD plus three attempts is a poor fit for most
 real features: the work is too big for the budget, and a failure discards

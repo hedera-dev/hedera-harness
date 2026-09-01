@@ -44,14 +44,15 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
   const constraints = readConstraints(parsed);
   const workspaces = constraints?.workspaces ?? [];
   const agent = readAgentPresetName(parsed);
+  const prdPaths = readPrdPaths(parsed, projectRoot);
 
   const spec: TemplateSpec = {
     schemaVersion,
     projectRoot,
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
-    prdPaths: readPrdPaths(parsed, projectRoot),
-    evalPath: readOptionalProjectPath(projectRoot, parsed, "eval"),
+    prdPaths,
+    evalPaths: readEvalPaths(parsed, projectRoot, prdPaths.length),
     agent,
     generator: readGenerator(parsed, agent),
     validator: readOptionalValidator(parsed, agent),
@@ -195,6 +196,40 @@ function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): str
   return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
 }
 
+/**
+ * `eval` accepts a path (same checklist for every slice) or an ordered list
+ * that must be 1:1 with `prd`. Absent means EVALUATE is not configured.
+ */
+function readEvalPaths(
+  parsed: Record<string, unknown>,
+  projectRoot: string,
+  prdCount: number,
+): string[] | undefined {
+  const raw = parsed.eval;
+
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  if (typeof raw === "string") {
+    if (!raw.trim()) throw new Error('Expected non-empty string "eval" in template spec.');
+    return [resolveProjectPath(projectRoot, raw)];
+  }
+
+  if (!Array.isArray(raw) || raw.some(item => typeof item !== "string" || !item.trim())) {
+    throw new Error('Expected "eval" to be a path or a non-empty list of paths.');
+  }
+  if (raw.length === 0) {
+    throw new Error('Expected "eval" to list at least one path.');
+  }
+  if (raw.length !== prdCount) {
+    throw new Error(
+      `"eval" list has ${raw.length} path(s) but "prd" has ${prdCount}; list form must be 1:1.`,
+    );
+  }
+  return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
+}
+
 function readValidators(
   parsed: Record<string, unknown>,
   projectRoot: string,
@@ -219,19 +254,6 @@ function readValidators(
 
 function resolveProjectPath(projectRoot: string, value: string): string {
   return path.isAbsolute(value) ? value : path.resolve(projectRoot, value);
-}
-
-function readOptionalProjectPath(
-  projectRoot: string,
-  parsed: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const candidate = parsed[key];
-  if (candidate === undefined) return undefined;
-  if (typeof candidate !== "string" || !candidate.trim()) {
-    throw new Error(`Expected optional non-empty string "${key}" in template spec.`);
-  }
-  return resolveProjectPath(projectRoot, candidate);
 }
 
 function readOptionalValidatorPath(

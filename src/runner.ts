@@ -10,6 +10,7 @@ import { logPhase } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import type { ChainSigner, CliOptions, EvaluationResult, ValidationResult } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
+import { selectActiveSlice, specHasEval } from "./sliceSelection.js";
 import { isReadyForPlaywrightSmoke, runDeterministicValidation } from "./validation/index.js";
 import {
   createDevServerSession,
@@ -82,7 +83,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
     );
   }
 
-  if (!spec.evalPath) {
+  if (!specHasEval(spec)) {
     throw new Error("EVALUATE requires spec.eval to be configured.");
   }
 
@@ -96,9 +97,11 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
     assertChainValidationOperatorEnv(spec.chainValidation);
   }
 
+  // Completed-workspace policy: grade with the last slice's PRD/eval pair.
+  const active = selectActiveSlice(spec, spec.prdPaths.length - 1);
   const vendored = await vendorHarnessContext(workspacePath, {
-    prdPath: spec.prdPaths[0],
-    evalPath: spec.evalPath,
+    prdPath: active.prdPath,
+    evalPath: active.evalPath,
   });
   logPhase(
     "Harness context refreshed for evaluation",

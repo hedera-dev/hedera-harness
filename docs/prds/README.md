@@ -40,11 +40,16 @@ prd:
   - .harness/prds/01-browse.md
   - .harness/prds/02-wallet.md
   - .harness/prds/03-onchain.md
+eval:
+  - .harness/evals/01-browse.json
+  - .harness/evals/02-wallet.json
+  - .harness/evals/03-onchain.json
 ```
 
 Each gets its own attempt budget and its own checkpoint commits, and a failure
-stops the sequence rather than discarding everything. The journey ordering above
-usually maps directly onto increments.
+stops the sequence rather than discarding everything. Pair checklists 1:1 with
+PRDs for true incremental grading; a scalar `eval:` grades every slice with one
+checklist. The journey ordering above usually maps directly onto increments.
 
 One large PRD with three repair attempts is a poor fit for a real feature: the
 work exceeds the budget, and a failure loses all of it.
@@ -73,4 +78,4 @@ The PRDs in this directory are illustrative. For a real project, start from
 ```
 
 See [authoring-a-recipe.md](../authoring-a-recipe.md) for how the PRD fits with
-validators, the contract, and the tiers.
+validators, the evaluate checklist, and the stages.

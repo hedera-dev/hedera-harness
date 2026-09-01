@@ -28,7 +28,9 @@
 - Finding id prefix `semantic:` → `eval:`.
 - `status.json` key `semanticPassed` → `evaluationPassed`.
 - `ValidatorIssue.contractAssertion` → `assertion`; `ValidationFinding.contractAssertion` → `assertion`.
-- `TemplateSpec.contractPath` → `evalPath`.
+- `TemplateSpec.contractPath` → `evalPaths` (normalized list; scalar `eval:` becomes length 1).
+- `selectActiveSlice` / `specHasEval` / `allEvalPaths` are the selection seam for the active PRD/eval pair — callers must not index `prdPaths[i]` / `evalPaths[i]` ad hoc.
+- List `eval:` must be 1:1 with `prd:` or load fails; scalar `eval:` grades every slice with one checklist. Only the active pair is vendored per increment.
 - `VendoredContext.contractRelativePath/contractSourcePath` → `evalRelativePath/evalSourcePath`.
 - `VENDORED_CONTRACT_PATH` → `VENDORED_EVAL_PATH` (points to `eval.json`).
 - `harnessContractRelativePath()` → `harnessEvalRelativePath()`.
@@ -45,6 +47,21 @@
   user-facing output).
 
 ### Changed
+
+- **Generator idle/timeout no longer skips SMOKE/EVALUATE.** A Cursor hang after
+  `THINKING completed` still records an agent finding, but ASSERT pass continues
+  into the product gates (agent findings were already ignored for smoke readiness
+  and for attempt `passed` after SMOKE). Default agent idle timeout is **90s**
+  (was 10m); override with `HARNESS_AGENT_IDLE_TIMEOUT_MS`.
+
+- **Shared SMOKE→EVALUATE server: `return await withValidatorMcp`.** A bare
+  `return withValidatorMcp(...)` inside `try/finally` stopped the harness dev
+  server before EVALUATE ran (SMOKE green, then connection refused on `:3000`).
+  Matches `validate-semantic`, which already awaited.
+- **Per-slice evaluate checklists.** `eval:` accepts a scalar path (same
+  checklist every increment) or a list 1:1 with `prd:`. `validate-semantic`
+  uses the last slice pair for a completed workspace. Preflight labels list
+  paths as `eval[i]` when more than one is configured.
 
 - **Preflight rules are evaluated lazily on the run path.** `run` stops at the
   first failure instead of computing every rule first, so a run aborting on a

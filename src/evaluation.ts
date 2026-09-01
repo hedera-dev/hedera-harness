@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 import { parseValidatorVerdict } from "./validatorVerdictParser.js";
 import { annotateInfrastructureFailure } from "./evalInfra.js";
+import { specHasEval } from "./sliceSelection.js";
 import type { DevServerSession } from "./validation/devServer.js";
 
 export function isValidatorEnabled(spec: TemplateSpec): boolean {
@@ -43,7 +44,7 @@ export async function runEvaluation(input: {
     };
   }
 
-  if (!input.spec.evalPath) {
+  if (!specHasEval(input.spec)) {
     return annotateInfrastructureFailure(
       failureResult(startedAt, [
         findingFromMessage("validator-config", "Evaluator requires spec.eval to be configured."),
