@@ -6,12 +6,9 @@ import { ISOLATED_CONTEXT_DIR } from "./runtimePaths.js";
 export { pathExists } from "./fsUtils.js";
 
 /**
- * Legacy vendor root, used by `validate-semantic` against older layouts.
- *
- * Deliberately NOT named HARNESS_CONTEXT_DIR: runtimePaths exports a constant by
- * that name pointing at `.harness/runtime/context`, where a project run actually
- * vendors. Two same-named constants with different values previously let repair
- * prompts fall back to a directory the run never creates.
+ * Legacy vendor root (`validate-semantic` / older layouts). Not named
+ * HARNESS_CONTEXT_DIR — that points at `.harness/runtime/context`, and a
+ * same-named constant previously sent repair prompts to a dir the run never creates.
  */
 export const LEGACY_CONTEXT_DIR = ISOLATED_CONTEXT_DIR;
 export const VENDORED_PRD_PATH = `${LEGACY_CONTEXT_DIR}/prd.md`;

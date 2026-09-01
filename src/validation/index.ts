@@ -13,6 +13,7 @@ import {
   readCachedInstallFingerprint,
   writeCachedInstallFingerprint,
 } from "./installFingerprint.js";
+import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "../runtimePaths.js";
 
 export interface DeterministicValidationOptions {
   /** Persist install fingerprint across attempts under this run cache path. */
@@ -79,10 +80,10 @@ const SCAN_SKIP_DIRS = new Set([
   "artifacts",
   "cache",
   ".harness",
-  ".harness-context",
-  ".harness-skills",
+  ISOLATED_CONTEXT_DIR,
+  ISOLATED_SKILLS_DIR,
   ".harness-semantic",
-  ".skill-cache",
+  SKILL_CACHE_DIRNAME,
 ]);
 
 export async function runDeterministicValidation(

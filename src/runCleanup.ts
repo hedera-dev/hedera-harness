@@ -2,7 +2,12 @@ import { access, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isHarnessMcpServer } from "./mcpBrowser.js";
 import { listHarnessConsumerDirtyPaths } from "./harnessGit.js";
-import { HARNESS_RUNTIME_DIR } from "./runtimePaths.js";
+import {
+  HARNESS_RUNTIME_DIR,
+  ISOLATED_CONTEXT_DIR,
+  ISOLATED_SKILLS_DIR,
+  SKILL_CACHE_DIRNAME,
+} from "./runtimePaths.js";
 
 export interface CleanupResult {
   removedPaths: string[];
@@ -13,9 +18,9 @@ export interface CleanupResult {
 
 const REMOVABLE_RUNTIME_DIRS = [
   HARNESS_RUNTIME_DIR,
-  ".harness-skills",
-  ".harness-context",
-  ".skill-cache",
+  ISOLATED_SKILLS_DIR,
+  ISOLATED_CONTEXT_DIR,
+  SKILL_CACHE_DIRNAME,
 ] as const;
 
 /**

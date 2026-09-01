@@ -1,5 +1,6 @@
 import { appendFile, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
+import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "./runtimePaths.js";
 
 const IGNORED_SEGMENTS = new Set([
   "node_modules",
@@ -8,9 +9,9 @@ const IGNORED_SEGMENTS = new Set([
   "dist",
   "artifacts",
   "cache",
-  ".harness-skills",
-  ".harness-context",
-  ".skill-cache",
+  ISOLATED_SKILLS_DIR,
+  ISOLATED_CONTEXT_DIR,
+  SKILL_CACHE_DIRNAME,
 ]);
 
 export class WorkspaceWatcher {

@@ -7,6 +7,7 @@ import {
   isHarnessBranch,
   slugifyForBranch,
 } from "./branchDetection.js";
+import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "./runtimePaths.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { ValidationFinding } from "./types.js";
 
@@ -22,9 +23,9 @@ export const HARNESS_RUNTIME_PATH_PREFIXES = [
   ".harness/runs/",
   ".harness/cache/",
   ".harness/runtime/",
-  ".harness-skills/",
-  ".harness-context/",
-  ".skill-cache/",
+  `${ISOLATED_SKILLS_DIR}/`,
+  `${ISOLATED_CONTEXT_DIR}/`,
+  `${SKILL_CACHE_DIRNAME}/`,
   "node_modules/",
   "dist/",
   "build/",
@@ -38,9 +39,9 @@ export const HARNESS_RUNTIME_PATH_NAMES = new Set([
   ".harness/runs",
   ".harness/cache",
   ".harness/runtime",
-  ".harness-skills",
-  ".harness-context",
-  ".skill-cache",
+  ISOLATED_SKILLS_DIR,
+  ISOLATED_CONTEXT_DIR,
+  SKILL_CACHE_DIRNAME,
   "node_modules",
   "dist",
   "build",

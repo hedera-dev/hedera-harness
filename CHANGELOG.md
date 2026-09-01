@@ -63,6 +63,12 @@
 
 ### Changed
 
+- **Comment and dead-code trim.** Drop unused `harnessPrdRelativePath` /
+  `harnessEvalRelativePath`, unexport `cacheKeyForRepo`, and share
+  `.skill-cache` / legacy vendor dir names from `runtimePaths`. Cut comments
+  that restated the code; keep non-obvious WHY (Cursor MCP probe, Claude
+  `--allowedTools`, schema version table).
+
 - **One skills verb.** `skillResolver` + `skillVendor` are folded into
   `skillProvider`, whose only exports are `provideSkills()` and the
   `VendoredSkill` type. Git checkout caching lives in `skillRepoCache`. Product

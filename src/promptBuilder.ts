@@ -11,14 +11,7 @@ import { renderPrompt } from "./promptTemplates.js";
 import type { SliceContext } from "./attemptLoop.js";
 import { selectActiveSlice } from "./sliceSelection.js";
 
-/**
- * Assembles prompt inputs; the prose lives in `prompts/*.md`.
- *
- * What stays here is the part that is genuinely logic — choosing a repair scope,
- * correlating findings with eval assertions, formatting lists. What left is
- * the wording, which is the thing most often tuned and the thing least served by
- * living behind a compile step.
- */
+/** Assembles prompt inputs; wording lives in `prompts/*.md`. */
 export type RepairScope = "eval-scoped" | "runtime" | "broad";
 
 interface EvalAssertion {
