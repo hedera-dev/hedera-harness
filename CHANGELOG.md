@@ -16,6 +16,18 @@
   longer recognized for continue / smart branch detection.
 - **Layout metadata** no longer normalizes legacy `in-place-extend` mode.
 
+- **`skills:` removed from the recipe.** Every skill registered in
+  `skills-index.json` is vendored for the run and the generator picks what the PRD
+  calls for. A recipe that still lists `skills:` hard-fails at load
+  (`remove skills: — every skill in skills-index.json is loaded automatically`)
+  rather than silently ignoring the key. Curate the index, not the recipe: a
+  per-recipe list required the author to know the index contents, and being short
+  by one skill quietly produced a worse app than the index could support.
+- **`init --skills` removed, and `init` no longer pre-vendors skills.**
+  `.harness/skills/` is gone (it was gitignored and read by nothing now that every
+  run vendors the full set), so `init` needs neither git nor network for skills.
+  `InitResult.vendoredSkillCount` is gone with it.
+
 ### Breaking Changes (schema v3 — eval vocabulary)
 
 - Recipe key `contract:` renamed to `eval:`. An unmigrated `contract:` key is

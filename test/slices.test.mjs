@@ -18,13 +18,18 @@ const prompts = await import(pathToFileURL(path.resolve("dist/promptBuilder.js")
  * so tests can prove only the active pair was visible.
  */
 const MOCK_AGENT = `
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
 import path from "node:path";
 const ws = process.env.MOCK_WS;
 const prd = readFileSync(path.join(ws, ".harness/runtime/context/prd.md"), "utf8").trim();
 const marker = prd.split("\\n")[0].replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 mkdirSync(path.join(ws, "built"), { recursive: true });
 writeFileSync(path.join(ws, "built", marker + ".txt"), prd);
+// Record what the agent was offered; runtime skills are deleted after the run.
+const skillsDir = path.join(ws, ".harness/runtime/skills");
+if (existsSync(skillsDir)) {
+  writeFileSync(path.join(ws, "built", "skills.txt"), readdirSync(skillsDir).join("\\n"));
+}
 const evalPath = path.join(ws, ".harness/runtime/context/eval.json");
 if (existsSync(evalPath)) {
   writeFileSync(path.join(ws, "built", marker + ".eval.txt"), readFileSync(evalPath, "utf8"));
@@ -42,6 +47,18 @@ async function makeProject(prdNames, { failOn, evals } = {}) {
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
   await writeFile(path.join(root, "agent.mjs"), MOCK_AGENT);
   await writeFile(path.join(root, "package.json"), '{"name":"x","version":"1.0.0"}\n');
+
+  // A run loads every skill the index registers, so give the fixture a local index:
+  // without one it would fall back to the packaged index and clone the skills repo.
+  await mkdir(path.join(root, "skills", "demo"), { recursive: true });
+  await writeFile(
+    path.join(root, "skills", "demo", "SKILL.md"),
+    "---\nname: demo-skill\ndescription: Demo skill.\n---\n# Demo\n",
+  );
+  await writeFile(
+    path.join(root, "skills-index.json"),
+    JSON.stringify({ skills: [{ name: "demo-skill", path: "./skills/demo/SKILL.md" }] }),
+  );
 
   for (const name of prdNames) {
     await writeFile(path.join(root, ".harness", `${name}.md`), `${name} increment\n`);
@@ -84,7 +101,6 @@ ${evalBlock}generator:
   args:
     - ${JSON.stringify(path.join(root, "agent.mjs"))}
   timeoutMs: 60000
-skills: []
 baseline:
   commands:
     - name: install
@@ -138,6 +154,18 @@ test("increments are delivered in the order listed", async () => {
   const built = await run("git", ["log", "--format=%s"], { cwd: root });
   const commits = built.stdout.trim().split("\n").filter(l => l.startsWith("harness:"));
   assert.ok(commits.length >= 3, `expected a checkpoint per increment, got ${commits.length}`);
+});
+
+// The recipe cannot list skills any more, so the run must offer the whole index
+// and leave selection to the generator.
+test("a recipe with no skills list still receives every registered skill", async () => {
+  const { root, env } = await makeProject(["01-foundation"]);
+
+  const { report } = await runWith(root, env);
+
+  assert.equal(report.passed, true);
+  const offered = await readFile(path.join(root, "built", "skills.txt"), "utf8");
+  assert.match(offered, /demo-skill/);
 });
 
 test("a failing increment stops the sequence", async () => {

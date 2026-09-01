@@ -131,7 +131,7 @@ The harness never pushes, opens a PR, merges, deletes a branch, or switches away
 ## CLI
 
 ```bash
-hedera-harness init [dir] [--repo URL] [--ref branch] [--template name] [--skip-install] [--skills a,b]
+hedera-harness init [dir] [--repo URL] [--ref branch] [--template name] [--skip-install]
 hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
 hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
 hedera-harness validate [spec] [--workspace <path>]
@@ -209,8 +209,7 @@ my-app/
 │   ├── prd.md                 # what to build
 │   ├── validators/
 │   ├── prompts/               # optional per-project prompt overrides
-│   ├── skills/                # pre-vendored at init (gitignored)
-│   ├── runtime/               # per-run skills/context (gitignored)
+│   ├── runtime/               # every skill + context, vendored per run (gitignored)
 │   └── runs/                  # artifacts + session.json (gitignored)
 ├── skills-index.json
 └── packages/
@@ -220,13 +219,9 @@ Harness logs always live under `.harness/runs/` and are not configurable — poi
 
 ## Skills
 
-Recipes list skills by **name**. The harness resolves them through [`skills-index.json`](skills-index.json), fetching from git when needed (cached under `.skill-cache/`) and vendoring into `.harness/runtime/skills/` for the run.
+Recipes do not list skills. Every entry in [`skills-index.json`](skills-index.json) is resolved (fetched from git when needed, cached under `.skill-cache/`) and vendored into `.harness/runtime/skills/` for the run, and the generator picks the ones its PRD calls for.
 
-```yaml
-skills:
-  - hedera-consensus-service
-  - project-scaffolding
-```
+The index is therefore the curation point: add a skill there to offer it to every run in the project, and drop it to take it away. Entries under `unmerged-skills` are documentation only and are never loaded.
 
 To author recipes with an agent, install the marketplace plugin:
 

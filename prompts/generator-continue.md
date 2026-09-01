@@ -16,7 +16,7 @@ The harness re-vendored the latest extension brief into ignored runtime paths:
 {{#hasEval}}
 - `{{evalPath}}` — evaluate assertions
 {{/hasEval}}
-- `{{skillsRoot}}/` — vendored skills (if any)
+- `{{skillsRoot}}/` — every available skill, to draw from as needed
 - `GENERATION_NOTES.md` — prior notes
 
 ## Mission
@@ -33,7 +33,8 @@ Prefer targeted edits that close gaps against the PRD/checklist.
 
 ## Skills To Leverage
 {{#hasSkills}}
-Use only the vendored skills under `{{skillsRoot}}/`.
+Every available skill is vendored under `{{skillsRoot}}/` — read the ones this
+increment needs and ignore the rest.
 
 {{skillSummaries}}
 {{/hasSkills}}

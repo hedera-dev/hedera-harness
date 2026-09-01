@@ -45,7 +45,6 @@ test("provisionHarnessProject writes .harness recipe and gitignore", async () =>
 
   const result = await provisioner.provisionHarnessProject({
     targetDir: root,
-    skillNames: [],
     copySkillsIndex: true,
   });
 

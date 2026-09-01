@@ -40,7 +40,6 @@ export interface InitCliOptions {
   /** Alias for ref (e.g. scaffold template branch). */
   template?: string;
   skipInstall?: boolean;
-  provisionSkills?: string[];
 }
 
 export interface InitResult {
@@ -55,7 +54,6 @@ export interface InitResult {
   writtenFiles: string[];
   /** Recipe files already present and left untouched. */
   skippedFiles: string[];
-  vendoredSkillCount: number;
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;
   nextSteps: string[];
@@ -203,7 +201,6 @@ export interface TemplateSpec {
   agent: "cursor" | "claude";
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
-  skills?: string[];
   constraints?: TemplateConstraints;
   templateMetadata?: TemplateMetadata;
   validators: {
