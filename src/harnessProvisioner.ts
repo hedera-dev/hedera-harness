@@ -1,17 +1,13 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { logPhase } from "./attemptLoop.js";
 import { pathExists } from "./fsUtils.js";
-import { resolveSkillPaths, resolveSkillsIndexPath, SKILLS_INDEX_FILENAME } from "./skillResolver.js";
-import { vendorSkills } from "./skillVendor.js";
+import { resolveSkillsIndex } from "./skillProvider.js";
 
 export const PROJECT_HARNESS_SKELETON_DIR = "skeletons/project-harness";
 
 export interface ProvisionHarnessInput {
   targetDir: string;
-  /** Skill names to pre-vendor under `.harness/skills/`. Empty = skip. */
-  skillNames?: string[];
   /** When true, also copy package-bundled skills-index.json into the project. */
   copySkillsIndex?: boolean;
 }
@@ -21,7 +17,6 @@ export interface ProvisionHarnessResult {
   writtenFiles: string[];
   /** Recipe files already present and deliberately left alone. */
   skippedFiles: string[];
-  vendoredSkillFiles: string[];
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;
 }
@@ -61,25 +56,11 @@ export async function provisionHarnessProject(
   }
 
   if (input.copySkillsIndex !== false) {
-    const destIndex = path.join(targetDir, SKILLS_INDEX_FILENAME);
-    if (!(await pathExists(destIndex))) {
-      const sourceIndex = await resolveSkillsIndexPath(targetDir);
-      await copyFile(sourceIndex, destIndex);
-      writtenFiles.push(SKILLS_INDEX_FILENAME);
+    const index = await resolveSkillsIndex(targetDir);
+    if (!(await pathExists(index.localPath))) {
+      await copyFile(index.sourcePath, index.localPath);
+      writtenFiles.push(path.relative(targetDir, index.localPath));
     }
-  }
-
-  let vendoredSkillFiles: string[] = [];
-  const skillNames = input.skillNames ?? [];
-  if (skillNames.length > 0) {
-    logPhase("Resolving skills", `${skillNames.length} name(s)`);
-    const resolved = await resolveSkillPaths(skillNames, targetDir);
-    logPhase("Vendoring skills into .harness/skills", `${resolved.length} skill(s)`);
-    const vendored = await vendorSkills(targetDir, resolved, {
-      skillsDir: ".harness/skills",
-    });
-    vendoredSkillFiles = vendored.map(entry => entry.relativePath);
-    logPhase("Skills vendored", `${vendoredSkillFiles.length} file(s)`);
   }
 
   const gitignoreUpdated = await ensureHarnessGitignore(targetDir, skeletonRoot);
@@ -97,7 +78,6 @@ export async function provisionHarnessProject(
     harnessDir,
     writtenFiles,
     skippedFiles,
-    vendoredSkillFiles,
     gitignoreUpdated,
     packageJsonUpdated,
   };
@@ -109,20 +89,6 @@ export function resolveProjectHarnessSkeletonRoot(): string {
     "..",
     PROJECT_HARNESS_SKELETON_DIR,
   );
-}
-
-/** List skill names from the resolved skills index (for init --all-skills). */
-export async function listRegisteredSkillNames(projectRoot: string): Promise<string[]> {
-  const indexPath = await resolveSkillsIndexPath(projectRoot);
-  const raw = await readFile(indexPath, "utf8");
-  const parsed = JSON.parse(raw) as { skills?: Array<{ name?: string }> };
-  if (!Array.isArray(parsed.skills)) {
-    return [];
-  }
-  return parsed.skills
-    .map(entry => (typeof entry.name === "string" ? entry.name.trim() : ""))
-    .filter(Boolean)
-    .sort();
 }
 
 async function ensureHarnessGitignore(targetDir: string, skeletonRoot: string): Promise<boolean> {

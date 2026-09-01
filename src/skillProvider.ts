@@ -1,18 +1,23 @@
-import { access, readFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeRelativeDir, pathExists } from "./fsUtils.js";
 import { ensureSkillRepoCheckout } from "./skillRepoCache.js";
 
-export const SKILLS_INDEX_FILENAME = "skills-index.json";
-export const DEFAULT_SKILLS_REPO = "https://github.com/hedera-dev/hedera-skills.git";
-export const DEFAULT_SKILLS_REF = "master";
+const SKILLS_INDEX_FILENAME = "skills-index.json";
+const DEFAULT_SKILLS_REPO = "https://github.com/hedera-dev/hedera-skills.git";
+const DEFAULT_SKILLS_REF = "master";
+const REFERENCES_DIRNAME = "references";
 
-/** Package-bundled index next to installed `dist/` (npm consumers without a local clone). */
-export function bundledSkillsIndexPath(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", SKILLS_INDEX_FILENAME);
+export interface VendoredSkill {
+  name: string;
+  relativePath: string;
+  description: string;
+  sourcePath: string;
+  referencesPath?: string;
 }
 
-export interface SkillsIndexEntry {
+interface SkillsIndexEntry {
   name: string;
   /** Local filesystem path, or in-repo path when `repo` / index `defaults.repo` is set. */
   path: string;
@@ -24,7 +29,7 @@ export interface SkillsIndexEntry {
   description?: string;
 }
 
-export interface SkillsIndexDefaults {
+interface SkillsIndexDefaults {
   repo?: string;
   ref?: string;
 }
@@ -42,17 +47,48 @@ interface LoadedSkillsIndex {
 }
 
 /**
- * Resolve skill refs from a template spec to absolute SKILL.md paths on disk.
+ * Resolve skill refs and vendor them into the workspace in one step.
  *
- * - Absolute paths and `./` / `../` relative paths are used as-is (relative to projectRoot).
- * - Everything else is treated as a skill name and looked up in `skills-index.json`.
- * - Index entries may point at local files or at paths inside a remote git repo
- *   (`defaults.repo` / entry `repo` + `ref`). Remote skills are cached under `.skill-cache/`.
+ * - `skillRefs` are skill names from `skills-index.json`, or absolute / `./` / `../` paths.
+ * - Index entries may live on disk or inside a remote git repo, which is cached under
+ *   `<projectRoot>/.skill-cache/`.
+ * - Copies land in `<workspacePath>/<skillsDir>/<slug>/SKILL.md` alongside a `manifest.json`.
+ *   The manifest is written even for an empty ref list so callers can rely on the directory.
  */
-export async function resolveSkillPaths(
-  skillRefs: string[],
-  projectRoot: string,
-): Promise<string[]> {
+export async function provideSkills(input: {
+  skillRefs: string[];
+  /** Root that owns `skills-index.json` and the `.skill-cache/` checkout. */
+  projectRoot: string;
+  /** Root the skills are copied into. */
+  workspacePath: string;
+  /** Relative directory under `workspacePath` to vendor into. */
+  skillsDir: string;
+}): Promise<VendoredSkill[]> {
+  const sourceSkillPaths = await resolveSkillPaths(input.skillRefs, input.projectRoot);
+  return vendorResolvedSkills(input.workspacePath, input.skillsDir, sourceSkillPaths);
+}
+
+/**
+ * Locate the skills index and read the names it registers.
+ *
+ * Prefers a project-local `skills-index.json`, then the package-bundled copy so
+ * npm-installed `hedera-harness` works without cloning this repo. `localPath` is where
+ * `init` copies `sourcePath` to.
+ */
+export async function resolveSkillsIndex(projectRoot: string): Promise<{
+  sourcePath: string;
+  localPath: string;
+  names: string[];
+}> {
+  const index = await loadSkillsIndex(projectRoot);
+  return {
+    sourcePath: index.indexPath,
+    localPath: localSkillsIndexPath(projectRoot),
+    names: [...index.byName.keys()].sort(),
+  };
+}
+
+async function resolveSkillPaths(skillRefs: string[], projectRoot: string): Promise<string[]> {
   if (skillRefs.length === 0) {
     return [];
   }
@@ -109,13 +145,79 @@ export async function resolveSkillPaths(
   return resolved;
 }
 
-export function skillsIndexPath(projectRoot: string): string {
-  return path.join(projectRoot, SKILLS_INDEX_FILENAME);
+async function vendorResolvedSkills(
+  workspacePath: string,
+  requestedSkillsDir: string,
+  sourceSkillPaths: string[],
+): Promise<VendoredSkill[]> {
+  const skillsDir = normalizeRelativeDir(requestedSkillsDir);
+  const skillsRoot = path.join(workspacePath, skillsDir);
+  await mkdir(skillsRoot, { recursive: true });
+
+  const vendored: VendoredSkill[] = [];
+  const usedSlugs = new Set<string>();
+
+  for (const sourcePath of sourceSkillPaths) {
+    const content = await readFile(sourcePath, "utf8");
+    const name = extractSkillName(content) ?? path.basename(path.dirname(sourcePath));
+    const description = extractSkillDescription(content);
+    const slug = uniqueSlug(slugify(name), usedSlugs);
+    const relativePath = path.posix.join(skillsDir, slug, "SKILL.md");
+    const destinationPath = path.join(workspacePath, ...relativePath.split("/"));
+
+    await mkdir(path.dirname(destinationPath), { recursive: true });
+    await writeFile(destinationPath, content, "utf8");
+
+    const skill: VendoredSkill = {
+      name,
+      relativePath,
+      description,
+      sourcePath,
+    };
+
+    const sourceReferencesDir = path.join(path.dirname(sourcePath), REFERENCES_DIRNAME);
+    const destReferencesDir = path.join(path.dirname(destinationPath), REFERENCES_DIRNAME);
+    if (await pathExists(sourceReferencesDir)) {
+      await cp(sourceReferencesDir, destReferencesDir, { recursive: true, force: true });
+      skill.referencesPath = path.posix.join(skillsDir, slug, REFERENCES_DIRNAME);
+    }
+
+    vendored.push(skill);
+  }
+
+  await writeFile(
+    path.join(skillsRoot, "manifest.json"),
+    `${JSON.stringify(
+      {
+        vendoredAt: new Date().toISOString(),
+        skills: vendored.map(skill => ({
+          name: skill.name,
+          relativePath: skill.relativePath,
+          sourcePath: skill.sourcePath,
+          ...(skill.referencesPath ? { referencesPath: skill.referencesPath } : {}),
+        })),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  return vendored;
 }
 
 /** Absolute, or relative with an explicit ./ or ../ prefix. */
-export function isPathLike(ref: string): boolean {
+function isPathLike(ref: string): boolean {
   return path.isAbsolute(ref) || ref.startsWith("./") || ref.startsWith("../");
+}
+
+function localSkillsIndexPath(projectRoot: string): string {
+  return path.join(projectRoot, SKILLS_INDEX_FILENAME);
+}
+
+/** Package-bundled index next to installed `dist/` (npm consumers without a local clone). */
+function bundledSkillsIndexPath(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", SKILLS_INDEX_FILENAME);
 }
 
 async function resolveIndexEntryPath(
@@ -154,32 +256,24 @@ async function resolveIndexEntryPath(
   return path.resolve(checkoutPath, inRepoPath);
 }
 
-/**
- * Prefer a project-local `skills-index.json`, then fall back to the package-bundled copy
- * so npm-installed `hedera-harness` works without cloning this repo.
- */
-export async function resolveSkillsIndexPath(projectRoot: string): Promise<string> {
-  const localPath = skillsIndexPath(projectRoot);
-  try {
-    await access(localPath);
+async function resolveSkillsIndexPath(projectRoot: string): Promise<string> {
+  const localPath = localSkillsIndexPath(projectRoot);
+  if (await pathExists(localPath)) {
     return localPath;
-  } catch {
-    // fall through to package-bundled index
   }
 
   const bundledPath = bundledSkillsIndexPath();
-  try {
-    await access(bundledPath);
+  if (await pathExists(bundledPath)) {
     return bundledPath;
-  } catch {
-    throw new Error(
-      [
-        `Skill name lookup requires ${localPath} (or the package-bundled ${SKILLS_INDEX_FILENAME}).`,
-        "Neither file was found.",
-        "Create skills-index.json in the consumer project, reinstall hedera-harness, or use absolute/relative paths in the spec's skills list.",
-      ].join(" "),
-    );
   }
+
+  throw new Error(
+    [
+      `Skill name lookup requires ${localPath} (or the package-bundled ${SKILLS_INDEX_FILENAME}).`,
+      "Neither file was found.",
+      "Create skills-index.json in the consumer project, reinstall hedera-harness, or use absolute/relative paths in the spec's skills list.",
+    ].join(" "),
+  );
 }
 
 async function loadSkillsIndex(projectRoot: string): Promise<LoadedSkillsIndex> {
@@ -282,14 +376,44 @@ function readDefaults(
 }
 
 async function assertSkillFileExists(absolutePath: string, label: string): Promise<void> {
-  try {
-    await access(absolutePath);
-  } catch {
-    throw new Error(
-      [
-        `Resolved ${label} to ${JSON.stringify(absolutePath)}, which does not exist.`,
-        "Update skills-index.json (or the path in the spec) to point at a real SKILL.md file.",
-      ].join(" "),
-    );
+  if (await pathExists(absolutePath)) {
+    return;
   }
+  throw new Error(
+    [
+      `Resolved ${label} to ${JSON.stringify(absolutePath)}, which does not exist.`,
+      "Update skills-index.json (or the path in the spec) to point at a real SKILL.md file.",
+    ].join(" "),
+  );
+}
+
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "skill"
+  );
+}
+
+function uniqueSlug(base: string, used: Set<string>): string {
+  let candidate = base;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function extractSkillName(content: string): string | undefined {
+  const match = content.match(/^name:\s*(.+)$/m);
+  return match?.[1]?.trim();
+}
+
+function extractSkillDescription(content: string): string {
+  const match = content.match(/^description:\s*(.+)$/m);
+  return match?.[1]?.trim() ?? "Use this skill when relevant to the template being built.";
 }

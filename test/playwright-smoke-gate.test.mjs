@@ -94,7 +94,6 @@ routes:
     `schemaVersion: 3
 name: validate-smoke-gate
 agent: claude
-skills: []
 validators:
   static: .harness/validators/static.json
   commands: .harness/validators/yarn.json

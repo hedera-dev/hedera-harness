@@ -28,7 +28,7 @@ import {
   type FindingDelta,
 } from "./findingsLifecycle.js";
 import type { VendoredContext } from "./contextVendor.js";
-import type { VendoredSkill } from "./skillVendor.js";
+import type { VendoredSkill } from "./skillProvider.js";
 import type {
   ChainSigner,
   RunReport,

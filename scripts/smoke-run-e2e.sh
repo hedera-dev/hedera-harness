@@ -158,19 +158,17 @@ node --input-type=module -e '
 import { readFileSync, writeFileSync } from "node:fs";
 const mock = process.argv[1];
 let spec = readFileSync(".harness/spec.yaml", "utf8");
-const genStart = spec.indexOf("\ngenerator:");
-const skillsIdx = spec.indexOf("\nskills:");
-if (genStart < 0 || skillsIdx < 0) throw new Error("spec missing generator/skills");
-const genBlock = `
-generator:
+const genBlock = `generator:
   provider: command
   command: node
   args:
     - ${JSON.stringify(mock)}
   timeoutMs: 60000
 `;
-spec = spec.slice(0, genStart) + genBlock + spec.slice(skillsIdx);
-spec = spec.replace(/\nskills:\n(?:  - .+\n)+/, "\nskills: []\n");
+if (!/^generator:/m.test(spec)) throw new Error("spec missing generator:");
+spec = spec.replace(/^generator:\n(?:[ \t]+.*\n)*/m, genBlock);
+// `skills:` is a removed key; strip it so the smoke can patch an older recipe.
+spec = spec.replace(/^skills:.*\n(?:[ \t]+-.*\n)*/m, "");
 if (!/^schemaVersion:\s*3\b/m.test(spec)) {
   spec = spec.replace(/^schemaVersion:\s*\d+\s*$/m, "schemaVersion: 3");
   if (!/^schemaVersion:\s*3\b/m.test(spec)) {

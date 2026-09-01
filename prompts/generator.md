@@ -24,7 +24,7 @@ The PRD is vendored at `{{prdPath}}`.
 {{#hasEval}}
 The evaluate checklist is vendored at `{{evalPath}}`.
 {{/hasEval}}
-Skills (if any) are under `{{skillsRoot}}/`.
+The available skills are under `{{skillsRoot}}/`.
 
 {{hardConstraints}}
 
@@ -35,7 +35,9 @@ Skills (if any) are under `{{skillsRoot}}/`.
 
 ## Skills To Leverage
 {{#hasSkills}}
-Use only the vendored skills under `{{skillsRoot}}/`.
+Every available skill is vendored under `{{skillsRoot}}/` — this is a library, not a
+checklist. Read the ones the PRD actually calls for and ignore the rest; a skill for a
+protocol this feature does not use is not a hint that you should use it.
 
 {{skillSummaries}}
 {{/hasSkills}}

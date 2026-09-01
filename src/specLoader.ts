@@ -56,8 +56,6 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     agent,
     generator: readGenerator(parsed, agent),
     validator: readOptionalValidator(parsed, agent),
-    // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
-    skills: readOptionalStringArray(parsed, "skills"),
     constraints: {
       ...constraints,
       forbiddenCommands:

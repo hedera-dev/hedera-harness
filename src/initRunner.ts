@@ -1,6 +1,6 @@
 import path from "node:path";
 import { logPhase } from "./attemptLoop.js";
-import { listRegisteredSkillNames, provisionHarnessProject } from "./harnessProvisioner.js";
+import { provisionHarnessProject } from "./harnessProvisioner.js";
 import {
   DEFAULT_SCAFFOLD_REF,
   DEFAULT_SCAFFOLD_REPO,
@@ -14,8 +14,6 @@ import type { InitCliOptions, InitResult } from "./types.js";
 export interface RunInitOptions extends InitCliOptions {
   /** Test seam: skip yarn install after clone. */
   skipInstall?: boolean;
-  /** Test seam: skip skill vendoring even when skill names are requested. */
-  skipSkills?: boolean;
 }
 
 /**
@@ -52,22 +50,10 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
         skipInstall: options.skipInstall === true,
       });
 
-  let skillNames: string[] = [];
-  if (!options.skipSkills) {
-    skillNames =
-      options.provisionSkills && options.provisionSkills.length > 0
-        ? options.provisionSkills
-        : await listRegisteredSkillNames(seeded.targetDir);
-  }
-
-  logPhase(
-    "Provisioning .harness/",
-    skillNames.length > 0 ? `skills=${skillNames.join(",")}` : "skills=none",
-  );
+  logPhase("Provisioning .harness/", seeded.targetDir);
 
   const provisioned = await provisionHarnessProject({
     targetDir: seeded.targetDir,
-    skillNames,
     copySkillsIndex: true,
   });
 
@@ -80,10 +66,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
     );
   }
 
-  logPhase(
-    "Init complete",
-    `${provisioned.writtenFiles.length} recipe file(s), ${provisioned.vendoredSkillFiles.length} skill file(s)`,
-  );
+  logPhase("Init complete", `${provisioned.writtenFiles.length} recipe file(s)`);
 
   return {
     mode: inPlace ? "in-place" : "seeded",
@@ -94,7 +77,6 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
     harnessDir: provisioned.harnessDir,
     writtenFiles: provisioned.writtenFiles,
     skippedFiles: provisioned.skippedFiles,
-    vendoredSkillCount: provisioned.vendoredSkillFiles.length,
     gitignoreUpdated: provisioned.gitignoreUpdated,
     packageJsonUpdated: provisioned.packageJsonUpdated,
     nextSteps: buildNextSteps({
