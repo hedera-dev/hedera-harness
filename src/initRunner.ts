@@ -1,6 +1,6 @@
 import path from "node:path";
 import { logPhase } from "./attemptLoop.js";
-import { listRegisteredSkillNames, provisionHarnessProject } from "./harnessProvisioner.js";
+import { provisionHarnessProject } from "./harnessProvisioner.js";
 import {
   DEFAULT_SCAFFOLD_REF,
   DEFAULT_SCAFFOLD_REPO,
@@ -9,6 +9,7 @@ import {
   seedProjectForInit,
 } from "./initSeeder.js";
 import { resolveHeadSha } from "./harnessGit.js";
+import { resolveSkillsIndex } from "./skillProvider.js";
 import type { InitCliOptions, InitResult } from "./types.js";
 
 export interface RunInitOptions extends InitCliOptions {
@@ -57,7 +58,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
     skillNames =
       options.provisionSkills && options.provisionSkills.length > 0
         ? options.provisionSkills
-        : await listRegisteredSkillNames(seeded.targetDir);
+        : (await resolveSkillsIndex(seeded.targetDir)).names;
   }
 
   logPhase(

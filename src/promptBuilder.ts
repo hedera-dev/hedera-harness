@@ -5,7 +5,7 @@ import {
   VENDORED_PRD_PATH,
   type VendoredContext,
 } from "./contextVendor.js";
-import type { VendoredSkill } from "./skillVendor.js";
+import type { VendoredSkill } from "./skillProvider.js";
 import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 import { renderPrompt } from "./promptTemplates.js";
 import type { SliceContext } from "./attemptLoop.js";

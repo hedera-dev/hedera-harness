@@ -3,6 +3,9 @@ export const HARNESS_RUNTIME_DIR = ".harness/runtime";
 export const HARNESS_SKILLS_DIR = `${HARNESS_RUNTIME_DIR}/skills`;
 export const HARNESS_CONTEXT_DIR = `${HARNESS_RUNTIME_DIR}/context`;
 
+/** Committed skills pre-vendored by `init` (read by humans/agents, not by `run`). */
+export const PROJECT_SKILLS_DIR = ".harness/skills";
+
 /**
  * Legacy isolated-workspace vendor locations (kept for validate-semantic refresh
  * and older layouts; project-centric `run` uses `.harness/runtime/`).

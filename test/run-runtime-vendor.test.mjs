@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { makeTestTempDir } from "./tmpDir.mjs";
 
-const { vendorSkills } = await import(pathToFileURL(path.resolve("dist/skillVendor.js")).href);
+const { provideSkills } = await import(pathToFileURL(path.resolve("dist/skillProvider.js")).href);
 const { vendorHarnessContext } = await import(
   pathToFileURL(path.resolve("dist/contextVendor.js")).href
 );
@@ -34,10 +34,14 @@ test("run vendoring writes skills/context without mutating MCP configuration", a
   const prdPath = path.join(root, "prd.md");
   await writeFile(prdPath, "# PRD\n");
 
-  const skills = await vendorSkills(root, [path.join(skillDir, "SKILL.md")], {
+  const skills = await provideSkills({
+    skillRefs: [path.join(skillDir, "SKILL.md")],
+    projectRoot: root,
+    workspacePath: root,
     skillsDir: HARNESS_SKILLS_DIR,
   });
   assert.equal(skills.length, 1);
+  assert.equal(skills[0].name, "demo-skill");
   assert.ok(skills[0].relativePath.startsWith(`${HARNESS_SKILLS_DIR}/`));
   await access(path.join(root, ...skills[0].relativePath.split("/")));
 

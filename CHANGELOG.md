@@ -48,6 +48,18 @@
 
 ### Changed
 
+- **One skills verb.** `skillResolver` + `skillVendor` are folded into
+  `skillProvider`, whose only exports are `provideSkills()` (resolve refs and
+  vendor them in one call), `resolveSkillsIndex()` (index location plus the names
+  it registers), and the `VendoredSkill` type — 13 exports down to 3. Index
+  lookup, git checkout caching, and slugging are module-private;
+  `skillRepoCache` stays the git adapter. `listRegisteredSkillNames` is gone with
+  its duplicate hand-rolled parse of `skills-index.json`. Vendoring behavior,
+  disk layout, and the `skills:` recipe key are unchanged.
+- **`init` validates the skills index it copies.** Because names now come from
+  the parsed index, a malformed `skills-index.json` fails init up front instead
+  of being copied and only rejected on the first run that names a skill.
+
 - **Drop scaffold template-recipe CI.** Recipes are authored in the consumer
   project (`init` / create-harness-spec), not shipped on every `scaffold-hbar`
   `templates/*` branch. Removed the `template-recipes` workflow job,

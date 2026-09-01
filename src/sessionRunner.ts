@@ -11,8 +11,7 @@ import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { selectActiveSlice } from "./sliceSelection.js";
-import { resolveSkillPaths } from "./skillResolver.js";
-import { vendorSkills } from "./skillVendor.js";
+import { provideSkills } from "./skillProvider.js";
 import {
   assertChainValidationOperatorEnv,
   provisionChainSigner,
@@ -160,8 +159,10 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   logPhase("Using in-place workspace", workspaceRoot);
 
   try {
-    const resolvedSkillPaths = await resolveSkillPaths(spec.skills ?? [], projectRoot);
-    const vendoredSkills = await vendorSkills(workspaceRoot, resolvedSkillPaths, {
+    const vendoredSkills = await provideSkills({
+      skillRefs: spec.skills ?? [],
+      projectRoot,
+      workspacePath: workspaceRoot,
       skillsDir: HARNESS_SKILLS_DIR,
     });
     await appendHarnessLog(layout.jsonlLogPath, {
