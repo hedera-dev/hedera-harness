@@ -48,6 +48,11 @@
 
 ### Changed
 
+- **Drop scaffold template-recipe CI.** Recipes are authored in the consumer
+  project (`init` / create-harness-spec), not shipped on every `scaffold-hbar`
+  `templates/*` branch. Removed the `template-recipes` workflow job,
+  `npm run check:templates`, and `scripts/check-template-recipes.sh`.
+
 - **Generator idle/timeout no longer skips SMOKE/EVALUATE.** A Cursor hang after
   `THINKING completed` still records an agent finding, but ASSERT pass continues
   into the product gates (agent findings were already ignored for smoke readiness
