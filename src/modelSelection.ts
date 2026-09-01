@@ -8,20 +8,13 @@ export interface ModelChoice {
 }
 
 /**
- * Pick the model for an attempt.
- *
- * Repairs are usually small, well-described edits driven by concrete findings, so
- * they run on the cheaper model. The exception is a repair that follows an attempt
- * which fixed nothing: paying less to repeat a failure is not a saving, so the
- * loop escalates back to the stronger model instead of burning the remaining
- * budget the same way.
+ * First attempt uses the strong model. Repairs use the cheaper one unless the
+ * previous repair fixed nothing — then escalate rather than cheap-repeat a failure.
  */
 export function selectModel(input: {
   spec: TemplateSpec;
   isFirstAttemptOfCycle: boolean;
-  /** Findings closed by the previous attempt. Zero means no progress was made. */
   previousFixedCount: number;
-  /** True once at least one repair attempt has run this cycle. */
   hasRepaired: boolean;
 }): ModelChoice {
   const preset = AGENT_PRESETS[input.spec.agent];
@@ -43,14 +36,7 @@ export function selectModel(input: {
   return { model: cheap, reason: "repair" };
 }
 
-/**
- * Return a config with the model flag set to `model`.
- *
- * Replaces the existing value when the flag is already present so a preset's
- * default is overridden rather than duplicated; appends otherwise. Explicit
- * `generator:` blocks that never mention the flag are left alone — someone who
- * hand-wrote an invocation owns it.
- */
+/** Set `modelFlag` to `model` when the flag is already in `args`; leave `generator:` blocks that omit it alone. */
 export function withModel(
   config: CommandAgentConfig,
   modelFlag: string,

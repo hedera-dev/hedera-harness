@@ -7,10 +7,7 @@ import { ensureSkillRepoCheckout } from "./skillRepoCache.js";
 export const DEFAULT_SKILLS_REPO = "https://github.com/hedera-dev/hedera-skills.git";
 export const DEFAULT_SKILLS_REF = "master";
 
-/**
- * Marketplace plugins whose SKILL.md files are offered to the generator.
- * Authoring / CLI / hackathon / agent-kit plugins stay Cursor marketplace skills.
- */
+/** Product plugins offered to the generator. Authoring / CLI / hackathon / agent-kit stay marketplace skills. */
 export const PRODUCT_SKILL_PLUGINS = [
   "native-services-js",
   "system-contracts",
@@ -28,21 +25,12 @@ export interface VendoredSkill {
   referencesPath?: string;
 }
 
-/**
- * Clone the skills repo (cached under `<projectRoot>/.skill-cache/`) and vendor
- * every product-plugin SKILL.md into the workspace. The generator picks what the
- * PRD needs; authoring and CLI plugins are not copied.
- */
+/** Clone hedera-skills (cached) and vendor every product-plugin SKILL.md. The generator picks. */
 export async function provideSkills(input: {
-  /** Root that owns the `.skill-cache/` checkout. */
   projectRoot: string;
-  /** Root the skills are copied into. */
   workspacePath: string;
-  /** Relative directory under `workspacePath` to vendor into. */
   skillsDir: string;
-  /** Skills git remote. Defaults to `HARNESS_SKILLS_REPO` or `hedera-dev/hedera-skills`. */
   repo?: string;
-  /** Skills git ref. Defaults to `HARNESS_SKILLS_REF` or `master`. */
   ref?: string;
 }): Promise<VendoredSkill[]> {
   const repo = input.repo?.trim() || envSkillsRepo() || DEFAULT_SKILLS_REPO;
@@ -109,8 +97,10 @@ async function vendorResolvedSkills(
 
   for (const sourcePath of sourceSkillPaths) {
     const content = await readFile(sourcePath, "utf8");
-    const name = extractSkillName(content) ?? path.basename(path.dirname(sourcePath));
-    const description = extractSkillDescription(content);
+    const name = content.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? path.basename(path.dirname(sourcePath));
+    const description =
+      content.match(/^description:\s*(.+)$/m)?.[1]?.trim() ??
+      "Use this skill when relevant to the template being built.";
     const slug = uniqueSlug(slugify(name), usedSlugs);
     const relativePath = path.posix.join(skillsDir, slug, "SKILL.md");
     const destinationPath = path.join(workspacePath, ...relativePath.split("/"));
@@ -118,20 +108,13 @@ async function vendorResolvedSkills(
     await mkdir(path.dirname(destinationPath), { recursive: true });
     await writeFile(destinationPath, content, "utf8");
 
-    const skill: VendoredSkill = {
-      name,
-      relativePath,
-      description,
-      sourcePath,
-    };
-
+    const skill: VendoredSkill = { name, relativePath, description, sourcePath };
     const sourceReferencesDir = path.join(path.dirname(sourcePath), REFERENCES_DIRNAME);
     const destReferencesDir = path.join(path.dirname(destinationPath), REFERENCES_DIRNAME);
     if (await pathExists(sourceReferencesDir)) {
       await cp(sourceReferencesDir, destReferencesDir, { recursive: true, force: true });
       skill.referencesPath = path.posix.join(skillsDir, slug, REFERENCES_DIRNAME);
     }
-
     vendored.push(skill);
   }
 
@@ -175,14 +158,4 @@ function uniqueSlug(base: string, used: Set<string>): string {
   }
   used.add(candidate);
   return candidate;
-}
-
-function extractSkillName(content: string): string | undefined {
-  const match = content.match(/^name:\s*(.+)$/m);
-  return match?.[1]?.trim();
-}
-
-function extractSkillDescription(content: string): string {
-  const match = content.match(/^description:\s*(.+)$/m);
-  return match?.[1]?.trim() ?? "Use this skill when relevant to the template being built.";
 }

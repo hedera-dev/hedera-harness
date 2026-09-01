@@ -4,17 +4,9 @@ import { fileURLToPath } from "node:url";
 import { pathExists } from "./fsUtils.js";
 
 /**
- * Prompt text lives in `prompts/*.md`, not in TypeScript.
- *
- * Prompt wording is the main quality lever in a harness, and it is the thing
- * most often changed. Behind a compile step it is effectively the maintainers'
- * to tune; as files it is anyone's — and a project can override a single prompt
- * without forking the harness.
- *
- * The template syntax is a deliberate mustache subset: variables and boolean
- * sections. Anything needing a loop or a conditional over data is rendered to a
- * string in TypeScript and passed in, which keeps this file small and keeps
- * prompt logic reviewable next to the code that produces the data.
+ * Prompt text lives in `prompts/*.md`. Syntax is a mustache subset (variables
+ * and boolean sections). Loops / data conditionals are rendered in TypeScript
+ * and passed in, so prompt logic stays next to the code that produces the data.
  */
 export type TemplateVars = Record<string, string | boolean | undefined>;
 
@@ -30,10 +22,8 @@ export const PROMPT_TEMPLATE_NAMES = [
 
 export type PromptTemplateName = (typeof PROMPT_TEMPLATE_NAMES)[number];
 
-/** Where a project may drop its own copy of a prompt. */
 export const PROJECT_PROMPTS_DIR = ".harness/prompts";
 
-/** Templates shipped with the package. */
 export function bundledPromptsDir(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "prompts");
 }
@@ -42,13 +32,7 @@ export function projectPromptPath(projectRoot: string, name: PromptTemplateName)
   return path.join(projectRoot, ...PROJECT_PROMPTS_DIR.split("/"), `${name}.md`);
 }
 
-/**
- * Resolve a prompt, preferring a project override.
- *
- * Overrides are whole-file: a project that customises `repair-broad` keeps the
- * bundled versions of everything else, so an override does not silently freeze
- * the rest of the prompt set at the version it was copied from.
- */
+/** Prefer a project override (whole-file; other bundled prompts stay current). */
 export async function resolvePromptTemplatePath(
   projectRoot: string,
   name: PromptTemplateName,
@@ -116,10 +100,6 @@ function isTruthy(value: string | boolean | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/**
- * Collapse the blank runs that dropped sections leave behind, so a prompt does
- * not gain three blank lines because a tier is disabled.
- */
 function tidy(value: string): string {
   return value
     .replace(/\r\n/g, "\n")

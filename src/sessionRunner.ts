@@ -159,7 +159,6 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   logPhase("Using in-place workspace", workspaceRoot);
 
   try {
-    // Product skills from hedera-skills are vendored; the generator picks what the PRD needs.
     const vendoredSkills = await provideSkills({
       projectRoot,
       workspacePath: workspaceRoot,
