@@ -145,7 +145,7 @@ When chain validation is enabled, the harness will:
 
 1. Inject `__RUNTIME_DEPLOYER_PRIVATE_KEY` from an ephemeral funded ECDSA test signer
 2. Run non-interactive Hardhat deploy to `hederaTestnet`
-3. Start the app and grade the acceptance contract (including on-chain create/mint via burner wallet)
+3. Start the app and grade the evaluate checklist (including on-chain create/mint via burner wallet)
 
 ## Out of Scope
 
