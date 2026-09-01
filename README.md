@@ -5,11 +5,11 @@ TypeScript CLI that builds features into [scaffold-hbar](https://github.com/hede
 **The harness decides whether a run passed, not the agent.**
 
 ```bash
-npx hedera-harness init my-app     # or run `init` inside a project you already have
+npx hedera-harness@next init my-app     # or run `init` inside a project you already have
 cd my-app
 $EDITOR .harness/prd.md            # describe the feature
-npx hedera-harness doctor          # check the setup before a long run
-npx hedera-harness run
+npx hedera-harness@next doctor          # check the setup before a long run
+npx hedera-harness@next run
 ```
 
 ## How a run works
@@ -173,7 +173,8 @@ Precedence: CLI flag > environment > recipe > harness default.
 **Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`).
 
 ```bash
-npm install -D hedera-harness
+# schema v3 prerelease — npm latest is still 1.2.2
+npm install -D hedera-harness@next
 npx hedera-harness doctor
 ```
 
@@ -195,7 +196,7 @@ Chrome. SMOKE still needs the `playwright` package for its browser API, but
 neither stage requires a separate Chromium download when Chrome is installed.
 For EVALUATE, the harness launches its pinned `@playwright/mcp` version through
 `npx` and supplies the MCP configuration itself; do not copy an `.mcp.json`
-into the project. Run `npx hedera-harness doctor` to launch-probe the selected
+into the project. Run `npx hedera-harness@next doctor` to launch-probe the selected
 browser.
 
 See [`.env.example`](.env.example). The harness does not auto-load `.env`, and never writes credentials into the workspace.
