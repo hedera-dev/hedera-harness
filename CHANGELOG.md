@@ -54,6 +54,10 @@
   and for attempt `passed` after SMOKE). Default agent idle timeout is **90s**
   (was 10m); override with `HARNESS_AGENT_IDLE_TIMEOUT_MS`.
 
+- **Shared SMOKE→EVALUATE server: `return await withValidatorMcp`.** A bare
+  `return withValidatorMcp(...)` inside `try/finally` stopped the harness dev
+  server before EVALUATE ran (SMOKE green, then connection refused on `:3000`).
+  Matches `validate-semantic`, which already awaited.
 - **Per-slice evaluate checklists.** `eval:` accepts a scalar path (same
   checklist every increment) or a list 1:1 with `prd:`. `validate-semantic`
   uses the last slice pair for a completed workspace. Preflight labels list

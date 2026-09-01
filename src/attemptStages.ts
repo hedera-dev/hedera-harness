@@ -343,7 +343,9 @@ export async function runValidationStages(
 
     // MCP delivery is EVALUATE-only: Cursor's .cursor/mcp.json snapshot must not
     // span deploy/boot/SMOKE (longer blast radius if the process is killed).
-    return withValidatorMcp(
+    // Must `await` — bare `return promise` runs `finally` (and stops the server)
+    // before EVALUATE, which is exactly the SMOKE-green / EVALUATE-refused bug.
+    return await withValidatorMcp(
       {
         agent: context.spec.agent,
         workspacePath: context.workspacePath,
