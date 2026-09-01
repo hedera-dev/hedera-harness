@@ -84,6 +84,6 @@ async function resolveCommitSha(checkoutPath: string, ref: string): Promise<stri
 
   throw new Error(
     `Unable to resolve skill repo ref ${JSON.stringify(ref)} in ${checkoutPath}. ` +
-      `Check skills-index.json defaults.ref / entry.ref.`,
+      "Check HARNESS_SKILLS_REF (default master).",
   );
 }

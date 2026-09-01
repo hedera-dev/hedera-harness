@@ -87,7 +87,7 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         "",
         "Tip: authoring skills (create/review harness-spec) ship via the hedera-skills",
         "marketplace plugin — they are not copied into the project. Generator skills are",
-        "vendored per run from skills-index.json; every entry is offered to the agent.",
+        "discovered per run from hedera-skills product plugins.",
       ]
         .filter((line): line is string => line !== undefined)
         .join("\n"),

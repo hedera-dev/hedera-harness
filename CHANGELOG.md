@@ -16,16 +16,19 @@
   longer recognized for continue / smart branch detection.
 - **Layout metadata** no longer normalizes legacy `in-place-extend` mode.
 
-- **`skills:` removed from the recipe.** Every skill registered in
-  `skills-index.json` is vendored for the run and the generator picks what the PRD
-  calls for. A recipe that still lists `skills:` hard-fails at load
-  (`remove skills: — every skill in skills-index.json is loaded automatically`)
-  rather than silently ignoring the key. Curate the index, not the recipe: a
-  per-recipe list required the author to know the index contents, and being short
-  by one skill quietly produced a worse app than the index could support.
+- **`skills:` removed from the recipe.** Product skills from `hedera-skills` are
+  discovered each run and the generator picks what the PRD calls for. A recipe
+  that still lists `skills:` hard-fails at load
+  (`remove skills: — product skills from hedera-skills are loaded automatically`).
+- **`skills-index.json` removed.** There is no name list. The harness clones
+  `hedera-dev/hedera-skills` and vendors every `SKILL.md` under the product
+  plugins (`native-services-js`, `system-contracts`, `cross-chain`,
+  `dev-intelligence`). Authoring / CLI / hackathon / agent-kit plugins are not
+  offered to the generator. Override with `HARNESS_SKILLS_REPO` /
+  `HARNESS_SKILLS_REF`. `init` no longer copies an index into the project.
 - **`init --skills` removed, and `init` no longer pre-vendors skills.**
   `.harness/skills/` is gone (it was gitignored and read by nothing now that every
-  run vendors the full set), so `init` needs neither git nor network for skills.
+  run vendors the product set), so `init` needs neither git nor network for skills.
   `InitResult.vendoredSkillCount` is gone with it.
 
 ### Breaking Changes (schema v3 — eval vocabulary)
@@ -61,16 +64,10 @@
 ### Changed
 
 - **One skills verb.** `skillResolver` + `skillVendor` are folded into
-  `skillProvider`, whose only exports are `provideSkills()` (resolve refs and
-  vendor them in one call), `resolveSkillsIndex()` (index location plus the names
-  it registers), and the `VendoredSkill` type — 13 exports down to 3. Index
-  lookup, git checkout caching, and slugging are module-private;
-  `skillRepoCache` stays the git adapter. `listRegisteredSkillNames` is gone with
-  its duplicate hand-rolled parse of `skills-index.json`. Vendoring behavior,
-  disk layout, and the `skills:` recipe key are unchanged.
-- **`init` validates the skills index it copies.** Because names now come from
-  the parsed index, a malformed `skills-index.json` fails init up front instead
-  of being copied and only rejected on the first run that names a skill.
+  `skillProvider`, whose only exports are `provideSkills()` and the
+  `VendoredSkill` type. Git checkout caching lives in `skillRepoCache`. Product
+  skills are discovered from the cloned `hedera-skills` repo rather than a name
+  list; `resolveSkillsIndex` and `skills-index.json` are gone.
 
 - **Greenfield leftover cleanup.** Rewrite Claude EVALUATE verify script to
   `eval:` / `E1` / `report.evaluation`; drop Tier 3.5 / “oracle audit” /

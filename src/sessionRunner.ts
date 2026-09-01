@@ -11,7 +11,7 @@ import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { selectActiveSlice } from "./sliceSelection.js";
-import { provideSkills, resolveSkillsIndex } from "./skillProvider.js";
+import { provideSkills } from "./skillProvider.js";
 import {
   assertChainValidationOperatorEnv,
   provisionChainSigner,
@@ -159,12 +159,8 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   logPhase("Using in-place workspace", workspaceRoot);
 
   try {
-    // Every registered skill is vendored and the generator picks what the PRD needs.
-    // A per-recipe list made authors guess the index contents, and a guess that was
-    // short by one skill silently produced a worse app than the index could support.
-    const { names: registeredSkillNames } = await resolveSkillsIndex(projectRoot);
+    // Product skills from hedera-skills are vendored; the generator picks what the PRD needs.
     const vendoredSkills = await provideSkills({
-      skillRefs: registeredSkillNames,
       projectRoot,
       workspacePath: workspaceRoot,
       skillsDir: HARNESS_SKILLS_DIR,
@@ -176,7 +172,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       workspaceSkillsDir: path.join(workspaceRoot, HARNESS_SKILLS_DIR),
     });
     logPhase(
-      "All registered skills vendored into ignored runtime",
+      "Product skills vendored into ignored runtime",
       `${HARNESS_SKILLS_DIR} (${vendoredSkills.length} skill(s))`,
     );
 

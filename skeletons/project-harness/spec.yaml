@@ -15,8 +15,8 @@ baseline:
 # These comments cannot drift: changing a default here changes nothing.
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Skills are not listed here. Every entry in skills-index.json is vendored for the
-# run and the generator picks what this PRD needs; curate that file, not the recipe.
+# Skills are not listed here. Product plugins from hedera-skills are discovered
+# per run; the generator picks what this PRD needs.
 #
 # Which coding agent runs the generator. Presets ship with the harness, so flag
 # and model changes arrive with an upgrade instead of an edit here.

@@ -2,14 +2,11 @@ import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathExists } from "./fsUtils.js";
-import { resolveSkillsIndex } from "./skillProvider.js";
 
 export const PROJECT_HARNESS_SKELETON_DIR = "skeletons/project-harness";
 
 export interface ProvisionHarnessInput {
   targetDir: string;
-  /** When true, also copy package-bundled skills-index.json into the project. */
-  copySkillsIndex?: boolean;
 }
 
 export interface ProvisionHarnessResult {
@@ -22,8 +19,8 @@ export interface ProvisionHarnessResult {
 }
 
 /**
- * Provision `.harness/` recipe files, optional skills index, pre-vendored skills,
- * gitignore entries, and a `harness:run` package.json script.
+ * Provision `.harness/` recipe files, gitignore entries, and a `harness:run`
+ * package.json script.
  */
 export async function provisionHarnessProject(
   input: ProvisionHarnessInput,
@@ -53,14 +50,6 @@ export async function provisionHarnessProject(
     }
     await copyFile(path.join(skeletonRoot, relative), dest);
     writtenFiles.push(path.relative(targetDir, dest));
-  }
-
-  if (input.copySkillsIndex !== false) {
-    const index = await resolveSkillsIndex(targetDir);
-    if (!(await pathExists(index.localPath))) {
-      await copyFile(index.sourcePath, index.localPath);
-      writtenFiles.push(path.relative(targetDir, index.localPath));
-    }
   }
 
   const gitignoreUpdated = await ensureHarnessGitignore(targetDir, skeletonRoot);

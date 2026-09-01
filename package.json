@@ -8,7 +8,6 @@
   },
   "files": [
     "dist",
-    "skills-index.json",
     "prompts",
     "skeletons",
     "CHANGELOG.md",

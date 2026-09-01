@@ -6,6 +6,7 @@ import test from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { makeTestTempDir } from "./tmpDir.mjs";
+import { writeProductSkillsRepo } from "./skillFixture.mjs";
 
 const run = promisify(execFile);
 const { runSession } = await import(pathToFileURL(path.resolve("dist/sessionRunner.js")).href);
@@ -48,17 +49,9 @@ async function makeProject(prdNames, { failOn, evals } = {}) {
   await writeFile(path.join(root, "agent.mjs"), MOCK_AGENT);
   await writeFile(path.join(root, "package.json"), '{"name":"x","version":"1.0.0"}\n');
 
-  // A run loads every skill the index registers, so give the fixture a local index:
-  // without one it would fall back to the packaged index and clone the skills repo.
-  await mkdir(path.join(root, "skills", "demo"), { recursive: true });
-  await writeFile(
-    path.join(root, "skills", "demo", "SKILL.md"),
-    "---\nname: demo-skill\ndescription: Demo skill.\n---\n# Demo\n",
-  );
-  await writeFile(
-    path.join(root, "skills-index.json"),
-    JSON.stringify({ skills: [{ name: "demo-skill", path: "./skills/demo/SKILL.md" }] }),
-  );
+  // A run discovers product skills from a git repo. Point at a local fixture
+  // so the test stays offline and does not clone hedera-skills.
+  const skillsRepo = await writeProductSkillsRepo(await makeTestTempDir("slices-skills-"));
 
   for (const name of prdNames) {
     await writeFile(path.join(root, ".harness", `${name}.md`), `${name} increment\n`);
@@ -120,7 +113,15 @@ baseline:
     ["-c", "user.email=t@e", "-c", "user.name=T", "commit", "-q", "--no-gpg-sign", "-m", "init"],
     { cwd: root },
   );
-  return { root, env: { MOCK_WS: root, ...(failOn ? { MOCK_FAIL_ON: failOn } : {}) } };
+  return {
+    root,
+    env: {
+      MOCK_WS: root,
+      HARNESS_SKILLS_REPO: skillsRepo,
+      HARNESS_SKILLS_REF: "master",
+      ...(failOn ? { MOCK_FAIL_ON: failOn } : {}),
+    },
+  };
 }
 
 async function runWith(root, env) {
@@ -156,9 +157,9 @@ test("increments are delivered in the order listed", async () => {
   assert.ok(commits.length >= 3, `expected a checkpoint per increment, got ${commits.length}`);
 });
 
-// The recipe cannot list skills any more, so the run must offer the whole index
-// and leave selection to the generator.
-test("a recipe with no skills list still receives every registered skill", async () => {
+// The recipe cannot list skills any more, so the run must offer product skills
+// from the skills repo and leave selection to the generator.
+test("a recipe with no skills list still receives discovered product skills", async () => {
   const { root, env } = await makeProject(["01-foundation"]);
 
   const { report } = await runWith(root, env);

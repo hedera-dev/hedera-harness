@@ -186,7 +186,7 @@ extend:
   );
 });
 
-test("removed skills key fails at load pointing at skills-index.json", async () => {
+test("removed skills key fails at load pointing at hedera-skills", async () => {
   const { specPath } = await writeRecipe(`schemaVersion: 3
 name: still-lists-skills
 skills:
@@ -197,7 +197,7 @@ ${MINIMAL_BASELINE}`);
     () => loadTemplateSpec(specPath),
     error => {
       assert.match(String(error), /removed key\(s\): skills/);
-      assert.match(String(error), /skills-index\.json is loaded automatically/);
+      assert.match(String(error), /product skills from hedera-skills are loaded automatically/);
       assert.doesNotMatch(String(error), /upgrade the harness/);
       return true;
     },

@@ -54,7 +54,6 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
 
   const provisioned = await provisionHarnessProject({
     targetDir: seeded.targetDir,
-    copySkillsIndex: true,
   });
 
   // Adopting a scaffold-hbar template finds a recipe already present. Say so,
