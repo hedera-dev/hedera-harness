@@ -73,6 +73,17 @@ routes:
   await writeFile(path.join(root, "validator.mjs"), MOCK_VALIDATOR);
   await writeFile(path.join(root, ".harness", "prd.md"), "Serve a home page.\n");
 
+  // A run loads every registered skill; a local index keeps that offline.
+  await mkdir(path.join(root, "skills", "demo"), { recursive: true });
+  await writeFile(
+    path.join(root, "skills", "demo", "SKILL.md"),
+    "---\nname: demo-skill\ndescription: Demo skill.\n---\n# Demo\n",
+  );
+  await writeFile(
+    path.join(root, "skills-index.json"),
+    JSON.stringify({ skills: [{ name: "demo-skill", path: "./skills/demo/SKILL.md" }] }),
+  );
+
   await writeFile(
     path.join(root, ".harness", "validators", "static.json"),
     JSON.stringify({ fileAssertions: { required: ["server.mjs"] } }),
@@ -102,7 +113,6 @@ routes:
 name: tier3-fixture
 agent: ${agent}
 eval: .harness/eval.json
-skills: []
 generator:
   provider: command
   command: node

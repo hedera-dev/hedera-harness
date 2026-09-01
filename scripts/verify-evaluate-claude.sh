@@ -95,7 +95,6 @@ name: evaluate-claude-verify
 agent: claude
 prd: .harness/prd.md
 eval: .harness/evals/learn.json
-skills: []
 generator:
   provider: command
   command: node

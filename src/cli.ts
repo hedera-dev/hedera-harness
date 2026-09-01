@@ -81,14 +81,13 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         result.skippedFiles.length > 0
           ? `filesKept=${result.skippedFiles.length} (${result.skippedFiles.join(", ")})`
           : undefined,
-        `skillsVendored=${result.vendoredSkillCount}`,
         "",
         "Next steps:",
         ...result.nextSteps.map(step => `  ${step}`),
         "",
         "Tip: authoring skills (create/review harness-spec) ship via the hedera-skills",
-        "marketplace plugin — they are not copied into the project. Generator skills for",
-        "`run` are still vendored under .harness/skills/ from skills-index.json.",
+        "marketplace plugin — they are not copied into the project. Generator skills are",
+        "vendored per run from skills-index.json; every entry is offered to the agent.",
       ]
         .filter((line): line is string => line !== undefined)
         .join("\n"),
@@ -201,12 +200,6 @@ function parseInitOptions(args: string[]): InitCliOptions {
         break;
       case "--skip-install":
         options.skipInstall = true;
-        break;
-      case "--skills":
-        options.provisionSkills = readValue(args, ++index, arg)
-          .split(",")
-          .map(value => value.trim())
-          .filter(Boolean);
         break;
       case "--help":
       case "-h":

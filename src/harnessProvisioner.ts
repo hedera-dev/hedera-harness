@@ -1,17 +1,13 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { logPhase } from "./attemptLoop.js";
 import { pathExists } from "./fsUtils.js";
-import { PROJECT_SKILLS_DIR } from "./runtimePaths.js";
-import { provideSkills, resolveSkillsIndex } from "./skillProvider.js";
+import { resolveSkillsIndex } from "./skillProvider.js";
 
 export const PROJECT_HARNESS_SKELETON_DIR = "skeletons/project-harness";
 
 export interface ProvisionHarnessInput {
   targetDir: string;
-  /** Skill names to pre-vendor under `.harness/skills/`. Empty = skip. */
-  skillNames?: string[];
   /** When true, also copy package-bundled skills-index.json into the project. */
   copySkillsIndex?: boolean;
 }
@@ -21,7 +17,6 @@ export interface ProvisionHarnessResult {
   writtenFiles: string[];
   /** Recipe files already present and deliberately left alone. */
   skippedFiles: string[];
-  vendoredSkillFiles: string[];
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;
 }
@@ -68,20 +63,6 @@ export async function provisionHarnessProject(
     }
   }
 
-  let vendoredSkillFiles: string[] = [];
-  const skillNames = input.skillNames ?? [];
-  if (skillNames.length > 0) {
-    logPhase("Resolving and vendoring skills", `${skillNames.length} name(s)`);
-    const vendored = await provideSkills({
-      skillRefs: skillNames,
-      projectRoot: targetDir,
-      workspacePath: targetDir,
-      skillsDir: PROJECT_SKILLS_DIR,
-    });
-    vendoredSkillFiles = vendored.map(entry => entry.relativePath);
-    logPhase("Skills vendored", `${vendoredSkillFiles.length} file(s)`);
-  }
-
   const gitignoreUpdated = await ensureHarnessGitignore(targetDir, skeletonRoot);
   const packageJsonUpdated = await ensureHarnessPackageScript(targetDir);
 
@@ -97,7 +78,6 @@ export async function provisionHarnessProject(
     harnessDir,
     writtenFiles,
     skippedFiles,
-    vendoredSkillFiles,
     gitignoreUpdated,
     packageJsonUpdated,
   };

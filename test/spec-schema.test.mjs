@@ -186,6 +186,24 @@ extend:
   );
 });
 
+test("removed skills key fails at load pointing at skills-index.json", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: still-lists-skills
+skills:
+  - hedera-token-service
+${MINIMAL_BASELINE}`);
+
+  await assert.rejects(
+    () => loadTemplateSpec(specPath),
+    error => {
+      assert.match(String(error), /removed key\(s\): skills/);
+      assert.match(String(error), /skills-index\.json is loaded automatically/);
+      assert.doesNotMatch(String(error), /upgrade the harness/);
+      return true;
+    },
+  );
+});
+
 // v1 required `logging`, so it outlives contract/extend in hand-written recipes.
 // As an unknown key it drew "upgrade the harness" — the opposite of the fix.
 test("removed logging key fails at load instead of warning", async () => {

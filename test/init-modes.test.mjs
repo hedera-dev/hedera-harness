@@ -50,7 +50,7 @@ test("init in a project provisions without cloning", async () => {
   const root = await makeTestTempDir("init-adopt-");
   await writeFile(path.join(root, "package.json"), '{"name":"x","version":"1.0.0"}\n');
 
-  const result = await runInit({ targetDir: root, skipSkills: true });
+  const result = await runInit({ targetDir: root });
 
   assert.equal(result.mode, "in-place");
   assert.equal(result.repo, undefined, "nothing was cloned");
@@ -64,7 +64,7 @@ test("init never overwrites a recipe that already exists", async () => {
   await mkdir(path.join(root, ".harness"), { recursive: true });
   await writeFile(path.join(root, ".harness", "spec.yaml"), "name: mine\n");
 
-  const result = await runInit({ targetDir: root, skipSkills: true });
+  const result = await runInit({ targetDir: root });
 
   assert.ok(
     result.skippedFiles.includes(path.join(".harness", "spec.yaml")),
