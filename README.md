@@ -255,7 +255,6 @@ To author recipes with an agent, install the marketplace plugin:
 | `npm run build` | Clean and compile to `dist/` |
 | `npm run typecheck` | Type-check without emitting |
 | `npm test` | Build, then run the Node test suites |
-| `npm run check:templates` | Verify every scaffold-hbar template recipe still loads |
 | `npm run smoke:pack` | Pack a tarball and smoke-install it with Yarn 3 |
 
 ## Design notes
