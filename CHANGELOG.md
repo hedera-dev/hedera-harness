@@ -48,6 +48,11 @@
 
 ### Changed
 
+- **Greenfield leftover cleanup.** Rewrite Claude EVALUATE verify script to
+  `eval:` / `E1` / `report.evaluation`; drop Tier 3.5 / “oracle audit” /
+  “vs contract” / template-recipe wording from `.env.example`, README, flow SVG,
+  and demo PRDs.
+
 - **Drop scaffold template-recipe CI.** Recipes are authored in the consumer
   project (`init` / create-harness-spec), not shipped on every `scaffold-hbar`
   `templates/*` branch. Removed the `template-recipes` workflow job,

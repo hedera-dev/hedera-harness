@@ -205,7 +205,7 @@ The harness will check (deterministically):
 - No secret-like content in source
 - `yarn install`, `yarn lint`, and `yarn next:build` succeed without live credentials
 
-On-chain / semantic validation (when a Test Signer is provided) exercises **only the burner path** end-to-end. HashPack is affordance + architecture reviewed in the contract; it is not driven by Playwright automation.
+On-chain / EVALUATE (when a Test Signer is provided) exercises **only the burner path** end-to-end. HashPack is affordance + architecture reviewed in the evaluate checklist; it is not driven by Playwright automation.
 
 ## Out of Scope
 

@@ -45,7 +45,7 @@
 
   <!-- 5 Audit -->
   <rect x="120" y="362" width="280" height="44" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.25"/>
-  <text x="260" y="380" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="600">5. Oracle audit</text>
+  <text x="260" y="380" text-anchor="middle" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="600">5. Spec review</text>
   <text x="260" y="396" text-anchor="middle" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="10">Informational only - never blocks pass</text>
   <line x1="260" y1="406" x2="260" y2="426" stroke="#334155" stroke-width="1.5" marker-end="url(#arrow)"/>
 
