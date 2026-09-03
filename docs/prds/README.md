@@ -66,9 +66,10 @@ work exceeds the budget, and a failure loses all of it.
 If you find yourself writing "the page must show X" in the PRD, that sentence
 belongs in the checklist as an assertion with a `howToVerify`.
 
-## Examples
+## Start from the project, not this repo
 
-The PRDs in this directory are illustrative. For a real project, start from
+This page is the writing guide. Example product briefs used to live here; they
+described scaffold-hbar *templates* and are gone. For a real project, start from
 `.harness/prd.md` after `hedera-harness init`, or author one with:
 
 ```
