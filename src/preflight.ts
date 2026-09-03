@@ -5,10 +5,7 @@ import {
   type GitRepoSnapshot,
 } from "./harnessGit.js";
 import { isValidatorEnabled } from "./evaluation.js";
-import {
-  buildOptionalDepInstallLines,
-  resolvePackageInstallTool,
-} from "./optionalDeps.js";
+import { resolvePackageInstallTool } from "./optionalDeps.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
 import type { TemplateSpec } from "./types.js";
 import { allEvalPaths, specHasEval } from "./sliceSelection.js";
@@ -91,7 +88,7 @@ export async function* iterSharedPreflight(
     }
     if (!skip.has("evaluate-browser")) {
       input.onProgress?.("checking the EVALUATE browser");
-      yield await checkEvaluateBrowser(spec, workspacePath);
+      yield await checkEvaluateBrowser(workspacePath);
     }
   }
 }
@@ -345,17 +342,8 @@ function missingEvalConfig(): PreflightVerdict {
 }
 
 /** Probe the MCP browser EVALUATE will drive. Costs seconds; runs last. */
-async function checkEvaluateBrowser(
-  spec: TemplateSpec,
-  cwd: string,
-): Promise<PreflightVerdict> {
+async function checkEvaluateBrowser(cwd: string): Promise<PreflightVerdict> {
   const name = "EVALUATE browser (Playwright MCP)";
-
-  const installTool = await resolvePackageInstallTool({
-    projectRoot: cwd,
-    packageManager: spec.constraints?.packageManager,
-  });
-  const installCmd = buildOptionalDepInstallLines("playwright", installTool)[0];
 
   const { probeMcpBrowser } = await import("./mcpBrowser.js");
   const probe = await probeMcpBrowser(cwd);
@@ -372,7 +360,7 @@ async function checkEvaluateBrowser(
   const repair =
     probe.choice.source === "project-playwright"
       ? "npx playwright install chromium"
-      : `${installCmd} && npx playwright install chromium`;
+      : "Install Google Chrome, or run: npx playwright install chromium";
 
   return {
     id: "evaluate-browser",
@@ -389,8 +377,8 @@ async function checkEvaluateBrowser(
       .join("\n  "),
     fix:
       probe.choice.source === "project-playwright"
-        ? `Reinstall the project's browser: ${repair}`
-        : `Install Playwright in the project so SMOKE and EVALUATE share one browser: ${repair}`,
+        ? `Reinstall Chromium: ${repair}`
+        : `Install system Chrome so SMOKE and EVALUATE share one browser: ${repair}`,
     runErrorCode: "missing-tier3-browser",
   };
 }

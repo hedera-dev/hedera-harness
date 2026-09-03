@@ -9,8 +9,12 @@
 - **CHAIN ships `@hiero-ledger/sdk`.** It is a harness runtime dependency, not
   an optional peer. Installing `hedera-harness` is enough; do not
   `yarn add -D @hiero-ledger/sdk` at the project root (that re-resolved other
-  packages on Yarn scaffold apps). Playwright stays an optional peer for SMOKE.
-  Operator env vars are still host-provided.
+  packages on Yarn scaffold apps). Operator env vars are still host-provided.
+- **SMOKE ships `playwright`.** Same owner as CHAIN: the Node API is a harness
+  runtime dependency. Do not `yarn add -D playwright` at the project root.
+  SMOKE and EVALUATE still prefer a downloaded Playwright Chromium when it
+  exists, otherwise system Chrome. EVALUATE's MCP remains `@playwright/mcp`
+  via `npx`, not this package.
 
 ## 2.0.0-rc.1 — 2026-09-01
 

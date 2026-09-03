@@ -1,7 +1,6 @@
 import path from "node:path";
 import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
-import { resolvePackageInstallTool } from "./optionalDeps.js";
 import { isValidatorEnabled } from "./evaluation.js";
 import {
   checkSharedPreflight,
@@ -34,8 +33,8 @@ export interface DoctorReport {
  * Preflight everything a run needs, before committing to one.
  *
  * Shared host/recipe/git/browser rules live in `checkSharedPreflight`; doctor
- * adds recipe load, prompt overrides, optional package imports, SMOKE browser
- * (when EVALUATE is off), and chain env.
+ * adds recipe load, prompt overrides, bundled Playwright / SDK imports, SMOKE
+ * browser (when EVALUATE is off), and chain env.
  */
 export async function runDoctor(
   options: CliOptions,
@@ -256,20 +255,16 @@ async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
 }
 
 /**
- * Doctor-only host deps: Playwright when SMOKE is on, bundled SDK when CHAIN
- * is on, and SMOKE browser when EVALUATE is off. EVALUATE browser probing
+ * Doctor-only host deps: bundled Playwright when SMOKE is on, bundled SDK when
+ * CHAIN is on, and SMOKE browser when EVALUATE is off. EVALUATE browser probing
  * lives in shared preflight.
  */
 async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-  const tool = await resolvePackageInstallTool({
-    projectRoot: cwd,
-    packageManager: spec.constraints?.packageManager,
-  });
 
   let smokePlaywrightAvailable = false;
   if (spec.validators.playwrightPath) {
-    const dependency = await checkImport("playwright", "SMOKE Playwright gate", tool);
+    const dependency = await checkHarnessPlaywright();
     checks.push(dependency);
     smokePlaywrightAvailable = dependency.status === "ok";
   }
@@ -300,8 +295,26 @@ async function checkSmokeBrowser(projectRoot: string): Promise<DoctorCheck> {
       detail: error instanceof Error ? error.message : String(error),
       fix:
         choice.source === "project-playwright"
-          ? "Reinstall the project's browser: npx playwright install chromium"
-          : "Install system Chrome, or install the project's Playwright browser: npx playwright install chromium",
+          ? "Reinstall Chromium: npx playwright install chromium"
+          : "Install system Chrome, or install Chromium: npx playwright install chromium",
+    };
+  }
+}
+
+async function checkHarnessPlaywright(): Promise<DoctorCheck> {
+  try {
+    await import("playwright");
+    return {
+      name: "playwright",
+      status: "ok",
+      detail: "shipped with hedera-harness",
+    };
+  } catch (error) {
+    return {
+      name: "playwright",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+      fix: "Reinstall hedera-harness — SMOKE uses the Playwright API bundled with the CLI, not a project peer.",
     };
   }
 }
@@ -320,20 +333,6 @@ async function checkHarnessSdk(): Promise<DoctorCheck> {
       status: "fail",
       detail: error instanceof Error ? error.message : String(error),
       fix: "Reinstall hedera-harness — CHAIN uses the SDK bundled with the CLI, not a project peer.",
-    };
-  }
-}
-
-async function checkImport(pkg: string, feature: string, tool: string): Promise<DoctorCheck> {
-  try {
-    await import(pkg);
-    return { name: pkg, status: "ok", detail: `available for ${feature}` };
-  } catch {
-    return {
-      name: pkg,
-      status: "fail",
-      detail: `not installed, required by ${feature}`,
-      fix: `${tool} add -D ${pkg}`,
     };
   }
 }

@@ -178,21 +178,18 @@ npm install -D hedera-harness@next
 npx hedera-harness doctor
 ```
 
-Playwright is an **optional peer**, needed only for SMOKE. CHAIN ships `@hiero-ledger/sdk` inside `hedera-harness` — do not add it to the project.
+Playwright (SMOKE) and `@hiero-ledger/sdk` (CHAIN) ship inside `hedera-harness` — do not add them to the project.
 
 ```bash
-# SMOKE — the browser API; no separate Chromium download is required
-npm install -D playwright
-
 # CHAIN — funded ECDSA operator in the shell (the SDK is already in the harness)
 export HEDERA_OPERATOR_ID=0.0.xxxx
 export HEDERA_OPERATOR_KEY=0x...      # ECDSA — ED25519 has no EVM alias
 ```
 
-**SMOKE and EVALUATE share one browser policy.** The harness uses the project's
-existing Playwright Chromium when available and otherwise launches system
-Chrome. SMOKE still needs the `playwright` package for its browser API, but
-neither stage requires a separate Chromium download when Chrome is installed.
+**SMOKE and EVALUATE share one browser policy.** The harness uses Playwright
+Chromium when that binary is already on disk and otherwise launches system
+Chrome. Neither stage needs a project `yarn add playwright`, and neither
+requires a separate Chromium download when Chrome is installed.
 For EVALUATE, the harness launches its pinned `@playwright/mcp` version through
 `npx` and supplies the MCP configuration itself; do not copy an `.mcp.json`
 into the project. Run `npx hedera-harness@next doctor` to launch-probe the selected

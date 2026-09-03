@@ -1,8 +1,7 @@
 /**
- * Optional peer dependencies used only by higher validation gates.
- * Playwright stays optional so ASSERT-only installs stay small.
- * `@hiero-ledger/sdk` is a harness runtime dependency — CHAIN must not
- * require a second install in the consumer project.
+ * Host packages the harness process imports.
+ * Playwright and `@hiero-ledger/sdk` are harness runtime dependencies —
+ * SMOKE / CHAIN must not require a second install in the consumer project.
  */
 
 import { readFile } from "node:fs/promises";
@@ -57,13 +56,19 @@ export function buildOptionalDepInstallLines(
 }
 
 export async function importPlaywright(
-  options: OptionalDepInstallOptions = {},
+  _options: OptionalDepInstallOptions = {},
 ): Promise<typeof import("playwright")> {
   try {
     return await import("playwright");
   } catch (error) {
+    const underlying = error instanceof Error ? error.message : String(error);
     throw new Error(
-      await formatOptionalDepError("playwright", "SMOKE Playwright gate", options, error),
+      [
+        "SMOKE could not load playwright.",
+        "The Playwright API ships with hedera-harness — reinstall the harness package rather than adding it to the project.",
+        "System Chrome is enough for the browser binary; do not yarn add playwright at the project root.",
+        `Underlying error: ${underlying}`,
+      ].join("\n"),
     );
   }
 }
