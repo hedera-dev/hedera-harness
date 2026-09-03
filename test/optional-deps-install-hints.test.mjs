@@ -42,17 +42,14 @@ test("resolvePackageInstallTool falls back to yarn.lock", async () => {
 });
 
 test("buildOptionalDepInstallLines uses yarn add for yarn projects", () => {
-  assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("@hiero-ledger/sdk", "yarn"), [
-    "yarn add -D @hiero-ledger/sdk",
-  ]);
   assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("playwright", "yarn"), [
     "yarn add -D playwright",
   ]);
 });
 
 test("buildOptionalDepInstallLines keeps npm for npm projects", () => {
-  assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("@hiero-ledger/sdk", "npm"), [
-    "npm install -D @hiero-ledger/sdk",
+  assert.deepEqual(optionalDeps.buildOptionalDepInstallLines("playwright", "npm"), [
+    "npm install -D playwright",
   ]);
 });
 
@@ -64,13 +61,13 @@ test("formatOptionalDepError mentions yarn add when project is yarn-only", async
       JSON.stringify({ name: "demo", packageManager: "yarn@3.2.3" }),
     );
     const message = await optionalDeps.formatOptionalDepError(
-      "@hiero-ledger/sdk",
-      "CHAIN on-chain validation",
+      "playwright",
+      "SMOKE Playwright gate",
       { projectRoot: dir, packageManager: "yarn@3.2.3" },
-      new Error("Cannot find package '@hiero-ledger/sdk'"),
+      new Error("Cannot find package 'playwright'"),
     );
-    assert.match(message, /yarn add -D @hiero-ledger\/sdk/);
-    assert.doesNotMatch(message, /npm install -D @hiero-ledger\/sdk/);
+    assert.match(message, /yarn add -D playwright/);
+    assert.doesNotMatch(message, /npm install -D playwright/);
     assert.match(message, /project root/);
   } finally {
     await rm(dir, { recursive: true, force: true });

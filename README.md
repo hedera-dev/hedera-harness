@@ -148,7 +148,7 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 
 `--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
 
-**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, optional peer deps for the enabled stages, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
+**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, Playwright when SMOKE is on, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
 
 ## Configuration
 
@@ -178,14 +178,13 @@ npm install -D hedera-harness@next
 npx hedera-harness doctor
 ```
 
-Playwright and the Hedera SDK are **optional peer dependencies**, needed only by the higher stages:
+Playwright is an **optional peer**, needed only for SMOKE. CHAIN ships `@hiero-ledger/sdk` inside `hedera-harness` — do not add it to the project.
 
 ```bash
 # SMOKE — the browser API; no separate Chromium download is required
 npm install -D playwright
 
-# CHAIN
-npm install -D @hiero-ledger/sdk
+# CHAIN — funded ECDSA operator in the shell (the SDK is already in the harness)
 export HEDERA_OPERATOR_ID=0.0.xxxx
 export HEDERA_OPERATOR_KEY=0x...      # ECDSA — ED25519 has no EVM alias
 ```

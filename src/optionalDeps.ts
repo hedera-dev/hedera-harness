@@ -1,6 +1,8 @@
 /**
  * Optional peer dependencies used only by higher validation gates.
- * Gate 0–1 consumers should not need to install these (~hundreds of MB).
+ * Playwright stays optional so ASSERT-only installs stay small.
+ * `@hiero-ledger/sdk` is a harness runtime dependency — CHAIN must not
+ * require a second install in the consumer project.
  */
 
 import { readFile } from "node:fs/promises";
@@ -66,19 +68,17 @@ export async function importPlaywright(
   }
 }
 
-export async function importHieroSdk(
-  options: OptionalDepInstallOptions = {},
-): Promise<typeof import("@hiero-ledger/sdk")> {
+export async function importHieroSdk(): Promise<typeof import("@hiero-ledger/sdk")> {
   try {
     return await import("@hiero-ledger/sdk");
   } catch (error) {
+    const underlying = error instanceof Error ? error.message : String(error);
     throw new Error(
-      await formatOptionalDepError(
-        "@hiero-ledger/sdk",
-        "CHAIN on-chain validation",
-        options,
-        error,
-      ),
+      [
+        "CHAIN could not load @hiero-ledger/sdk.",
+        "The SDK ships with hedera-harness — reinstall the harness package rather than adding it to the project.",
+        `Underlying error: ${underlying}`,
+      ].join("\n"),
     );
   }
 }

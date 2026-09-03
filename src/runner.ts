@@ -114,10 +114,7 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
   let chainSigner: ChainSigner | undefined;
   if (spec.chainValidation?.enabled) {
     const runDirectory = await resolveRunDirectoryForWorkspace(workspacePath);
-    const provisioned = await provisionChainSigner(spec.chainValidation, runDirectory, {
-      projectRoot: process.cwd(),
-      packageManager: spec.constraints?.packageManager,
-    });
+    const provisioned = await provisionChainSigner(spec.chainValidation, runDirectory);
     chainSigner = provisioned.signer;
     logPhase(
       provisioned.reused

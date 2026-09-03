@@ -174,6 +174,7 @@ chainValidation:
 
 - the operator must be **ECDSA**, not ED25519 — ED25519 has no EVM alias
 - export the env vars in your shell; they are never written into the workspace
+- `@hiero-ledger/sdk` ships with `hedera-harness`; do not add it to the project
 - the template must keep the burner connector enabled so headless signing works
 - for Solidity templates, map `expose.envVars` and `deploy.commands` so
   contracts are deployed before the app is graded
