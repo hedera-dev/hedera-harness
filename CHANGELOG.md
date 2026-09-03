@@ -6,6 +6,11 @@
 
 - Drop leftover scaffold-hbar template PRDs from `docs/prds/`. The writing
   guide stays; real briefs live in the project under `.harness/`.
+- **CHAIN ships `@hiero-ledger/sdk`.** It is a harness runtime dependency, not
+  an optional peer. Installing `hedera-harness` is enough; do not
+  `yarn add -D @hiero-ledger/sdk` at the project root (that re-resolved other
+  packages on Yarn scaffold apps). Playwright stays an optional peer for SMOKE.
+  Operator env vars are still host-provided.
 
 ## 2.0.0-rc.1 — 2026-09-01
 

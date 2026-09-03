@@ -63,13 +63,16 @@ if ! grep -Eq "Usage:|run <spec>|validate" <<<"$HELP_OUT"; then
   exit 1
 fi
 
-# Confirm optional peers were not pulled in for a bare install.
+# Playwright stays an optional peer — a bare install must not pull it.
 if [[ -d node_modules/playwright ]]; then
-  echo "Smoke failed: playwright should not be installed for a default gate 0–1 consumer" >&2
+  echo "Smoke failed: playwright should not be installed for a default ASSERT-only consumer" >&2
   exit 1
 fi
-if [[ -d node_modules/@hiero-ledger ]]; then
-  echo "Smoke failed: @hiero-ledger/sdk should not be installed for a default gate 0–1 consumer" >&2
+
+# CHAIN ships @hiero-ledger/sdk with the harness. A bare install must resolve it
+# without a second yarn add in the consumer project.
+if ! node --input-type=module -e "await import('@hiero-ledger/sdk')"; then
+  echo "Smoke failed: @hiero-ledger/sdk must resolve after installing hedera-harness" >&2
   exit 1
 fi
 

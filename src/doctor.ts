@@ -256,8 +256,9 @@ async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
 }
 
 /**
- * Doctor-only optional deps: package imports and SMOKE browser when EVALUATE is off.
- * EVALUATE browser probing lives in shared preflight.
+ * Doctor-only host deps: Playwright when SMOKE is on, bundled SDK when CHAIN
+ * is on, and SMOKE browser when EVALUATE is off. EVALUATE browser probing
+ * lives in shared preflight.
  */
 async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
@@ -276,7 +277,7 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
     checks.push(await checkSmokeBrowser(cwd));
   }
   if (spec.chainValidation?.enabled) {
-    checks.push(await checkImport("@hiero-ledger/sdk", "CHAIN on-chain validation", tool));
+    checks.push(await checkHarnessSdk());
   }
   return checks;
 }
@@ -301,6 +302,24 @@ async function checkSmokeBrowser(projectRoot: string): Promise<DoctorCheck> {
         choice.source === "project-playwright"
           ? "Reinstall the project's browser: npx playwright install chromium"
           : "Install system Chrome, or install the project's Playwright browser: npx playwright install chromium",
+    };
+  }
+}
+
+async function checkHarnessSdk(): Promise<DoctorCheck> {
+  try {
+    await import("@hiero-ledger/sdk");
+    return {
+      name: "@hiero-ledger/sdk",
+      status: "ok",
+      detail: "shipped with hedera-harness",
+    };
+  } catch (error) {
+    return {
+      name: "@hiero-ledger/sdk",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+      fix: "Reinstall hedera-harness — CHAIN uses the SDK bundled with the CLI, not a project peer.",
     };
   }
 }

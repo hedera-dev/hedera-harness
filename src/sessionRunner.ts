@@ -176,10 +176,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     );
 
     if (spec.chainValidation?.enabled) {
-      const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory, {
-        projectRoot: layout.workspacePath,
-        packageManager: spec.constraints?.packageManager,
-      });
+      const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory);
       chainSigner = provisioned.signer;
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "chain_signer_provisioned",

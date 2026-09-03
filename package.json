@@ -46,22 +46,18 @@
     "cli"
   ],
   "dependencies": {
+    "@hiero-ledger/sdk": "^2.86.2",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "@hiero-ledger/sdk": "^2.86.2",
     "playwright": "^1.61.1"
   },
   "peerDependenciesMeta": {
-    "@hiero-ledger/sdk": {
-      "optional": true
-    },
     "playwright": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@hiero-ledger/sdk": "^2.86.2",
     "@types/node": "^26.1.0",
     "playwright": "^1.61.1",
     "typescript": "^6.0.3"
