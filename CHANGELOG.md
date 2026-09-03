@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.0.0-rc.1 — 2026-09-01
+
+Prerelease for clean-environment e2e. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.1
+```
+
 ### Breaking Changes
 
 - **Greenfield schema cut.** Recipes must declare `schemaVersion: 3`. Missing or

@@ -32,7 +32,8 @@ test("package.json declares playwright and SDK as optional peers, not runtime de
   const pkg = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile("package.json", "utf8")));
   // Shape, not value: pinning the exact version here means every release starts
   // with a failing test, which is how the e2e script silently rotted.
-  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  // Prereleases (2.0.0-rc.1) are valid npm versions.
+  assert.match(pkg.version, /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
   assert.ok(!pkg.dependencies?.playwright);
   assert.ok(!pkg.dependencies?.["@hiero-ledger/sdk"]);
   assert.equal(pkg.peerDependencies.playwright, "^1.61.1");
