@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 2.0.0-rc.2 — 2026-09-03
+
+Same v2 line as rc.1, plus the EVALUATE verdict parser fix. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.2
+```
+
+### Fixed
+
+- **Fenced EVALUATE verdicts.** Claude often wraps the JSON verdict in a
+  ` ```json ` fence and then writes notes that contain more `{` `}`. First-brace
+  to last-brace swallowed that prose and aborted passing canaries as
+  `validator-output-unparseable`. Parse fenced JSON first, then balanced objects.
+
 ## 2.0.0-rc.1 — 2026-09-01
 
 Prerelease for clean-environment e2e. npm `latest` remains **1.2.2**.
