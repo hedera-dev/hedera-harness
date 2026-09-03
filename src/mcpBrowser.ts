@@ -63,13 +63,13 @@ export function playwrightLaunchOptionsForBrowser(
 /**
  * Choose the browser the EVALUATE validator drives.
  *
- * Preference is the browser the project's own Playwright already downloaded —
- * the same binary the SMOKE gate uses. That keeps both stages on one browser
- * (a route that renders for the gate renders for the evaluator) and costs no
- * extra download, since SMOKE already required it.
+ * Preference is Playwright Chromium when that binary is already on disk —
+ * the same one the SMOKE gate uses. That keeps both stages on one browser
+ * (a route that renders for the gate renders for the evaluator).
  *
  * The fallback is the system Chrome channel, which needs no download either but
- * is whatever version the machine happens to have.
+ * is whatever version the machine happens to have. A host should not
+ * `yarn add playwright`; the Node API ships with the harness.
  */
 export async function resolveMcpBrowser(projectRoot: string): Promise<McpBrowserChoice> {
   try {
@@ -80,15 +80,15 @@ export async function resolveMcpBrowser(projectRoot: string): Promise<McpBrowser
       args: mcpArgsForBrowser({ source: "project-playwright", executablePath }),
       source: "project-playwright",
       executablePath,
-      detail: `project Playwright browser (shared with the SMOKE gate) — ${executablePath}`,
+      detail: `Playwright Chromium (shared with the SMOKE gate) — ${executablePath}`,
     };
   } catch {
-    // Playwright missing from the project, or installed without its browser.
+    // Playwright API present but no downloaded Chromium, or import failed.
     return {
       args: mcpArgsForBrowser({ source: "system-chrome" }),
       source: "system-chrome",
       detail:
-        "system Chrome — shared by SMOKE and EVALUATE because the project's Playwright browser was unavailable",
+        "system Chrome — shared by SMOKE and EVALUATE because Playwright Chromium was unavailable",
     };
   }
 }

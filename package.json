@@ -47,19 +47,11 @@
   ],
   "dependencies": {
     "@hiero-ledger/sdk": "^2.86.2",
+    "playwright": "^1.61.1",
     "yaml": "^2.9.0"
-  },
-  "peerDependencies": {
-    "playwright": "^1.61.1"
-  },
-  "peerDependenciesMeta": {
-    "playwright": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
-    "playwright": "^1.61.1",
     "typescript": "^6.0.3"
   }
 }

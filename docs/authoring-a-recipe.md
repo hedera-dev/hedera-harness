@@ -120,7 +120,8 @@ validators:
 Keep it thin. The gate enforces: server up, route reachable, page actually
 rendered, no console errors, no forbidden text. **Rich UX checks belong in the
 evaluate checklist** — this stage exists to fail fast before paying for an
-agent.
+agent. `playwright` ships with `hedera-harness`; do not add it to the project.
+System Chrome is enough for the browser binary.
 
 ### EVALUATE — evaluate checklist
 

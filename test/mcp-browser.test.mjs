@@ -23,7 +23,7 @@ test("the MCP package is pinned, never @latest", () => {
   assert.doesNotMatch(PLAYWRIGHT_MCP_PACKAGE, /latest/);
 });
 
-test("the resolved browser prefers the project's Playwright, else system Chrome", async () => {
+test("the resolved browser prefers Playwright Chromium, else system Chrome", async () => {
   const root = await makeTestTempDir("mcp-browser-");
   const choice = await resolveMcpBrowser(root);
 
@@ -61,7 +61,7 @@ test("no resolution asks for a browser that would need its own download", async 
   }
 });
 
-test("a project Playwright browser is selected by executable path, not an undocumented channel", () => {
+test("a Playwright Chromium browser is selected by executable path, not an undocumented channel", () => {
   const args = mcpArgsForBrowser({
     source: "project-playwright",
     executablePath: "/existing/playwright/chromium",
