@@ -32,7 +32,7 @@ test("package.json ships the SDK and Playwright as runtime dependencies", async 
   const pkg = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile("package.json", "utf8")));
   // Shape, not value: pinning the exact version here means every release starts
   // with a failing test, which is how the e2e script silently rotted.
-  // Prereleases (2.0.0-rc.1) are valid npm versions.
+  // Prereleases (2.0.0-rc.4) are valid npm versions.
   assert.match(pkg.version, /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
   assert.ok(pkg.dependencies?.playwright);
   assert.ok(pkg.dependencies?.["@hiero-ledger/sdk"]);
