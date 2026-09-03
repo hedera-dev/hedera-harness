@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.0.0-rc.3 — 2026-09-03
+
+CHAIN works from the harness package alone. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.3
+```
+
 ### Changed
 
 - Drop leftover scaffold-hbar template PRDs from `docs/prds/`. The writing
@@ -11,6 +21,23 @@
   `yarn add -D @hiero-ledger/sdk` at the project root (that re-resolved other
   packages on Yarn scaffold apps). Playwright stays an optional peer for SMOKE.
   Operator env vars are still host-provided.
+
+## 2.0.0-rc.2 — 2026-09-03
+
+Same v2 line as rc.1, plus the EVALUATE verdict parser fix. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.2
+```
+
+### Fixed
+
+- **Fenced EVALUATE verdicts.** Claude often wraps the JSON verdict in a
+  ` ```json ` fence and then writes notes that contain more `{` `}`. First-brace
+  to last-brace swallowed that prose and aborted passing canaries as
+  `validator-output-unparseable`. Parse fenced JSON first, then balanced objects.
 
 ## 2.0.0-rc.1 — 2026-09-01
 
