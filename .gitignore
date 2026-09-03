@@ -9,7 +9,7 @@ runs/
 .seed-cache/
 .skill-cache/
 
-# Private / WIP PRDs (example PRDs under docs/prds/ are tracked)
+# Local WIP PRDs (not shipped)
 docs/prds/local/
 
 # TypeScript

@@ -238,7 +238,7 @@ To author recipes with an agent, install the marketplace plugin:
 ├── prompts/                  # agent prompts (shipped; overridable per project)
 ├── skeletons/project-harness # provisioned by `init`
 ├── scripts/                  # e2e and EVALUATE verification helpers
-├── docs/                     # authoring-a-recipe.md, prds/
+├── docs/                     # authoring-a-recipe.md, how to write a PRD
 └── test/
 ```
 

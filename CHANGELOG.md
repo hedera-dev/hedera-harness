@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Drop leftover scaffold-hbar template PRDs from `docs/prds/`. The writing
+  guide stays; real briefs live in the project under `.harness/`.
+
 ## 2.0.0-rc.1 — 2026-09-01
 
 Prerelease for clean-environment e2e. npm `latest` remains **1.2.2**.
