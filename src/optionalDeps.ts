@@ -1,6 +1,7 @@
 /**
- * Optional peer dependencies used only by higher validation gates.
- * Gate 0–1 consumers should not need to install these (~hundreds of MB).
+ * Host packages the harness process imports.
+ * Playwright and `@hiero-ledger/sdk` are harness runtime dependencies —
+ * SMOKE / CHAIN must not require a second install in the consumer project.
  */
 
 import { readFile } from "node:fs/promises";
@@ -55,30 +56,34 @@ export function buildOptionalDepInstallLines(
 }
 
 export async function importPlaywright(
-  options: OptionalDepInstallOptions = {},
+  _options: OptionalDepInstallOptions = {},
 ): Promise<typeof import("playwright")> {
   try {
     return await import("playwright");
   } catch (error) {
+    const underlying = error instanceof Error ? error.message : String(error);
     throw new Error(
-      await formatOptionalDepError("playwright", "Tier 2 Playwright gate", options, error),
+      [
+        "SMOKE could not load playwright.",
+        "The Playwright API ships with hedera-harness — reinstall the harness package rather than adding it to the project.",
+        "System Chrome is enough for the browser binary; do not yarn add playwright at the project root.",
+        `Underlying error: ${underlying}`,
+      ].join("\n"),
     );
   }
 }
 
-export async function importHieroSdk(
-  options: OptionalDepInstallOptions = {},
-): Promise<typeof import("@hiero-ledger/sdk")> {
+export async function importHieroSdk(): Promise<typeof import("@hiero-ledger/sdk")> {
   try {
     return await import("@hiero-ledger/sdk");
   } catch (error) {
+    const underlying = error instanceof Error ? error.message : String(error);
     throw new Error(
-      await formatOptionalDepError(
-        "@hiero-ledger/sdk",
-        "Tier 3.5 on-chain validation",
-        options,
-        error,
-      ),
+      [
+        "CHAIN could not load @hiero-ledger/sdk.",
+        "The SDK ships with hedera-harness — reinstall the harness package rather than adding it to the project.",
+        `Underlying error: ${underlying}`,
+      ].join("\n"),
     );
   }
 }

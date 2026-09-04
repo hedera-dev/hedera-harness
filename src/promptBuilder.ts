@@ -1,26 +1,20 @@
 import { readFile } from "node:fs/promises";
 import type { ChainSigner, TemplateSpec, ValidationFinding } from "./types.js";
 import {
-  VENDORED_CONTRACT_PATH,
+  VENDORED_EVAL_PATH,
   VENDORED_PRD_PATH,
   type VendoredContext,
 } from "./contextVendor.js";
-import type { VendoredSkill } from "./skillVendor.js";
+import type { VendoredSkill } from "./skillProvider.js";
 import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 import { renderPrompt } from "./promptTemplates.js";
 import type { SliceContext } from "./attemptLoop.js";
+import { selectActiveSlice } from "./sliceSelection.js";
 
-/**
- * Assembles prompt inputs; the prose lives in `prompts/*.md`.
- *
- * What stays here is the part that is genuinely logic — choosing a repair scope,
- * correlating findings with contract assertions, formatting lists. What left is
- * the wording, which is the thing most often tuned and the thing least served by
- * living behind a compile step.
- */
-export type RepairScope = "semantic-scoped" | "runtime" | "broad";
+/** Assembles prompt inputs; wording lives in `prompts/*.md`. */
+export type RepairScope = "eval-scoped" | "runtime" | "broad";
 
-interface ContractAssertion {
+interface EvalAssertion {
   id: string;
   journey?: string;
   route?: string;
@@ -30,11 +24,11 @@ interface ContractAssertion {
   walletRequired?: boolean;
 }
 
-const ASSERTION_ID_PATTERN = /\b(C\d+)\b/i;
+const ASSERTION_ID_PATTERN = /\b(E\d+)\b/i;
 
 interface ContextPaths {
   prdPath: string;
-  contractPath: string;
+  evalPath: string;
   skillsRoot: string;
 }
 
@@ -44,8 +38,8 @@ function runtimeContextPaths(
 ): ContextPaths {
   return {
     prdPath: vendoredContext?.prdRelativePath ?? `${HARNESS_CONTEXT_DIR}/prd.md`,
-    contractPath:
-      vendoredContext?.contractRelativePath ?? `${HARNESS_CONTEXT_DIR}/acceptance-contract.json`,
+    evalPath:
+      vendoredContext?.evalRelativePath ?? `${HARNESS_CONTEXT_DIR}/eval.json`,
     skillsRoot:
       vendoredSkills[0]?.relativePath.split("/").slice(0, -2).join("/") || HARNESS_SKILLS_DIR,
   };
@@ -59,16 +53,17 @@ export async function buildSessionPrompt(
   vendoredContext?: VendoredContext,
   slice?: SliceContext,
 ): Promise<string> {
-  const prdPath = spec.prdPaths[slice?.index ?? 0];
-  const prd = await readFile(prdPath, "utf8");
+  const active = selectActiveSlice(spec, slice?.index ?? 0);
+  const prd = await readFile(active.prdPath, "utf8");
   const paths = runtimeContextPaths(vendoredSkills, vendoredContext);
+  const hasEval = Boolean(vendoredContext?.evalRelativePath ?? active.evalPath);
 
   return renderPrompt(spec.projectRoot, "generator", {
     attempt: String(attempt),
     prd: prd.trim(),
     ...sliceVars(slice),
     ...paths,
-    hasContract: Boolean(spec.contractPath),
+    hasEval,
     hardConstraints: formatHardConstraints(spec),
     hasRequiredFiles: spec.requiredFiles.length > 0,
     requiredFiles: formatBulletList(spec.requiredFiles),
@@ -85,13 +80,15 @@ export async function buildSessionContinuePrompt(
   vendoredContext?: VendoredContext,
   slice?: SliceContext,
 ): Promise<string> {
+  const active = selectActiveSlice(spec, slice?.index ?? 0);
   const paths = runtimeContextPaths(vendoredSkills, vendoredContext);
+  const hasEval = Boolean(vendoredContext?.evalRelativePath ?? active.evalPath);
 
   return renderPrompt(spec.projectRoot, "generator-continue", {
     cycle: String(cycle),
     ...sliceVars(slice),
     ...paths,
-    hasContract: Boolean(spec.contractPath),
+    hasEval,
     hardConstraints: formatHardConstraints(spec),
     hasRequiredFiles: spec.requiredFiles.length > 0,
     requiredFiles: formatBulletList(spec.requiredFiles),
@@ -116,7 +113,7 @@ export async function buildSessionRepairPrompt(
 
 /**
  * Build a scoped repair prompt.
- * - semantic-scoped: only contract assertion gaps (Tier 0–2 already green)
+ * - eval-scoped: only evaluate-checklist assertion gaps (ASSERT/SMOKE already green)
  * - runtime: yarn/playwright failures
  * - broad: structural/static/mixed failures
  */
@@ -126,24 +123,26 @@ export async function buildRepairPrompt(
   attempt: number,
   vendoredContext?: VendoredContext,
 ): Promise<string> {
-  const actionable = findings.filter(finding => finding.category !== "semantic-infra");
+  const actionable = findings.filter(finding => finding.category !== "eval-infra");
   const scope = classifyRepairScope(actionable);
-  const contractPath = vendoredContext?.contractRelativePath ?? VENDORED_CONTRACT_PATH;
+  const evalPath = vendoredContext?.evalRelativePath ?? VENDORED_EVAL_PATH;
   const prdPath = vendoredContext?.prdRelativePath ?? VENDORED_PRD_PATH;
-  const assertions = await loadContractAssertions(
-    vendoredContext?.contractSourcePath ?? spec.contractPath,
+  const fallbackActive = selectActiveSlice(spec, Math.max(0, spec.prdPaths.length - 1));
+  const assertions = await loadEvalAssertions(
+    vendoredContext?.evalSourcePath ?? fallbackActive.evalPath,
   );
 
-  const hasSemantic = actionable.some(finding => finding.category === "semantic");
+  const hasEvalFindings = actionable.some(finding => finding.category === "eval");
+  const hasEval = Boolean(vendoredContext?.evalRelativePath ?? fallbackActive.evalPath);
   const shared = {
     attempt: String(attempt),
     prdPath,
-    contractPath,
+    evalPath,
     hardConstraints: formatHardConstraints(spec),
     findingsList: formatFindingsList(actionable),
-    hasSemantic,
-    semanticTargets: formatSemanticTargets(actionable, assertions),
-    hasContract: Boolean(spec.contractPath),
+    hasEvalFindings,
+    evalTargets: formatEvalTargets(actionable, assertions),
+    hasEval,
     hasMetadata: Boolean(
       spec.templateMetadata?.name ??
         spec.templateMetadata?.frontend ??
@@ -154,28 +153,28 @@ export async function buildRepairPrompt(
     requiredFiles: formatBulletList(spec.requiredFiles),
   };
 
-  if (scope === "semantic-scoped") {
-    return renderPrompt(spec.projectRoot, "repair-semantic", shared);
+  if (scope === "eval-scoped") {
+    return renderPrompt(spec.projectRoot, "repair-eval", shared);
   }
   if (scope === "runtime") {
     return renderPrompt(spec.projectRoot, "repair-runtime", {
       ...shared,
-      hasSemanticContract: hasSemantic && Boolean(spec.contractPath),
+      hasEvalChecklist: hasEvalFindings && hasEval,
     });
   }
   return renderPrompt(spec.projectRoot, "repair-broad", shared);
 }
 
 export function classifyRepairScope(findings: ValidationFinding[]): RepairScope {
-  const actionable = findings.filter(finding => finding.category !== "semantic-infra");
+  const actionable = findings.filter(finding => finding.category !== "eval-infra");
   if (actionable.length === 0) {
     return "broad";
   }
 
   const categories = new Set(actionable.map(finding => finding.category));
-  const onlySemantic = [...categories].every(category => category === "semantic");
-  if (onlySemantic) {
-    return "semantic-scoped";
+  const onlyEval = [...categories].every(category => category === "eval");
+  if (onlyEval) {
+    return "eval-scoped";
   }
 
   const hasStructural = [...categories].some(category =>
@@ -183,7 +182,7 @@ export function classifyRepairScope(findings: ValidationFinding[]): RepairScope 
   );
   if (
     !hasStructural &&
-    [...categories].every(category => ["commands", "playwright", "semantic"].includes(category))
+    [...categories].every(category => ["commands", "playwright", "eval"].includes(category))
   ) {
     if (categories.has("commands") || categories.has("playwright")) {
       return "runtime";
@@ -194,8 +193,8 @@ export function classifyRepairScope(findings: ValidationFinding[]): RepairScope 
 }
 
 export function extractAssertionId(finding: ValidationFinding): string | undefined {
-  if (finding.contractAssertion) {
-    return finding.contractAssertion.toUpperCase();
+  if (finding.assertion) {
+    return finding.assertion.toUpperCase();
   }
   const fromMessage = finding.message.match(ASSERTION_ID_PATTERN);
   if (fromMessage) {
@@ -207,7 +206,7 @@ export function extractAssertionId(finding: ValidationFinding): string | undefin
 
 export async function buildValidatorPrompt(
   spec: TemplateSpec,
-  contractJson: string,
+  evalJson: string,
   serverUrl: string,
   chainSigner?: ChainSigner,
   browserLocalStorageKey = "burnerWallet.pk",
@@ -218,7 +217,7 @@ export async function buildValidatorPrompt(
     issues: [
       {
         id: "issue-slug",
-        contractAssertion: "C1",
+        assertion: "E1",
         severity: "critical",
         route: "/",
         message: "What failed and why.",
@@ -237,7 +236,7 @@ export async function buildValidatorPrompt(
 
   return renderPrompt(spec.projectRoot, "validator", {
     serverUrl,
-    contract: contractJson.trim(),
+    eval: evalJson.trim(),
     outputSchema: JSON.stringify(outputSchema, null, 2),
     walletRule,
     hasSigner: Boolean(chainSigner),
@@ -292,27 +291,27 @@ function formatFindingsList(findings: ValidationFinding[]): string {
     .join("\n");
 }
 
-function formatSemanticTargets(
+function formatEvalTargets(
   findings: ValidationFinding[],
-  assertions: Map<string, ContractAssertion>,
+  assertions: Map<string, EvalAssertion>,
 ): string {
-  const semantic = findings.filter(finding => finding.category === "semantic");
-  if (semantic.length === 0) {
-    return "- (no semantic findings)";
+  const evalFindings = findings.filter(finding => finding.category === "eval");
+  if (evalFindings.length === 0) {
+    return "- (no evaluate findings)";
   }
 
-  return semantic
+  return evalFindings
     .map(finding => {
       const assertionId = extractAssertionId(finding);
-      const fromContract = assertionId ? assertions.get(assertionId) : undefined;
-      const route = finding.route ?? fromContract?.route;
+      const fromChecklist = assertionId ? assertions.get(assertionId) : undefined;
+      const route = finding.route ?? fromChecklist?.route;
       return [
         `### ${assertionId ?? finding.id}`,
         route ? `- route: \`${route}\`` : undefined,
-        fromContract?.severity ? `- severity: ${fromContract.severity}` : undefined,
-        fromContract?.journey ? `- journey: ${fromContract.journey}` : undefined,
-        fromContract?.statement ? `- statement: ${fromContract.statement}` : undefined,
-        fromContract?.howToVerify ? `- howToVerify: ${fromContract.howToVerify}` : undefined,
+        fromChecklist?.severity ? `- severity: ${fromChecklist.severity}` : undefined,
+        fromChecklist?.journey ? `- journey: ${fromChecklist.journey}` : undefined,
+        fromChecklist?.statement ? `- statement: ${fromChecklist.statement}` : undefined,
+        fromChecklist?.howToVerify ? `- howToVerify: ${fromChecklist.howToVerify}` : undefined,
         `- validator message: ${finding.message}`,
         finding.details ? `- evidence: ${finding.details}` : undefined,
       ]
@@ -322,24 +321,24 @@ function formatSemanticTargets(
     .join("\n\n");
 }
 
-async function loadContractAssertions(
-  contractPath?: string,
-): Promise<Map<string, ContractAssertion>> {
-  const map = new Map<string, ContractAssertion>();
-  if (!contractPath) {
+async function loadEvalAssertions(
+  evalPath?: string,
+): Promise<Map<string, EvalAssertion>> {
+  const map = new Map<string, EvalAssertion>();
+  if (!evalPath) {
     return map;
   }
 
   try {
-    const raw = await readFile(contractPath, "utf8");
-    const parsed = JSON.parse(raw) as { assertions?: ContractAssertion[] };
+    const raw = await readFile(evalPath, "utf8");
+    const parsed = JSON.parse(raw) as { assertions?: EvalAssertion[] };
     for (const assertion of parsed.assertions ?? []) {
       if (assertion?.id) {
         map.set(assertion.id.toUpperCase(), assertion);
       }
     }
   } catch {
-    // Contract missing/unreadable — repair still works with finding text only.
+    // Eval checklist missing/unreadable — repair still works with finding text only.
   }
 
   return map;

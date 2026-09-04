@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { makeTestTempDir } from "../tmpDir.mjs";
+import { writeProductSkillsRepo } from "../skillFixture.mjs";
 
 const run = promisify(execFile);
 const { runSession } = await import(pathToFileURL(path.resolve("dist/sessionRunner.js")).href);
@@ -52,7 +53,19 @@ console.log(JSON.stringify({
 }));
 `;
 
-async function makeTier3Project() {
+async function makeTier3Project(options = {}) {
+  const agent = options.agent ?? "claude";
+  const playwrightBody =
+    options.playwrightBody ??
+    `name: fixture-smoke
+server:
+  command: node server.mjs
+  url: http://127.0.0.1:0
+  timeoutMs: 30000
+routes:
+  - name: home
+    path: /
+`;
   const root = await makeTestTempDir("tiers-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
   await writeFile(path.join(root, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
@@ -60,6 +73,9 @@ async function makeTier3Project() {
   await writeFile(path.join(root, "agent.mjs"), MOCK_GENERATOR);
   await writeFile(path.join(root, "validator.mjs"), MOCK_VALIDATOR);
   await writeFile(path.join(root, ".harness", "prd.md"), "Serve a home page.\n");
+
+  const skillsRepo = await writeProductSkillsRepo(await makeTestTempDir("tiers-skills-"));
+  const skillsEnv = { HARNESS_SKILLS_REPO: skillsRepo, HARNESS_SKILLS_REF: "master" };
 
   await writeFile(
     path.join(root, ".harness", "validators", "static.json"),
@@ -71,34 +87,25 @@ async function makeTier3Project() {
   );
   await writeFile(
     path.join(root, ".harness", "validators", "playwright-smoke.yaml"),
-    `name: fixture-smoke
-server:
-  command: node server.mjs
-  url: http://127.0.0.1:0
-  timeoutMs: 30000
-routes:
-  - name: home
-    path: /
-`,
+    playwrightBody,
   );
   await writeFile(
-    path.join(root, ".harness", "acceptance-contract.json"),
+    path.join(root, ".harness", "eval.json"),
     JSON.stringify({
       assertions: [
-        { id: "C1", statement: "Home route renders", route: "/", severity: "critical" },
+        { id: "E1", statement: "Home route renders", route: "/", severity: "critical" },
       ],
     }),
   );
 
-  // agent: claude selects config-flag MCP delivery, so the validator should be
-  // handed --mcp-config rather than the project getting a .cursor/mcp.json.
+  // agent selects MCP delivery (config-flag vs workspace-file). Generator and
+  // validator stay mocked so the test never pays for a real model.
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
-    `schemaVersion: 2
+    `schemaVersion: 3
 name: tier3-fixture
-agent: claude
-contract: .harness/acceptance-contract.json
-skills: []
+agent: ${agent}
+eval: .harness/eval.json
 generator:
   provider: command
   command: node
@@ -134,11 +141,11 @@ baseline:
     ["-c", "user.email=t@e", "-c", "user.name=T", "commit", "-q", "--no-gpg-sign", "-m", "init"],
     { cwd: root },
   );
-  return root;
+  return { root, skillsEnv };
 }
 
 test("SMOKE and EVALUATE run against a real dev server and browser", async () => {
-  const root = await makeTier3Project();
+  const { root, skillsEnv } = await makeTier3Project();
   const argvFile = path.join(root, "validator-argv.json");
 
   const previous = { ...process.env };
@@ -146,6 +153,7 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
     MOCK_WS: root,
     MOCK_VALIDATOR_ARGV: argvFile,
     HUSKY: "0",
+    ...skillsEnv,
   });
 
   let result;
@@ -156,7 +164,7 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
       skipToolChecks: true,
     });
   } finally {
-    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
     Object.assign(process.env, previous);
   }
 
@@ -172,20 +180,20 @@ test("SMOKE and EVALUATE run against a real dev server and browser", async () =>
   assert.equal(report.validation.playwrightGate.routes[0].rendered, true);
 
   // EVALUATE: the validator was invoked against the live server and its verdict parsed.
-  assert.ok(report.semanticValidation, "semantic validation should have run");
-  assert.equal(report.semanticValidation.passed, true);
-  assert.match(report.semanticValidation.verdict.summary, /Fixture app renders/);
-  assert.match(report.semanticValidation.serverUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.ok(report.evaluation, "evaluation should have run");
+  assert.equal(report.evaluation.passed, true);
+  assert.match(report.evaluation.verdict.summary, /Fixture app renders/);
+  assert.match(report.evaluation.serverUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
 
   assert.equal(report.passed, true);
 }, { timeout: 180_000 });
 
 test("a claude validator is handed --mcp-config and the project is not touched", async () => {
-  const root = await makeTier3Project();
+  const { root, skillsEnv } = await makeTier3Project();
   const argvFile = path.join(root, "validator-argv.json");
 
   const previous = { ...process.env };
-  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0" });
+  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0", ...skillsEnv });
   try {
     await runSession({
       specPath: path.join(root, ".harness", "spec.yaml"),
@@ -193,7 +201,7 @@ test("a claude validator is handed --mcp-config and the project is not touched",
       skipToolChecks: true,
     });
   } finally {
-    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY"]) delete process.env[key];
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
     Object.assign(process.env, previous);
   }
 
@@ -209,5 +217,58 @@ test("a claude validator is handed --mcp-config and the project is not touched",
   await assert.rejects(
     () => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"),
     "a claude run must not write .cursor/mcp.json",
+  );
+}, { timeout: 180_000 });
+
+test("a Cursor SMOKE failure never writes .cursor/mcp.json", async () => {
+  // agent: cursor would snapshot .cursor/mcp.json around EVALUATE. If SMOKE
+  // fails first, withValidatorMcp must not run at all — no write, no restore.
+  const { root, skillsEnv } = await makeTier3Project({
+    agent: "cursor",
+    playwrightBody: `name: fixture-smoke
+server:
+  command: node server.mjs
+  url: http://127.0.0.1:0
+  timeoutMs: 30000
+forbidden:
+  visibleText:
+    - Fixture app
+routes:
+  - name: home
+    path: /
+`,
+  });
+  const argvFile = path.join(root, "validator-argv.json");
+
+  const previous = { ...process.env };
+  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0", ...skillsEnv });
+  let result;
+  try {
+    result = await runSession({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+      skipToolChecks: true,
+      maxAttempts: 1,
+    });
+  } finally {
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
+    Object.assign(process.env, previous);
+  }
+
+  assert.equal(result.report.passed, false);
+  assert.ok(result.report.validation.playwrightGate);
+  assert.equal(result.report.validation.playwrightGate.passed, false);
+  assert.equal(result.report.evaluation, undefined, "EVALUATE must be skipped");
+  await assert.rejects(
+    () => readFile(argvFile, "utf8"),
+    "validator must not have been invoked",
+  );
+  await assert.rejects(
+    () => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"),
+    "Cursor MCP snapshot must not run when SMOKE fails",
+  );
+  await assert.rejects(
+    () => readdir(path.join(root, ".cursor")),
+    "withValidatorMcp must not run at all — even a restored snapshot leaves .cursor/ behind",
   );
 }, { timeout: 180_000 });

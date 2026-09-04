@@ -1,5 +1,193 @@
 # Changelog
 
+## Unreleased
+
+## 2.0.0-rc.4 — 2026-09-03
+
+SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.4
+```
+
+### Changed
+
+- **SMOKE ships `playwright`.** Same owner as CHAIN: the Node API is a harness
+  runtime dependency. Do not `yarn add -D playwright` at the project root.
+  SMOKE and EVALUATE still prefer a downloaded Playwright Chromium when it
+  exists, otherwise system Chrome. EVALUATE's MCP remains `@playwright/mcp`
+  via `npx`, not this package.
+
+## 2.0.0-rc.3 — 2026-09-03
+
+CHAIN works from the harness package alone. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.3
+```
+
+### Changed
+
+- Drop leftover scaffold-hbar template PRDs from `docs/prds/`. The writing
+  guide stays; real briefs live in the project under `.harness/`.
+- **CHAIN ships `@hiero-ledger/sdk`.** It is a harness runtime dependency, not
+  an optional peer. Installing `hedera-harness` is enough; do not
+  `yarn add -D @hiero-ledger/sdk` at the project root (that re-resolved other
+  packages on Yarn scaffold apps). Playwright stayed an optional peer in this
+  cut. Operator env vars are still host-provided.
+
+## 2.0.0-rc.2 — 2026-09-03
+
+Same v2 line as rc.1, plus the EVALUATE verdict parser fix. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.2
+```
+
+### Fixed
+
+- **Fenced EVALUATE verdicts.** Claude often wraps the JSON verdict in a
+  ` ```json ` fence and then writes notes that contain more `{` `}`. First-brace
+  to last-brace swallowed that prose and aborted passing canaries as
+  `validator-output-unparseable`. Parse fenced JSON first, then balanced objects.
+
+## 2.0.0-rc.1 — 2026-09-01
+
+Prerelease for clean-environment e2e. npm `latest` remains **1.2.2**.
+
+```bash
+npm install -D hedera-harness@next
+# or
+npm install -D hedera-harness@2.0.0-rc.1
+```
+
+### Breaking Changes
+
+- **Greenfield schema cut.** Recipes must declare `schemaVersion: 3`. Missing or
+  older versions hard-fail at load (`Set schemaVersion: 3`). Future versions still
+  hard-fail with an upgrade hint.
+- **`hedera-harness migrate` removed.** Pre-current recipes are not rewritten;
+  update them to the current schema (or regenerate with `init`) instead.
+- **Removed keys hard-fail without migrate advice.** `contract:` → use `eval:`;
+  `extend:` → use `baseline:`; `logging:` → remove it, harness logs always live
+  under `.harness/runs/`. `extend.baseline` dual-read is gone.
+- **Harness branches are `harness/run-*` only.** Legacy `harness/extend-*` is no
+  longer recognized for continue / smart branch detection.
+- **Layout metadata** no longer normalizes legacy `in-place-extend` mode.
+
+- **`skills:` removed from the recipe.** Product skills from `hedera-skills` are
+  discovered each run and the generator picks what the PRD calls for. A recipe
+  that still lists `skills:` hard-fails at load
+  (`remove skills: — product skills from hedera-skills are loaded automatically`).
+- **`skills-index.json` removed.** There is no name list. The harness clones
+  `hedera-dev/hedera-skills` and vendors every `SKILL.md` under the product
+  plugins (`native-services-js`, `system-contracts`, `cross-chain`,
+  `dev-intelligence`). Authoring / CLI / hackathon / agent-kit plugins are not
+  offered to the generator. Override with `HARNESS_SKILLS_REPO` /
+  `HARNESS_SKILLS_REF`. `init` no longer copies an index into the project.
+- **`init --skills` removed, and `init` no longer pre-vendors skills.**
+  `.harness/skills/` is gone (it was gitignored and read by nothing now that every
+  run vendors the product set), so `init` needs neither git nor network for skills.
+  `InitResult.vendoredSkillCount` is gone with it.
+
+### Breaking Changes (schema v3 — eval vocabulary)
+
+- Recipe key `contract:` renamed to `eval:`. An unmigrated `contract:` key is
+  rejected at recipe load (`use eval: not contract:`) so a run cannot burn a
+  generator session before failing. Checklist file rename
+  (`acceptance-contract.json` → `eval.json`) is the author's responsibility.
+- Internal type `SemanticValidationResult` → `EvaluationResult`; field
+  `semanticValidation` on `ValidationResult`/`RunReport` → `evaluation`.
+- Finding category `"semantic"` → `"eval"`, `"semantic-infra"` → `"eval-infra"`.
+- Finding id prefix `semantic:` → `eval:`.
+- `status.json` key `semanticPassed` → `evaluationPassed`.
+- `ValidatorIssue.contractAssertion` → `assertion`; `ValidationFinding.contractAssertion` → `assertion`.
+- `TemplateSpec.contractPath` → `evalPaths` (normalized list; scalar `eval:` becomes length 1).
+- `selectActiveSlice` / `specHasEval` / `allEvalPaths` are the selection seam for the active PRD/eval pair — callers must not index `prdPaths[i]` / `evalPaths[i]` ad hoc.
+- List `eval:` must be 1:1 with `prd:` or load fails; scalar `eval:` grades every slice with one checklist. Only the active pair is vendored per increment.
+- `VendoredContext.contractRelativePath/contractSourcePath` → `evalRelativePath/evalSourcePath`.
+- `VENDORED_CONTRACT_PATH` → `VENDORED_EVAL_PATH` (points to `eval.json`).
+- `harnessContractRelativePath()` → `harnessEvalRelativePath()`.
+- `runSemanticValidation()` → `runEvaluation()`.
+- Files `semanticValidator.ts` → `evaluation.ts`, `semanticInfra.ts` → `evalInfra.ts`.
+- `detectSemanticInfrastructureFailure` → `detectEvalInfrastructureFailure`.
+- `RepairScope "semantic-scoped"` → `"eval-scoped"`.
+- Prompt template `repair-semantic` → `repair-eval`; validator mustache
+  `{{contract}}` → `{{eval}}`; other mustache vars updated.
+- `ASSERTION_ID_PATTERN` now matches `E\d+` (new assertion id prefix).
+- `KNOWN_SPEC_KEYS`: `"contract"` → `"eval"`.
+- Stage labels in docs/doctor/SVGs/CLI/optional-dep errors: ASSERT / SMOKE /
+  EVALUATE / CHAIN (no leftover "Tier 2/3/3.5" or "Semantic validation" in
+  user-facing output).
+
+### Changed
+
+- **Comment and dead-code trim.** Drop unused `harnessPrdRelativePath` /
+  `harnessEvalRelativePath`, unexport `cacheKeyForRepo`, and share
+  `.skill-cache` / legacy vendor dir names from `runtimePaths`. Cut comments
+  that restated the code; keep non-obvious WHY (Cursor MCP probe, Claude
+  `--allowedTools`, schema version table).
+
+- **One skills verb.** `skillResolver` + `skillVendor` are folded into
+  `skillProvider`, whose only exports are `provideSkills()` and the
+  `VendoredSkill` type. Git checkout caching lives in `skillRepoCache`. Product
+  skills are discovered from the cloned `hedera-skills` repo rather than a name
+  list; `resolveSkillsIndex` and `skills-index.json` are gone.
+
+- **Greenfield leftover cleanup.** Rewrite Claude EVALUATE verify script to
+  `eval:` / `E1` / `report.evaluation`; drop Tier 3.5 / “oracle audit” /
+  “vs contract” / template-recipe wording from `.env.example`, README, flow SVG,
+  and demo PRDs.
+
+- **Drop scaffold template-recipe CI.** Recipes are authored in the consumer
+  project (`init` / create-harness-spec), not shipped on every `scaffold-hbar`
+  `templates/*` branch. Removed the `template-recipes` workflow job,
+  `npm run check:templates`, and `scripts/check-template-recipes.sh`.
+
+- **Generator idle/timeout no longer skips SMOKE/EVALUATE.** A Cursor hang after
+  `THINKING completed` still records an agent finding, but ASSERT pass continues
+  into the product gates (agent findings were already ignored for smoke readiness
+  and for attempt `passed` after SMOKE). Default agent idle timeout is **90s**
+  (was 10m); override with `HARNESS_AGENT_IDLE_TIMEOUT_MS`.
+
+- **Shared SMOKE→EVALUATE server: `return await withValidatorMcp`.** A bare
+  `return withValidatorMcp(...)` inside `try/finally` stopped the harness dev
+  server before EVALUATE ran (SMOKE green, then connection refused on `:3000`).
+  Matches `validate-semantic`, which already awaited.
+- **Per-slice evaluate checklists.** `eval:` accepts a scalar path (same
+  checklist every increment) or a list 1:1 with `prd:`. `validate-semantic`
+  uses the last slice pair for a completed workspace. Preflight labels list
+  paths as `eval[i]` when more than one is configured.
+
+- **Preflight rules are evaluated lazily on the run path.** `run` stops at the
+  first failure instead of computing every rule first, so a run aborting on a
+  missing recipe file no longer pays for the EVALUATE browser probe (~2.2s warm,
+  up to a minute when `@playwright/mcp` is cold). `doctor` still reports all of
+  them. `skipToolChecks` now skips rules rather than discarding their results.
+- **EVALUATE preflight now triggers on the same condition that runs it.** It
+  gated on `spec.validator?.enabled`, while `runValidationStages` gates on
+  `isValidatorEnabled()`; the two disagreed for `validator: {}`, which therefore
+  skipped preflight and failed after a paid GENERATE.
+- **Missing `eval` reports as `eval`, not as a browser failure.** It is recipe
+  configuration, so it is no longer filed under the browser probe's id, no
+  longer suppressed by `skipToolChecks`, and no longer labelled
+  "EVALUATE browser (Playwright MCP)".
+
+- **Claude is the default agent preset.** Recipes that omit `agent:` now select
+  Claude instead of Cursor. Explicit `agent: cursor` remains fully supported.
+- Dropped `docs/implementation-plan.md` (historical phase notes, not product docs).
+- Removed doctor warnings for non-`E*` checklist ids and stale prompt override
+  filenames — greenfield recipes use current names; old files are ignored.
+- **Shared preflight for `doctor` and `run`.** Host tooling, git-repo usability,
+  recipe path presence, and EVALUATE browser checks live in one module so both
+  surfaces agree (including package-manager-aware EVALUATE install hints).
+
 ## 1.2.2
 
 ### Fixed

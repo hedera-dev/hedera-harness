@@ -13,16 +13,16 @@ The first {{completedSlices}} increment(s) are already implemented and committed
 {{/hasSlices}}## Read First (Updated Inputs)
 The harness re-vendored the latest extension brief into ignored runtime paths:
 - `{{prdPath}}` — updated extension requirements
-{{#hasContract}}
-- `{{contractPath}}` — acceptance assertions
-{{/hasContract}}
-- `{{skillsRoot}}/` — vendored skills (if any)
+{{#hasEval}}
+- `{{evalPath}}` — evaluate assertions
+{{/hasEval}}
+- `{{skillsRoot}}/` — every available skill, to draw from as needed
 - `GENERATION_NOTES.md` — prior notes
 
 ## Mission
 Improve the **existing** application to finish the extension.
 Do NOT rebuild from scratch or wipe unrelated working features.
-Prefer targeted edits that close gaps against the PRD/contract.
+Prefer targeted edits that close gaps against the PRD/checklist.
 
 {{hardConstraints}}
 
@@ -33,7 +33,8 @@ Prefer targeted edits that close gaps against the PRD/contract.
 
 ## Skills To Leverage
 {{#hasSkills}}
-Use only the vendored skills under `{{skillsRoot}}/`.
+Every available skill is vendored under `{{skillsRoot}}/` — read the ones this
+increment needs and ignore the rest.
 
 {{skillSummaries}}
 {{/hasSkills}}
@@ -42,7 +43,7 @@ Use only the vendored skills under `{{skillsRoot}}/`.
 {{/hasSkills}}
 
 ## Completion Standard
-Pass deterministic validation and any enabled Playwright + semantic contract checks.
+Pass deterministic validation and any enabled Playwright + evaluate checklist checks.
 
 Append a brief note to `GENERATION_NOTES.md` describing what you changed for this continue cycle.
 - Do not read or write files outside the current workspace.

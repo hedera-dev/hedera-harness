@@ -1,10 +1,11 @@
 import path from "node:path";
-import { access } from "node:fs/promises";
 import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
-import { AGENT_PRESETS } from "./specDefaults.js";
-import { resolvePackageInstallTool } from "./optionalDeps.js";
-import { isValidatorEnabled } from "./semanticValidator.js";
+import { isValidatorEnabled } from "./evaluation.js";
+import {
+  checkSharedPreflight,
+  type PreflightVerdict,
+} from "./preflight.js";
 import {
   PROJECT_PROMPTS_DIR,
   PROMPT_TEMPLATE_NAMES,
@@ -31,51 +32,73 @@ export interface DoctorReport {
 /**
  * Preflight everything a run needs, before committing to one.
  *
- * `run` already validates most of this, but only after creating a branch and
- * starting baseline commands — and a real run costs 40 minutes to two hours.
- * Learning that the agent CLI is not on PATH should take two seconds.
+ * Shared host/recipe/git/browser rules live in `checkSharedPreflight`; doctor
+ * adds recipe load, prompt overrides, bundled Playwright / SDK imports, SMOKE
+ * browser (when EVALUATE is off), and chain env.
  */
 export async function runDoctor(
   options: CliOptions,
   mode: { recipeOnly?: boolean } = {},
 ): Promise<DoctorReport> {
   const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
-  const checks: DoctorCheck[] = [];
-
-  const loaded = await loadRecipe(options.specPath, checks);
-  const spec = loaded?.spec;
+  const recipe = await loadRecipe(options.specPath);
 
   // CI checks recipes across template branches without building each app, so
   // host and project checks would all fail for reasons unrelated to the recipe.
   if (mode.recipeOnly) {
+    return {
+      checks: [recipe.check],
+      passed: recipe.check.status !== "fail",
+    };
+  }
+
+  const checks: DoctorCheck[] = [];
+
+  if (!recipe.spec) {
+    // Still report host git basics when the recipe cannot load.
+    checks.push(checkNodeVersionLocal());
+    checks.push(
+      await checkCommandLocal(
+        "git",
+        workspacePath,
+        "git is required for branch and checkpoint handling.",
+      ),
+    );
+    checks.push(await checkGitRepoLocal(workspacePath));
+    checks.push(recipe.check);
     return { checks, passed: checks.every(check => check.status !== "fail") };
   }
 
-  checks.unshift(checkNodeVersion());
-  checks.splice(
-    1,
-    0,
-    await checkCommand("git", workspacePath, "git is required for branch and checkpoint handling."),
-  );
-  checks.push(await checkGitRepo(workspacePath));
+  const shared = await checkSharedPreflight({
+    workspacePath,
+    spec: recipe.spec,
+  });
 
-  if (spec) {
-    checks.push(await checkAgentCli(spec, workspacePath));
-    checks.push(await checkPackageManager(spec, workspacePath));
-    checks.push(...(await checkRecipeFiles(spec)));
-    checks.push(await checkPromptOverrides(spec.projectRoot));
-    checks.push(...(await checkOptionalDeps(spec, workspacePath)));
-    checks.push(...checkChainEnv(spec));
-  }
+  // Order: node, git, git-repo, recipe, agent, package-manager, recipe files,
+  // prompts, optional deps / SMOKE, EVALUATE browser, chain env.
+  const early = takeShared(shared, ["node", "git", "git-repo"]);
+  const mid = takeSharedExcept(shared, ["node", "git", "git-repo", "evaluate-browser"]);
+  const evaluate = takeShared(shared, ["evaluate-browser"]);
+
+  checks.push(...early.map(toDoctorCheck));
+  checks.push(recipe.check);
+  checks.push(...mid.map(toDoctorCheck));
+  checks.push(await checkPromptOverrides(recipe.spec.projectRoot));
+  checks.push(...(await checkOptionalDeps(recipe.spec, workspacePath)));
+  checks.push(...evaluate.map(toDoctorCheck));
+  checks.push(...checkChainEnv(recipe.spec));
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
 }
 
 export function formatDoctorReport(report: DoctorReport): string {
   const symbol: Record<CheckStatus, string> = { ok: "✔", warn: "!", fail: "✘" };
+  // Only the first line of a check carries its symbol, so any continuation —
+  // in the detail or the fix — has to be indented to stay inside the report.
+  const indent = (text: string) => text.split("\n").join("\n      ");
   const lines = report.checks.map(check => {
-    const head = `  ${symbol[check.status]} ${check.name} — ${check.detail}`;
-    return check.status === "ok" || !check.fix ? head : `${head}\n      ${check.fix}`;
+    const head = `  ${symbol[check.status]} ${check.name} — ${indent(check.detail)}`;
+    return check.status === "ok" || !check.fix ? head : `${head}\n      ${indent(check.fix)}`;
   });
 
   const failed = report.checks.filter(check => check.status === "fail").length;
@@ -94,7 +117,66 @@ export function formatDoctorReport(report: DoctorReport): string {
   ].join("\n");
 }
 
-function checkNodeVersion(): DoctorCheck {
+/**
+ * `detail` is already the doctor-facing rendering — `runDetail` carries the
+ * run-oriented one. Doctor used to recover its short form by regexing the run
+ * sentence, which meant rewording a message in preflight.ts silently degraded
+ * this report with no test failing.
+ */
+function toDoctorCheck(verdict: PreflightVerdict): DoctorCheck {
+  return {
+    name: verdict.name,
+    status: verdict.status,
+    detail: verdict.detail,
+    fix: verdict.fix,
+  };
+}
+
+function takeShared(shared: PreflightVerdict[], ids: string[]): PreflightVerdict[] {
+  const wanted = new Set(ids);
+  return shared.filter(v => wanted.has(v.id));
+}
+
+function takeSharedExcept(shared: PreflightVerdict[], exclude: string[]): PreflightVerdict[] {
+  const skip = new Set(exclude);
+  return shared.filter(v => !skip.has(v.id));
+}
+
+async function loadRecipe(
+  specPath: string,
+): Promise<{
+  check: DoctorCheck;
+  spec?: TemplateSpec;
+}> {
+  try {
+    const loaded = await loadTemplateSpec(specPath);
+    return {
+      spec: loaded.spec,
+      check: {
+        name: "recipe",
+        status: loaded.warnings.length > 0 ? "warn" : "ok",
+        detail:
+          loaded.warnings.length > 0
+            ? `${loaded.specPath} loads with ${loaded.warnings.length} warning(s)`
+            : `${loaded.specPath} (schema v${loaded.spec.schemaVersion})`,
+        fix: loaded.warnings.length > 0 ? loaded.warnings.join("\n      ") : undefined,
+      },
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      check: {
+        name: "recipe",
+        status: "fail",
+        detail,
+        fix: "Fix the recipe, or bootstrap one with `hedera-harness init`.",
+      },
+    };
+  }
+}
+
+/** Fallback host checks when the recipe cannot load (shared preflight needs a spec). */
+function checkNodeVersionLocal(): DoctorCheck {
   const major = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
   return major >= 20
     ? { name: "node", status: "ok", detail: `v${process.versions.node}` }
@@ -106,40 +188,17 @@ function checkNodeVersion(): DoctorCheck {
       };
 }
 
-async function checkCommand(command: string, cwd: string, why: string): Promise<DoctorCheck> {
+async function checkCommandLocal(
+  command: string,
+  cwd: string,
+  why: string,
+): Promise<DoctorCheck> {
   return (await commandExists(command, cwd))
     ? { name: command, status: "ok", detail: "on PATH" }
     : { name: command, status: "fail", detail: "not on PATH", fix: why };
 }
 
-async function loadRecipe(
-  specPath: string,
-  checks: DoctorCheck[],
-): Promise<Awaited<ReturnType<typeof loadTemplateSpec>> | undefined> {
-  try {
-    const loaded = await loadTemplateSpec(specPath);
-    checks.push({
-      name: "recipe",
-      status: loaded.warnings.length > 0 ? "warn" : "ok",
-      detail:
-        loaded.warnings.length > 0
-          ? `${loaded.specPath} loads with ${loaded.warnings.length} warning(s)`
-          : `${loaded.specPath} (schema v${loaded.spec.schemaVersion})`,
-      fix: loaded.warnings.length > 0 ? loaded.warnings.join("\n      ") : undefined,
-    });
-    return loaded;
-  } catch (error) {
-    checks.push({
-      name: "recipe",
-      status: "fail",
-      detail: error instanceof Error ? error.message : String(error),
-      fix: "Fix the recipe, or bootstrap one with `hedera-harness init`.",
-    });
-    return undefined;
-  }
-}
-
-async function checkGitRepo(workspacePath: string): Promise<DoctorCheck> {
+async function checkGitRepoLocal(workspacePath: string): Promise<DoctorCheck> {
   try {
     const snapshot = await readGitRepoSnapshot(workspacePath);
     if (snapshot.detached) {
@@ -169,67 +228,6 @@ async function checkGitRepo(workspacePath: string): Promise<DoctorCheck> {
   }
 }
 
-async function checkAgentCli(spec: TemplateSpec, cwd: string): Promise<DoctorCheck> {
-  const command = spec.generator.command?.trim() || AGENT_PRESETS[spec.agent].command;
-
-  // Absolute paths and npx-style wrappers are not resolvable this way.
-  if (command.includes("/") || command.includes("\\")) {
-    return { name: `agent (${spec.agent})`, status: "ok", detail: `${command} (not checked)` };
-  }
-
-  return (await commandExists(command, cwd))
-    ? { name: `agent (${spec.agent})`, status: "ok", detail: `${command} on PATH` }
-    : {
-        name: `agent (${spec.agent})`,
-        status: "fail",
-        detail: `${command} is not on PATH`,
-        fix: `Install and authenticate the ${spec.agent} CLI, or set a different \`agent:\` in the recipe.`,
-      };
-}
-
-async function checkPackageManager(spec: TemplateSpec, cwd: string): Promise<DoctorCheck> {
-  const declared = spec.constraints?.packageManager?.trim();
-  const binary = declared ? (declared.split("@")[0] || declared) : await resolvePackageInstallTool({ projectRoot: cwd });
-
-  return (await commandExists(binary, cwd))
-    ? { name: "package manager", status: "ok", detail: `${binary} on PATH` }
-    : {
-        name: "package manager",
-        status: "fail",
-        detail: `${binary} is not on PATH`,
-        fix: declared
-          ? `The recipe declares constraints.packageManager: ${declared}.`
-          : "Detected from the project's lockfile.",
-      };
-}
-
-async function checkRecipeFiles(spec: TemplateSpec): Promise<DoctorCheck[]> {
-  const targets: Array<[string, string | undefined]> = [
-    ...spec.prdPaths.map((prd, i): [string, string] => [`prd${spec.prdPaths.length > 1 ? `[${i}]` : ""}`, prd]),
-    ["validators.static", spec.validators.staticPath],
-    ["validators.commands", spec.validators.commandsPath],
-    ["validators.playwright", spec.validators.playwrightPath],
-    ["contract", spec.contractPath],
-  ];
-
-  const checks: DoctorCheck[] = [];
-  for (const [label, target] of targets) {
-    if (!target) continue;
-    try {
-      await access(target);
-      checks.push({ name: label, status: "ok", detail: "present" });
-    } catch {
-      checks.push({
-        name: label,
-        status: "fail",
-        detail: `missing: ${target}`,
-        fix: "The recipe points at a file that does not exist.",
-      });
-    }
-  }
-  return checks;
-}
-
 /**
  * Report prompt overrides.
  *
@@ -256,94 +254,85 @@ async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
   };
 }
 
+/**
+ * Doctor-only host deps: bundled Playwright when SMOKE is on, bundled SDK when
+ * CHAIN is on, and SMOKE browser when EVALUATE is off. EVALUATE browser probing
+ * lives in shared preflight.
+ */
 async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-  const tool = await resolvePackageInstallTool({
-    projectRoot: cwd,
-    packageManager: spec.constraints?.packageManager,
-  });
 
-  let tier2PlaywrightAvailable = false;
+  let smokePlaywrightAvailable = false;
   if (spec.validators.playwrightPath) {
-    const dependency = await checkImport("playwright", "Tier 2 Playwright gate", tool);
+    const dependency = await checkHarnessPlaywright();
     checks.push(dependency);
-    tier2PlaywrightAvailable = dependency.status === "ok";
+    smokePlaywrightAvailable = dependency.status === "ok";
   }
-  if (isValidatorEnabled(spec)) {
-    checks.push(await checkMcpBrowser(cwd, tool));
-  } else if (tier2PlaywrightAvailable) {
-    checks.push(await checkTier2Browser(cwd));
+  if (!isValidatorEnabled(spec) && smokePlaywrightAvailable) {
+    checks.push(await checkSmokeBrowser(cwd));
   }
   if (spec.chainValidation?.enabled) {
-    checks.push(await checkImport("@hiero-ledger/sdk", "Tier 3.5 on-chain validation", tool));
+    checks.push(await checkHarnessSdk());
   }
   return checks;
 }
 
-/**
- * Start the MCP server and navigate for real.
- *
- * The Tier 2 gate passing says nothing about Tier 3: they used to resolve
- * different browsers, so the gate could go green while the validator had
- * nothing to drive — surfacing only after a paid agent session.
- */
-async function checkMcpBrowser(projectRoot: string, installTool: string): Promise<DoctorCheck> {
-  const { probeMcpBrowser } = await import("./mcpBrowser.js");
-  const probe = await probeMcpBrowser(projectRoot);
-
-  if (probe.ok) {
-    return {
-      name: "Tier 3 browser (Playwright MCP)",
-      status: "ok",
-      detail: probe.choice.detail,
-    };
-  }
-
-  return {
-    name: "Tier 3 browser (Playwright MCP)",
-    status: "fail",
-    detail: probe.error ?? "the Playwright MCP browser could not be launched",
-    fix:
-      probe.choice.source === "project-playwright"
-        ? "Reinstall the project's browser: npx playwright install chromium"
-        : `Install Playwright in the project so Tier 2 and Tier 3 share one browser: ${installTool} add -D playwright && npx playwright install chromium`,
-  };
-}
-
-async function checkTier2Browser(projectRoot: string): Promise<DoctorCheck> {
+async function checkSmokeBrowser(projectRoot: string): Promise<DoctorCheck> {
   const { launchSharedBrowser, resolveMcpBrowser } = await import("./mcpBrowser.js");
   const choice = await resolveMcpBrowser(projectRoot);
   try {
     const browser = await launchSharedBrowser(projectRoot);
     await browser.close();
     return {
-      name: "Tier 2 browser",
+      name: "SMOKE browser",
       status: "ok",
       detail: choice.detail,
     };
   } catch (error) {
     return {
-      name: "Tier 2 browser",
+      name: "SMOKE browser",
       status: "fail",
       detail: error instanceof Error ? error.message : String(error),
       fix:
         choice.source === "project-playwright"
-          ? "Reinstall the project's browser: npx playwright install chromium"
-          : "Install system Chrome, or install the project's Playwright browser: npx playwright install chromium",
+          ? "Reinstall Chromium: npx playwright install chromium"
+          : "Install system Chrome, or install Chromium: npx playwright install chromium",
     };
   }
 }
 
-async function checkImport(pkg: string, feature: string, tool: string): Promise<DoctorCheck> {
+async function checkHarnessPlaywright(): Promise<DoctorCheck> {
   try {
-    await import(pkg);
-    return { name: pkg, status: "ok", detail: `available for ${feature}` };
-  } catch {
+    await import("playwright");
     return {
-      name: pkg,
+      name: "playwright",
+      status: "ok",
+      detail: "shipped with hedera-harness",
+    };
+  } catch (error) {
+    return {
+      name: "playwright",
       status: "fail",
-      detail: `not installed, required by ${feature}`,
-      fix: `${tool} add -D ${pkg}`,
+      detail: error instanceof Error ? error.message : String(error),
+      fix: "Reinstall hedera-harness — SMOKE uses the Playwright API bundled with the CLI, not a project peer.",
+    };
+  }
+}
+
+async function checkHarnessSdk(): Promise<DoctorCheck> {
+  try {
+    await import("@hiero-ledger/sdk");
+    return {
+      name: "@hiero-ledger/sdk",
+      status: "ok",
+      detail: "shipped with hedera-harness",
+    };
+  } catch (error) {
+    return {
+      name: "@hiero-ledger/sdk",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+      fix: "Reinstall hedera-harness — CHAIN uses the SDK bundled with the CLI, not a project peer.",
     };
   }
 }

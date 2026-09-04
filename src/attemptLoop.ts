@@ -28,7 +28,7 @@ import {
   type FindingDelta,
 } from "./findingsLifecycle.js";
 import type { VendoredContext } from "./contextVendor.js";
-import type { VendoredSkill } from "./skillVendor.js";
+import type { VendoredSkill } from "./skillProvider.js";
 import type {
   ChainSigner,
   RunReport,
@@ -115,13 +115,6 @@ export function createSessionPromptStrategy(
 }
 
 /** In-place project-centric `run` attempt loop. */
-export async function runSessionAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
-  return runAttemptLoop({
-    ...input,
-    promptStrategy: input.promptStrategy ?? createSessionPromptStrategy(input),
-  });
-}
-
 export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport> {
   const {
     layout,
@@ -158,7 +151,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       workspacePath,
       layout,
       chainSigner,
-      contractRelativePath: vendoredContext.contractRelativePath,
+      evalRelativePath: vendoredContext.evalRelativePath,
     };
 
     const kind = attemptKind(isContinue, attempts, attemptsThisCycle);
@@ -207,7 +200,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
 
     await recordAttemptResult({ layout, attempt: attempts, validation, delta });
 
-    if (validation.semanticValidation?.infrastructureFailure) {
+    if (validation.evaluation?.infrastructureFailure) {
       await abortOnInfrastructureFailure({ layout, attempt: attempts, validation });
       await checkpoint({ layout, commitAttempt, workspacePath, attempt: attempts, validation });
       break;
@@ -216,15 +209,15 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     await appendHarnessNote(
       layout.notesLogPath,
       `Attempt ${attempts} validation`,
-      validation.passed
-        ? validation.semanticValidation
-          ? "Deterministic, Playwright gate, and semantic validation passed."
-          : "Deterministic validation passed."
+        validation.passed
+          ? validation.evaluation
+            ? "Deterministic, Playwright gate, and evaluate checklist passed."
+            : "Deterministic validation passed."
         : [
             formatFindingDelta(delta),
             ...validation.findings
-              .filter(finding => finding.status !== "fixed")
-              .map(finding => `- [${finding.category}] ${finding.message}`),
+              .filter(f => f.status !== "fixed")
+              .map(f => `- [${f.category}] ${f.message}`),
           ].join("\n"),
     );
 

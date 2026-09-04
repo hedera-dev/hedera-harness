@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Verify the Claude semantic tier end to end with a real agent.
+# Verify the Claude EVALUATE path end to end with a real agent.
 #
-# Everything around the validator is already covered by test/runtime-tiers.test.mjs.
+# Everything around the validator is already covered by test/browser/runtime-tiers.test.mjs.
 # The one thing a fixture cannot answer is whether a real Claude session picks up
 # the --mcp-config the harness hands it and actually drives Chromium.
 #
@@ -12,20 +12,20 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${TIER3_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/tier3.XXXXXX")}"
+WORK="${EVALUATE_DIR:-${TIER3_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/evaluate-claude.XXXXXX")}}"
 # Outside the workspace: a log written inside it would dirty the tree and the
 # run refuses to start on a dirty tree.
-RUN_LOG="${TIER3_LOG:-${WORK%/}-run.log}"
-KEEP="${TIER3_KEEP:-1}"
+RUN_LOG="${EVALUATE_LOG:-${TIER3_LOG:-${WORK%/}-run.log}}"
+KEEP="${EVALUATE_KEEP:-${TIER3_KEEP:-1}}"
 
 command -v claude >/dev/null 2>&1 || { echo "FAIL: claude is not on PATH" >&2; exit 1; }
 
 echo "==> workspace: $WORK"
-mkdir -p "$WORK/.harness/validators"
+mkdir -p "$WORK/.harness/validators" "$WORK/.harness/evals"
 cd "$WORK"
 
 cat > package.json <<'JSON'
-{ "name": "tier3-fixture", "version": "1.0.0", "private": true }
+{ "name": "evaluate-claude-fixture", "version": "1.0.0", "private": true }
 JSON
 
 # A page whose content can only be confirmed by actually loading it.
@@ -36,7 +36,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/html" });
     res.end(`<html><body>
       <h1>Hedera Consensus Service</h1>
-      <p id="marker">HARNESS-TIER3-OK</p>
+      <p id="marker">HARNESS-EVALUATE-OK</p>
       <p>This page explains how the demo submits messages to a topic.</p>
     </body></html>`);
     return;
@@ -59,7 +59,7 @@ printf '{"fileAssertions":{"required":["server.mjs"]}}\n' > .harness/validators/
 printf '{"commands":[{"name":"install","command":"true"}]}\n' > .harness/validators/yarn.json
 
 cat > .harness/validators/playwright-smoke.yaml <<'YAML'
-name: tier3-smoke
+name: evaluate-smoke
 server:
   command: node server.mjs
   url: http://127.0.0.1:0
@@ -73,15 +73,15 @@ YAML
 
 # The assertion names a string only visible by loading the page, so a validator
 # that cannot reach the browser has to fail it rather than guess.
-cat > .harness/acceptance-contract.json <<'JSON'
+cat > .harness/evals/learn.json <<'JSON'
 {
   "assertions": [
     {
-      "id": "C1",
+      "id": "E1",
       "journey": "browse",
       "route": "/learn",
       "severity": "critical",
-      "statement": "The /learn page renders a heading mentioning Hedera Consensus Service and shows the marker text HARNESS-TIER3-OK.",
+      "statement": "The /learn page renders a heading mentioning Hedera Consensus Service and shows the marker text HARNESS-EVALUATE-OK.",
       "howToVerify": "Navigate to /learn in the browser, read the rendered page, and confirm both the heading and the marker text are visible.",
       "verifiableWithoutCredentials": true
     }
@@ -90,11 +90,11 @@ cat > .harness/acceptance-contract.json <<'JSON'
 JSON
 
 cat > .harness/spec.yaml <<JSON
-schemaVersion: 2
-name: tier3-verify
+schemaVersion: 3
+name: evaluate-claude-verify
 agent: claude
-contract: .harness/acceptance-contract.json
-skills: []
+prd: .harness/prd.md
+eval: .harness/evals/learn.json
 generator:
   provider: command
   command: node
@@ -115,7 +115,7 @@ JSON
 
 git init -q -b main .
 git add -A
-git -c user.email=tier3@local -c user.name=Tier3 commit -q --no-gpg-sign -m "fixture"
+git -c user.email=evaluate@local -c user.name=evaluate commit -q --no-gpg-sign -m "fixture"
 
 echo "==> running (validator is a real Claude session)"
 set +e
@@ -127,16 +127,16 @@ echo
 echo "==> verdict"
 RUN_DIR="$(ls -1d "$WORK"/.harness/runs/* 2>/dev/null | head -1)"
 node --input-type=module -e '
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 const runDir = process.argv[1];
 const report = JSON.parse(readFileSync(path.join(runDir, "reports/report.json"), "utf8"));
-const sem = report.semanticValidation;
+const evaluation = report.evaluation;
 console.log("  playwrightGate:", report.validation?.playwrightGate?.passed);
-console.log("  semantic passed:", sem?.passed);
-console.log("  summary:", sem?.verdict?.summary ?? "(none)");
-if (sem?.findings?.length) {
-  for (const f of sem.findings) console.log("  finding:", f.message);
+console.log("  evaluation passed:", evaluation?.passed);
+console.log("  summary:", evaluation?.verdict?.summary ?? "(none)");
+if (evaluation?.findings?.length) {
+  for (const f of evaluation.findings) console.log("  finding:", f.message);
 }
 // Did the agent actually reach the browser? Tool names appear in the raw
 // stream log, not the activity summary — scanning only the latter reported a
@@ -148,14 +148,14 @@ let sawMarker = false;
 for (const f of validatorLogs) {
   const text = readFileSync(path.join(logs, f), "utf8");
   navigations += (text.match(/mcp__playwright__browser_navigate/g) || []).length;
-  if (text.includes("HARNESS-TIER3-OK")) sawMarker = true;
+  if (text.includes("HARNESS-EVALUATE-OK")) sawMarker = true;
 }
 console.log("  browser_navigate calls:", navigations);
 console.log("  page marker observed:", sawMarker);
 
 // A pass is only meaningful if the agent actually loaded the page: the marker
 // exists nowhere but the rendered HTML.
-const verified = navigations > 0 && sawMarker && sem?.passed === true;
+const verified = navigations > 0 && sawMarker && evaluation?.passed === true;
 console.log(verified
   ? "\n  MCP VERIFIED: the validator drove a real browser and read the page."
   : "\n  MCP NOT VERIFIED: see the validator log under " + logs);

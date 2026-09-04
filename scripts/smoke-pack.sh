@@ -47,7 +47,9 @@ else
 fi
 
 yarn config set nodeLinker node-modules
-yarn add "hedera-harness@file:${TGZ_PATH}"
+# Skip Playwright's Chromium download — SMOKE/EVALUATE use system Chrome when
+# no browser binary is on disk. The Node API must still resolve.
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 yarn add "hedera-harness@file:${TGZ_PATH}"
 
 echo "==> yarn exec hedera-harness --help"
 HELP_OUT="$(yarn exec hedera-harness --help)"
@@ -63,20 +65,24 @@ if ! grep -Eq "Usage:|run <spec>|validate" <<<"$HELP_OUT"; then
   exit 1
 fi
 
-# Confirm optional peers were not pulled in for a bare install.
-if [[ -d node_modules/playwright ]]; then
-  echo "Smoke failed: playwright should not be installed for a default gate 0–1 consumer" >&2
-  exit 1
-fi
-if [[ -d node_modules/@hiero-ledger ]]; then
-  echo "Smoke failed: @hiero-ledger/sdk should not be installed for a default gate 0–1 consumer" >&2
+# SMOKE ships playwright with the harness. A bare install must resolve it
+# without a second yarn add in the consumer project.
+if ! node --input-type=module -e "await import('playwright')"; then
+  echo "Smoke failed: playwright must resolve after installing hedera-harness" >&2
   exit 1
 fi
 
-# Bundled skills index must be present next to the installed package.
+# CHAIN ships @hiero-ledger/sdk with the harness. A bare install must resolve it
+# without a second yarn add in the consumer project.
+if ! node --input-type=module -e "await import('@hiero-ledger/sdk')"; then
+  echo "Smoke failed: @hiero-ledger/sdk must resolve after installing hedera-harness" >&2
+  exit 1
+fi
+
+# Bundled prompts and skeletons must be present next to the installed package.
 PKG_DIR="$(node --input-type=module -e "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url); console.log(require('path').dirname(require.resolve('hedera-harness/package.json')));")"
-if [[ ! -f "$PKG_DIR/skills-index.json" ]]; then
-  echo "Smoke failed: installed package missing skills-index.json at $PKG_DIR" >&2
+if [[ ! -d "$PKG_DIR/prompts" ]]; then
+  echo "Smoke failed: installed package missing prompts/ at $PKG_DIR" >&2
   exit 1
 fi
 

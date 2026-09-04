@@ -12,8 +12,8 @@ const {
   PLAYWRIGHT_MCP_PACKAGE,
   HARNESS_MCP_MARKER,
 } = await import(pathToFileURL(path.resolve("dist/mcpBrowser.js")).href);
-const { detectSemanticInfrastructureFailure } = await import(
-  pathToFileURL(path.resolve("dist/semanticInfra.js")).href
+const { detectEvalInfrastructureFailure } = await import(
+  pathToFileURL(path.resolve("dist/evalInfra.js")).href
 );
 
 test("the MCP package is pinned, never @latest", () => {
@@ -23,7 +23,7 @@ test("the MCP package is pinned, never @latest", () => {
   assert.doesNotMatch(PLAYWRIGHT_MCP_PACKAGE, /latest/);
 });
 
-test("the resolved browser prefers the project's Playwright, else system Chrome", async () => {
+test("the resolved browser prefers Playwright Chromium, else system Chrome", async () => {
   const root = await makeTestTempDir("mcp-browser-");
   const choice = await resolveMcpBrowser(root);
 
@@ -31,7 +31,7 @@ test("the resolved browser prefers the project's Playwright, else system Chrome"
   assert.ok(choice.args.includes(HARNESS_MCP_MARKER), "carries the harness marker");
 
   if (choice.source === "project-playwright") {
-    // Tier 2 and Tier 3 must drive the same binary, or a route can render for
+    // SMOKE and EVALUATE must drive the same binary, or a route can render for
     // one and not the other.
     assert.ok(choice.executablePath, "records the shared browser path");
     const at = choice.args.indexOf("--executable-path");
@@ -61,7 +61,7 @@ test("no resolution asks for a browser that would need its own download", async 
   }
 });
 
-test("a project Playwright browser is selected by executable path, not an undocumented channel", () => {
+test("a Playwright Chromium browser is selected by executable path, not an undocumented channel", () => {
   const args = mcpArgsForBrowser({
     source: "project-playwright",
     executablePath: "/existing/playwright/chromium",
@@ -73,7 +73,7 @@ test("a project Playwright browser is selected by executable path, not an undocu
   assert.equal(args.indexOf("--browser"), -1);
 });
 
-test("Tier 2 launches the same browser choice as Tier 3", () => {
+test("SMOKE launches the same browser choice as EVALUATE", () => {
   assert.deepEqual(
     playwrightLaunchOptionsForBrowser({
       source: "project-playwright",
@@ -115,7 +115,7 @@ test("the MCP config directs session files away from the project", async () => {
   const configPath = path.join(root, ".harness", "runs", "r1", "mcp", "playwright.json");
 
   const { writePlaywrightMcpConfig } = await import(
-    pathToFileURL(path.resolve("dist/contextVendor.js")).href
+    pathToFileURL(path.resolve("dist/mcpBrowser.js")).href
   );
   await writePlaywrightMcpConfig(configPath, root);
 
@@ -133,11 +133,11 @@ test("the MCP config directs session files away from the project", async () => {
   );
 });
 
-/** Builds a failing semantic result shaped like the validator's real output. */
-function semanticFailure(findings, summary) {
+/** Builds a failing evaluation result shaped like the validator's real output. */
+function evalFailure(findings, summary) {
   return {
     passed: false,
-    findings: findings.map(([id, message]) => ({ id, category: "semantic", message })),
+    findings: findings.map(([id, message]) => ({ id, category: "eval", message })),
     verdict: { summary, issues: findings.map(([id, message]) => ({ id, message })) },
   };
 }
@@ -145,52 +145,52 @@ function semanticFailure(findings, summary) {
 test("a missing browser is classified as infrastructure, not app defects", () => {
   // Verbatim from the run that burned three attempts repairing code that was
   // never broken.
-  const real = semanticFailure(
+  const real = evalFailure(
     [
       [
-        "semantic:no-browser-c1",
-        "critical [C1] (/tokens): Could not verify that /tokens renders, because no browser session could be started.",
+        "eval:no-browser-e1",
+        "critical [E1] (/tokens): Could not verify that /tokens renders, because no browser session could be started.",
       ],
-      ["semantic:no-browser-c2", "critical [C2] (/tokens): Could not verify the operation tabs."],
-      ["semantic:no-browser-c3", "major [C3] (/tokens): Could not verify the connect affordance."],
+      ["eval:no-browser-e2", "critical [E2] (/tokens): Could not verify the operation tabs."],
+      ["eval:no-browser-e3", "major [E3] (/tokens): Could not verify the connect affordance."],
     ],
     'Evaluation could not be performed: the Playwright MCP browser is not installed in this environment. Every browser_navigate call failed at browser launch with "Browser \\"chrome-for-testing\\" is not installed; expected executable at /Users/x/Library/Caches/ms-playwright/chromium-1237/...".',
   );
 
-  assert.ok(detectSemanticInfrastructureFailure(real), "must abort rather than repair");
+  assert.ok(detectEvalInfrastructureFailure(real), "must abort rather than repair");
 });
 
 test("the raw MCP launch error alone is enough to classify", () => {
-  const bare = semanticFailure(
+  const bare = evalFailure(
     [
       [
-        "semantic:c1",
+        "eval:e1",
         'browser_navigate failed: Browser "chrome-for-testing" is not installed; expected executable at /Users/x/Library/Caches/ms-playwright/chromium-1237/chrome-mac-arm64/Google Chrome for Testing',
       ],
-      ["semantic:c2", "Assertion could not be checked."],
-      ["semantic:c3", "Assertion could not be checked."],
+      ["eval:e2", "Assertion could not be checked."],
+      ["eval:e3", "Assertion could not be checked."],
     ],
     "Could not complete evaluation.",
   );
 
   assert.ok(
-    detectSemanticInfrastructureFailure(bare),
+    detectEvalInfrastructureFailure(bare),
     "classification must not depend on the agent narrating the failure well",
   );
 });
 
 test("a genuine app failure is still treated as an app defect", () => {
-  const appBug = semanticFailure(
+  const appBug = evalFailure(
     [
-      ["semantic:c1", "critical [C1] (/tokens): The token list renders an empty div with no headings."],
-      ["semantic:c2", "major [C2] (/tokens): The mint tab is missing an amount input."],
-      ["semantic:c3", "major [C3] (/): Header navigation does not link to /tokens."],
+      ["eval:e1", "critical [E1] (/tokens): The token list renders an empty div with no headings."],
+      ["eval:e2", "major [E2] (/tokens): The mint tab is missing an amount input."],
+      ["eval:e3", "major [E3] (/): Header navigation does not link to /tokens."],
     ],
     "Three assertions failed against the running app.",
   );
 
   assert.equal(
-    detectSemanticInfrastructureFailure(appBug),
+    detectEvalInfrastructureFailure(appBug),
     undefined,
     "repairing real defects must not be mistaken for an infrastructure abort",
   );

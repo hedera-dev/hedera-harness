@@ -7,9 +7,9 @@ Repair scope: **broad** (structural and/or mixed validation failures).
 ## Read First (Workspace Memory)
 Before changing anything, read these files in the current workspace:
 - `{{prdPath}}` — product requirements
-{{#hasContract}}
-- `{{contractPath}}` — numbered acceptance assertions the validator will grade against
-{{/hasContract}}
+{{#hasEval}}
+- `{{evalPath}}` — numbered evaluate assertions the validator will grade against
+{{/hasEval}}
 - `GENERATION_NOTES.md` — prior generator/repair notes (create it if missing)
 
 ## Repair Mission
@@ -29,18 +29,18 @@ Fix only the validation findings below. Do not redesign unrelated parts of the a
 
 ## Validation Findings
 {{findingsList}}
-{{#hasSemantic}}
+{{#hasEvalFindings}}
 
 ## Failed Assertions (detail)
-{{semanticTargets}}
-{{/hasSemantic}}
+{{evalTargets}}
+{{/hasEvalFindings}}
 
 ## Repair Rules
 - Keep Yarn-only workflows.
 - Do not add secrets or `.env` files.
 - Preserve scaffold-hbar template conventions.
-- Fix findings in priority order: [agent] process failures, [commands] build/lint, [playwright] runtime gate, [semantic] contract assertions, then [files]/[static]/[secret].
-- Do NOT attempt to fix [semantic-infra] findings — those are harness/tooling failures (MCP/browser), not app defects.
+- Fix findings in priority order: [agent] process failures, [commands] build/lint, [playwright] runtime gate, [eval] checklist assertions, then [files]/[static]/[secret].
+- Do NOT attempt to fix [eval-infra] findings — those are harness/tooling failures (MCP/browser), not app defects.
 - Re-run the relevant validation mentally before finishing.
 
 Append a brief repair note to `GENERATION_NOTES.md` at the workspace root, describing what failed and what you changed.

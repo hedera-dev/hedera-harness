@@ -18,7 +18,6 @@ export function parseValidatorVerdict(agentStdout: string): ValidatorVerdict | n
   }
 
   candidates.push(agentStdout);
-  candidates.push(...extractFencedJsonBlocks(agentStdout));
 
   for (const candidate of candidates) {
     const verdict = tryParseVerdict(candidate);
@@ -39,6 +38,11 @@ function extractFencedJsonBlocks(text: string): string[] {
   return blocks;
 }
 
+/**
+ * Claude often wraps the verdict in a ```json fence, then keeps writing notes
+ * that contain `{` `}` (e.g. `enc: {alg: aes-256-gcm, ...}`). First-brace to
+ * last-brace swallows that prose and JSON.parse fails.
+ */
 function tryParseVerdict(text: string): ValidatorVerdict | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
@@ -46,13 +50,59 @@ function tryParseVerdict(text: string): ValidatorVerdict | null {
   const direct = tryParseObject(trimmed);
   if (direct) return direct;
 
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return tryParseObject(trimmed.slice(firstBrace, lastBrace + 1));
+  for (const block of extractFencedJsonBlocks(trimmed)) {
+    const fromFence = tryParseObject(block);
+    if (fromFence) return fromFence;
+  }
+
+  for (const object of extractBalancedJsonObjects(trimmed)) {
+    const fromObject = tryParseObject(object);
+    if (fromObject) return fromObject;
   }
 
   return null;
+}
+
+function extractBalancedJsonObjects(text: string): string[] {
+  const objects: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    const end = findMatchingBrace(text, i);
+    if (end < 0) continue;
+    objects.push(text.slice(i, end + 1));
+  }
+  return objects;
+}
+
+function findMatchingBrace(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (char === "\\") {
+        escape = true;
+        continue;
+      }
+      if (char === "\"") inString = false;
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 function tryParseObject(text: string): ValidatorVerdict | null {
@@ -95,7 +145,7 @@ function normalizeIssue(value: unknown): ValidatorIssue | null {
 
   return {
     id: issue.id,
-    contractAssertion: typeof issue.contractAssertion === "string" ? issue.contractAssertion : undefined,
+    assertion: typeof issue.assertion === "string" ? issue.assertion : undefined,
     severity,
     route: typeof issue.route === "string" ? issue.route : undefined,
     message: issue.message,

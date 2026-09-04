@@ -1,6 +1,6 @@
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { importHieroSdk, type OptionalDepInstallOptions } from "../optionalDeps.js";
+import { importHieroSdk } from "../optionalDeps.js";
 import type { ChainSigner, ChainValidationConfig } from "../types.js";
 
 type HieroSdk = typeof import("@hiero-ledger/sdk");
@@ -21,7 +21,6 @@ interface PersistedChainSigner extends ChainSigner {
 export async function provisionChainSigner(
   config: ChainValidationConfig,
   runDirectory: string,
-  installOptions: OptionalDepInstallOptions = {},
 ): Promise<{ signer: ChainSigner; reused: boolean; toppedUpHbar?: number; replacedDeleted?: boolean }> {
   if (!config.enabled) {
     throw new Error("provisionChainSigner called with chainValidation.enabled=false");
@@ -33,8 +32,8 @@ export async function provisionChainSigner(
     );
   }
 
-  // Fail with a gate-specific install message before any network calls.
-  await importHieroSdk(installOptions);
+  // Confirm the SDK the harness ships is loadable before any network calls.
+  await importHieroSdk();
 
   const persistPath = chainSignerPath(runDirectory);
   const existing = await readPersistedSigner(persistPath);

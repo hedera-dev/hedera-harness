@@ -4,23 +4,33 @@ import { executeCommand } from "../command.js";
 import { pathExists } from "../fsUtils.js";
 import type {
   CommandExecutionResult,
-  PlaywrightGateResult,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
 } from "../types.js";
-import { runPlaywrightGate } from "./playwrightGate.js";
 import {
   computeInstallFingerprint,
   readCachedInstallFingerprint,
   writeCachedInstallFingerprint,
 } from "./installFingerprint.js";
+import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "../runtimePaths.js";
 
 export interface DeterministicValidationOptions {
-  /** When true, Playwright gate is omitted (caller runs it with a shared dev server). */
-  skipPlaywrightGate?: boolean;
   /** Persist install fingerprint across attempts under this run cache path. */
   installCachePath?: string;
+}
+
+/**
+ * Whether ASSERT left the workspace clean enough to pay for a Playwright SMOKE boot.
+ *
+ * Agent findings are ignored so a failed GENERATE can still run ASSERT/SMOKE for
+ * deterministic context. Every other finding (files, static, secrets, commands)
+ * blocks the boot — shared by `run` and `validate`.
+ */
+export function isReadyForPlaywrightSmoke(
+  validation: Pick<ValidationResult, "findings">,
+): boolean {
+  return validation.findings.every(finding => finding.category === "agent");
 }
 
 interface StaticValidatorConfig {
@@ -70,10 +80,10 @@ const SCAN_SKIP_DIRS = new Set([
   "artifacts",
   "cache",
   ".harness",
-  ".harness-context",
-  ".harness-skills",
+  ISOLATED_CONTEXT_DIR,
+  ISOLATED_SKILLS_DIR,
   ".harness-semantic",
-  ".skill-cache",
+  SKILL_CACHE_DIRNAME,
 ]);
 
 export async function runDeterministicValidation(
@@ -97,25 +107,10 @@ export async function runDeterministicValidation(
   findings.push(...commandValidation.findings);
   commandResults.push(...commandValidation.commandResults);
 
-  let playwrightGate: PlaywrightGateResult | undefined;
-  if (spec.validators.playwrightPath && !options.skipPlaywrightGate) {
-    if (commandValidation.findings.length === 0) {
-      console.log("[hedera-harness] Running thin Playwright gate...");
-      const gate = await runPlaywrightGate(workspacePath, spec.validators.playwrightPath);
-      playwrightGate = gate.result;
-      findings.push(...gate.findings);
-    } else {
-      console.log(
-        "[hedera-harness] Skipping Playwright gate because yarn command validation failed.",
-      );
-    }
-  }
-
   return {
     passed: findings.length === 0,
     findings,
     commandResults,
-    playwrightGate,
   };
 }
 

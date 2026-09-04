@@ -8,7 +8,7 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 const { loadTemplateSpec } = await import(pathToFileURL(path.resolve("dist/specLoader.js")).href);
 const { AGENT_PRESETS } = await import(pathToFileURL(path.resolve("dist/specDefaults.js")).href);
 const { writePlaywrightMcpConfig, withPlaywrightMcpSnapshot } = await import(
-  pathToFileURL(path.resolve("dist/contextVendor.js")).href
+  pathToFileURL(path.resolve("dist/mcpBrowser.js")).href
 );
 
 const MINIMAL_BASELINE = `baseline:
@@ -54,7 +54,7 @@ test("cursor reads a workspace file; claude takes a config path", () => {
 });
 
 test("agent preset drives the generator invocation and carries onto the spec", async () => {
-  const specPath = await writeRecipe(`schemaVersion: 2
+  const specPath = await writeRecipe(`schemaVersion: 3
 name: claude-run
 agent: claude
 ${MINIMAL_BASELINE}`);
@@ -67,7 +67,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("agent still governs MCP and models when generator is overridden", async () => {
-  const specPath = await writeRecipe(`schemaVersion: 2
+  const specPath = await writeRecipe(`schemaVersion: 3
 name: override
 agent: claude
 generator:
@@ -83,7 +83,7 @@ ${MINIMAL_BASELINE}`);
 });
 
 test("enabling the validator needs no second copy of the agent invocation", async () => {
-  const specPath = await writeRecipe(`schemaVersion: 2
+  const specPath = await writeRecipe(`schemaVersion: 3
 name: validator-inherits
 agent: claude
 validator:
@@ -101,7 +101,7 @@ test("writePlaywrightMcpConfig produces a standalone config outside the project"
   const root = await makeTestTempDir("mcp-standalone-");
   const target = path.join(root, "runs", "abc", "mcp", "playwright.json");
 
-  await writePlaywrightMcpConfig(target);
+  await writePlaywrightMcpConfig(target, root);
 
   const config = JSON.parse(await readFile(target, "utf8"));
   assert.ok(config.mcpServers.playwright.command, "playwright server must be declared");

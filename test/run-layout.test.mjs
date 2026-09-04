@@ -13,7 +13,6 @@ const {
   resolveArtifactDirsForWorkspace,
   resolveRunDirectoryForWorkspace,
   lastAttemptNumber,
-  nextCycleNumber,
   LAYOUT_MODE_IN_PLACE_RUN,
 } = await import(distUrl);
 
@@ -48,23 +47,6 @@ test("in-place-run layout keeps code in cwd and artifacts under .harness/runs/<i
   assert.equal(reopened.mode, LAYOUT_MODE_IN_PLACE_RUN);
   assert.equal(reopened.workspacePath, path.resolve(cwd));
   assert.equal(reopened.runDirectory, layout.runDirectory);
-});
-
-test("readLayoutMeta normalizes the legacy in-place-extend mode", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-legacy-mode-"));
-  const layout = await createSessionLayout(cwd, "legacy", loggingPaths(cwd));
-
-  await writeFile(
-    path.join(layout.runDirectory, "layout.json"),
-    JSON.stringify({
-      schemaVersion: 1,
-      mode: "in-place-extend",
-      workspacePath: path.resolve(cwd),
-    }),
-  );
-
-  const meta = await readLayoutMeta(layout.runDirectory);
-  assert.equal(meta.mode, LAYOUT_MODE_IN_PLACE_RUN);
 });
 
 test("readLayoutMeta rejects an unknown layout mode", async () => {
@@ -103,12 +85,11 @@ test("workspace without harness metadata falls back to ad-hoc artifact dirs", as
   assert.equal(dirs.promptsDirectory, path.join(cwd, ".harness-semantic", "prompts"));
 });
 
-test("continue attempt and cycle numbering accumulate across kicks", async () => {
+test("lastAttemptNumber accumulates across kicks and reopen", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "harness-continue-nums-"));
   const layout = await createSessionLayout(cwd, "continue-demo", loggingPaths(cwd));
 
   assert.equal(await lastAttemptNumber(layout.logsDirectory), 0);
-  assert.equal(await nextCycleNumber(layout.reportsDirectory), 1);
 
   await writeFile(path.join(layout.logsDirectory, "generator-attempt-1.log"), "ok\n");
   await writeFile(path.join(layout.logsDirectory, "validation-attempt-1.json"), "{}\n");
@@ -116,23 +97,13 @@ test("continue attempt and cycle numbering accumulate across kicks", async () =>
   await writeFile(path.join(layout.reportsDirectory, "report.json"), JSON.stringify({}));
 
   assert.equal(await lastAttemptNumber(layout.logsDirectory), 2);
-  assert.equal(await nextCycleNumber(layout.reportsDirectory), 1);
-
-  await writeFile(path.join(layout.reportsDirectory, "cycle-1.json"), "{}\n");
-  assert.equal(await nextCycleNumber(layout.reportsDirectory), 2);
 
   const reopened = await openRunLayout(layout.runDirectory, loggingPaths(cwd));
   assert.equal(reopened.mode, LAYOUT_MODE_IN_PLACE_RUN);
-  const startingAttempt = (await lastAttemptNumber(reopened.logsDirectory)) + 1;
-  const cycle = await nextCycleNumber(reopened.reportsDirectory);
-  assert.equal(startingAttempt, 3);
-  assert.equal(cycle, 2);
+  assert.equal((await lastAttemptNumber(reopened.logsDirectory)) + 1, 3);
 
-  // Simulate a continue kick writing a cycle report plus another attempt.
   await writeFile(path.join(reopened.logsDirectory, "continue-cycle-2-attempt-3.txt"), "prompt\n");
-  await writeFile(path.join(reopened.reportsDirectory, "cycle-2.json"), "{}\n");
   assert.equal(await lastAttemptNumber(reopened.logsDirectory), 3);
-  assert.equal(await nextCycleNumber(reopened.reportsDirectory), 3);
 });
 
 test("layout.json round-trips an explicit workspace path", async () => {

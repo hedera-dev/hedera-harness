@@ -2,17 +2,16 @@ import { access } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
-  HARNESS_EXTEND_BRANCH_PREFIX,
   HARNESS_RUN_BRANCH_PREFIX,
   buildRunBranchName,
   isHarnessBranch,
   slugifyForBranch,
 } from "./branchDetection.js";
+import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "./runtimePaths.js";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { ValidationFinding } from "./types.js";
 
 export {
-  HARNESS_EXTEND_BRANCH_PREFIX,
   HARNESS_RUN_BRANCH_PREFIX,
   buildRunBranchName,
   isHarnessBranch,
@@ -24,9 +23,9 @@ export const HARNESS_RUNTIME_PATH_PREFIXES = [
   ".harness/runs/",
   ".harness/cache/",
   ".harness/runtime/",
-  ".harness-skills/",
-  ".harness-context/",
-  ".skill-cache/",
+  `${ISOLATED_SKILLS_DIR}/`,
+  `${ISOLATED_CONTEXT_DIR}/`,
+  `${SKILL_CACHE_DIRNAME}/`,
   "node_modules/",
   "dist/",
   "build/",
@@ -40,9 +39,9 @@ export const HARNESS_RUNTIME_PATH_NAMES = new Set([
   ".harness/runs",
   ".harness/cache",
   ".harness/runtime",
-  ".harness-skills",
-  ".harness-context",
-  ".skill-cache",
+  ISOLATED_SKILLS_DIR,
+  ISOLATED_CONTEXT_DIR,
+  SKILL_CACHE_DIRNAME,
   "node_modules",
   "dist",
   "build",

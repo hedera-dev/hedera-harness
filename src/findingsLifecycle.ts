@@ -1,19 +1,9 @@
 import type { ValidationFinding } from "./types.js";
 
-/**
- * Per-attempt movement in the finding set.
- *
- * A raw pass/fail plus a count answers "did it work"; it does not answer "is the
- * repair loop converging". Comparing finding ids between attempts distinguishes
- * an agent closing issues from one trading them for new ones — which is the
- * signal for whether spending another attempt is worthwhile.
- */
+/** Per-attempt movement in the finding set (convergence, not just pass/fail). */
 export interface FindingDelta {
-  /** Ids still failing after this attempt. */
   open: string[];
-  /** Ids open before this attempt and no longer reported. */
   fixed: string[];
-  /** Ids reported for the first time this attempt. */
   introduced: string[];
 }
 
@@ -36,11 +26,7 @@ export function computeFindingDelta(
   };
 }
 
-/**
- * Stamp findings with their lifecycle status, and re-surface previously open
- * findings that this attempt cleared so a report shows what improved rather than
- * only what is left.
- */
+/** Stamp status and re-surface findings this attempt closed so the report shows progress. */
 export function applyFindingStatus(
   findings: ValidationFinding[],
   delta: FindingDelta,
@@ -53,7 +39,6 @@ export function applyFindingStatus(
     .filter(finding => fixed.has(finding.id))
     .map(finding => ({ ...finding, status: "fixed" as const }));
 
-  // Deduplicate: a previously open finding can appear once per prior attempt.
   const seen = new Set<string>();
   const uniqueCarried = carried.filter(finding => {
     if (seen.has(finding.id)) return false;
@@ -64,7 +49,6 @@ export function applyFindingStatus(
   return [...open, ...uniqueCarried];
 }
 
-/** One-line convergence summary for the console and run notes. */
 export function formatFindingDelta(delta: FindingDelta): string {
   if (delta.open.length === 0 && delta.fixed.length === 0) {
     return "no findings";

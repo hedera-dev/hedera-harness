@@ -21,10 +21,10 @@ Do not read or copy from harness run directories, seed clones, or repositories o
 
 ## Workspace Context Files (ignored runtime; do not commit)
 The PRD is vendored at `{{prdPath}}`.
-{{#hasContract}}
-The acceptance contract is vendored at `{{contractPath}}`.
-{{/hasContract}}
-Skills (if any) are under `{{skillsRoot}}/`.
+{{#hasEval}}
+The evaluate checklist is vendored at `{{evalPath}}`.
+{{/hasEval}}
+The available skills are under `{{skillsRoot}}/`.
 
 {{hardConstraints}}
 
@@ -35,7 +35,9 @@ Skills (if any) are under `{{skillsRoot}}/`.
 
 ## Skills To Leverage
 {{#hasSkills}}
-Use only the vendored skills under `{{skillsRoot}}/`.
+Every available skill is vendored under `{{skillsRoot}}/` — this is a library, not a
+checklist. Read the ones the PRD actually calls for and ignore the rest; a skill for a
+protocol this feature does not use is not a hint that you should use it.
 
 {{skillSummaries}}
 {{/hasSkills}}
@@ -49,4 +51,4 @@ After making meaningful changes, append a short note to `GENERATION_NOTES.md` at
 - Do not delete or rewrite unrelated existing features.
 
 ## Completion Standard
-The extended app should pass the extension's deterministic validators and any enabled Playwright/semantic gates.
+The extended app should pass the extension's deterministic validators and any enabled Playwright/evaluate gates.

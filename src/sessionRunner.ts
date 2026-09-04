@@ -5,13 +5,13 @@ import {
   appendHarnessNote,
   writeStatusFile,
 } from "./runArtifacts.js";
-import { logPhase, runSessionAttemptLoop } from "./attemptLoop.js";
+import { logPhase, runAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
-import { resolveSkillPaths } from "./skillResolver.js";
-import { vendorSkills } from "./skillVendor.js";
+import { selectActiveSlice } from "./sliceSelection.js";
+import { provideSkills } from "./skillProvider.js";
 import {
   assertChainValidationOperatorEnv,
   provisionChainSigner,
@@ -159,8 +159,9 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   logPhase("Using in-place workspace", workspaceRoot);
 
   try {
-    const resolvedSkillPaths = await resolveSkillPaths(spec.skills ?? [], projectRoot);
-    const vendoredSkills = await vendorSkills(workspaceRoot, resolvedSkillPaths, {
+    const vendoredSkills = await provideSkills({
+      projectRoot,
+      workspacePath: workspaceRoot,
       skillsDir: HARNESS_SKILLS_DIR,
     });
     await appendHarnessLog(layout.jsonlLogPath, {
@@ -170,15 +171,12 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       workspaceSkillsDir: path.join(workspaceRoot, HARNESS_SKILLS_DIR),
     });
     logPhase(
-      "Skills vendored into ignored runtime",
-      `${HARNESS_SKILLS_DIR} (${vendoredSkills.length} files)`,
+      "Product skills vendored into ignored runtime",
+      `${HARNESS_SKILLS_DIR} (${vendoredSkills.length} skill(s))`,
     );
 
     if (spec.chainValidation?.enabled) {
-      const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory, {
-        projectRoot: layout.workspacePath,
-        packageManager: spec.constraints?.packageManager,
-      });
+      const provisioned = await provisionChainSigner(spec.chainValidation, layout.runDirectory);
       chainSigner = provisioned.signer;
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "chain_signer_provisioned",
@@ -230,30 +228,31 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     let attemptCursor = startingAttempt;
 
     for (let sliceIndex = firstSlice; sliceIndex < sliceCount; sliceIndex += 1) {
-      const slice = { index: sliceIndex, count: sliceCount };
+      const active = selectActiveSlice(spec, sliceIndex);
+      const slice = { index: active.index, count: active.count };
 
       // Re-vendor per increment so the agent sees only the brief it is delivering.
       const vendoredContext = await vendorHarnessContext(
         workspaceRoot,
-        { prdPath: spec.prdPaths[sliceIndex], contractPath: spec.contractPath },
+        { prdPath: active.prdPath, evalPath: active.evalPath },
         { contextDir: HARNESS_CONTEXT_DIR },
       );
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "context_vendored",
         timestamp: new Date().toISOString(),
         prdPath: vendoredContext.prdRelativePath,
-        contractPath: vendoredContext.contractRelativePath,
+        evalPath: vendoredContext.evalRelativePath,
         workspaceContextDir: path.join(workspaceRoot, HARNESS_CONTEXT_DIR),
       });
 
       if (sliceCount > 1) {
         logPhase(
           `Increment ${sliceIndex + 1}/${sliceCount}`,
-          path.relative(projectRoot, spec.prdPaths[sliceIndex]),
+          path.relative(projectRoot, active.prdPath),
         );
       }
 
-      const sliceReport = await runSessionAttemptLoop({
+      const sliceReport = await runAttemptLoop({
         layout,
         spec,
         specPath: loaded.specPath,
@@ -273,7 +272,8 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
 
       slices.push({
         index: sliceIndex,
-        prdPath: spec.prdPaths[sliceIndex],
+        prdPath: active.prdPath,
+        evalPath: active.evalPath,
         passed: sliceReport.passed,
         attempts: sliceReport.attemptsThisCycle ?? sliceReport.attempts,
         openFindingIds: sliceReport.openFindingIds,
@@ -306,7 +306,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       openFindingIds: report.openFindingIds,
       gateStatus: report.passed
         ? "passed"
-        : report.semanticValidation?.infrastructureFailure
+        : report.evaluation?.infrastructureFailure
           ? "aborted"
           : "failed",
     });
@@ -380,7 +380,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     lastAttempt: report.attempts,
     gateStatus: report.passed
       ? "passed"
-      : report.semanticValidation?.infrastructureFailure
+      : report.evaluation?.infrastructureFailure
         ? "aborted"
         : "failed",
   };

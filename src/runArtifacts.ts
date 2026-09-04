@@ -56,7 +56,7 @@ export async function createSessionLayout(
   });
 }
 
-/** Reopen an existing accumulating run directory (for --continue or extend resume). */
+/** Reopen an existing accumulating run directory (for --continue). */
 export async function openRunLayout(
   runDirectory: string,
   logging: { jsonlPath: string; notesPath: string },
@@ -81,11 +81,7 @@ export async function readLayoutMeta(runDirectory: string): Promise<RunLayoutMet
   try {
     const raw = await readFile(path.join(runDirectory, LAYOUT_META_FILENAME), "utf8");
     const parsed = JSON.parse(raw) as Partial<RunLayoutMeta>;
-    // Accept legacy on-disk mode from the removed `extend` command.
-    const rawMode = parsed.mode as string | undefined;
-    const normalizedMode =
-      rawMode === "in-place-extend" ? LAYOUT_MODE_IN_PLACE_RUN : parsed.mode;
-    if (normalizedMode !== LAYOUT_MODE_IN_PLACE_RUN) {
+    if (parsed.mode !== LAYOUT_MODE_IN_PLACE_RUN) {
       return null;
     }
     if (typeof parsed.workspacePath !== "string" || !parsed.workspacePath) {
@@ -93,7 +89,7 @@ export async function readLayoutMeta(runDirectory: string): Promise<RunLayoutMet
     }
     return {
       schemaVersion: parsed.schemaVersion ?? LAYOUT_META_SCHEMA_VERSION,
-      mode: normalizedMode,
+      mode: parsed.mode,
       workspacePath: path.resolve(parsed.workspacePath),
     };
   } catch {
@@ -157,27 +153,6 @@ export async function lastAttemptNumber(logsDirectory: string): Promise<number> 
     // empty / missing
   }
   return maxAttempt;
-}
-
-export async function nextAttemptNumber(logsDirectory: string): Promise<number> {
-  return (await lastAttemptNumber(logsDirectory)) + 1;
-}
-
-/** 1-based cycle index for the next --continue kick. */
-export async function nextCycleNumber(reportsDirectory: string): Promise<number> {
-  let maxCycle = 0;
-  try {
-    const entries = await readdir(reportsDirectory);
-    for (const entry of entries) {
-      const match = /^cycle-(\d+)\.json$/.exec(entry);
-      if (match) {
-        maxCycle = Math.max(maxCycle, Number.parseInt(match[1], 10));
-      }
-    }
-  } catch {
-    // empty / missing
-  }
-  return maxCycle + 1;
 }
 
 export async function appendHarnessLog(jsonlLogPath: string, event: HarnessLogEvent): Promise<void> {

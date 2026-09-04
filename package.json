@@ -1,6 +1,6 @@
 {
   "name": "hedera-harness",
-  "version": "1.2.2",
+  "version": "2.0.0-rc.4",
   "description": "Agentic harness for scaffolding and iteratively developing hedera dapps projects (init + run).",
   "type": "module",
   "bin": {
@@ -8,7 +8,6 @@
   },
   "files": [
     "dist",
-    "skills-index.json",
     "prompts",
     "skeletons",
     "CHANGELOG.md",
@@ -25,7 +24,6 @@
     "test": "npm run build --silent && node --test test/*.test.mjs",
     "smoke:pack": "bash scripts/smoke-pack.sh",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
-    "check:templates": "bash scripts/check-template-recipes.sh",
     "test:browser": "npm run build --silent && node --test test/browser/*.test.mjs"
   },
   "engines": {
@@ -48,24 +46,12 @@
     "cli"
   ],
   "dependencies": {
+    "@hiero-ledger/sdk": "^2.86.2",
+    "playwright": "^1.61.1",
     "yaml": "^2.9.0"
   },
-  "peerDependencies": {
-    "@hiero-ledger/sdk": "^2.86.2",
-    "playwright": "^1.61.1"
-  },
-  "peerDependenciesMeta": {
-    "@hiero-ledger/sdk": {
-      "optional": true
-    },
-    "playwright": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@hiero-ledger/sdk": "^2.86.2",
     "@types/node": "^26.1.0",
-    "playwright": "^1.61.1",
     "typescript": "^6.0.3"
   }
 }

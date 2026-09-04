@@ -10,7 +10,6 @@ import type {
 } from "./types.js";
 import {
   AGENT_PRESETS,
-  ASSUMED_SCHEMA_VERSION,
   DEFAULT_AGENT_PRESET,
   DEFAULT_COMMANDS_VALIDATOR_PATH,
   DEFAULT_MAX_ATTEMPTS,
@@ -21,6 +20,7 @@ import {
   HARNESS_NOTES_LOG_PATH,
   KNOWN_SPEC_KEYS,
   MIN_SUPPORTED_SCHEMA_VERSION,
+  REMOVED_SPEC_KEYS,
   SPEC_SCHEMA_VERSION,
   defaultForbiddenCommands,
   defaultSecretFiles,
@@ -38,24 +38,24 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
   const warnings: string[] = [];
 
   const schemaVersion = readSchemaVersion(parsed, absoluteSpecPath);
+  rejectRemovedKeys(parsed, absoluteSpecPath);
   warnUnknownKeys(parsed, warnings);
 
   const constraints = readConstraints(parsed);
   const workspaces = constraints?.workspaces ?? [];
   const agent = readAgentPresetName(parsed);
+  const prdPaths = readPrdPaths(parsed, projectRoot);
 
   const spec: TemplateSpec = {
     schemaVersion,
     projectRoot,
     name: readString(parsed, "name"),
     description: readOptionalString(parsed, "description"),
-    prdPaths: readPrdPaths(parsed, projectRoot),
-    contractPath: readOptionalProjectPath(projectRoot, parsed, "contract"),
+    prdPaths,
+    evalPaths: readEvalPaths(parsed, projectRoot, prdPaths.length),
     agent,
     generator: readGenerator(parsed, agent),
     validator: readOptionalValidator(parsed, agent),
-    // Keep raw refs (skill names and/or paths). resolveSkillPaths() resolves them at vendoring time.
-    skills: readOptionalStringArray(parsed, "skills"),
     constraints: {
       ...constraints,
       forbiddenCommands:
@@ -67,20 +67,13 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     forbiddenFiles: readOptionalStringArray(parsed, "forbiddenFiles") ?? defaultSecretFiles(workspaces),
     secretScan: readSecretScan(parsed, workspaces),
     chainValidation: readChainValidation(parsed),
-    baseline: readBaseline(parsed, warnings),
+    baseline: readBaseline(parsed),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? DEFAULT_MAX_ATTEMPTS,
     logging: {
       jsonlPath: resolveProjectPath(projectRoot, HARNESS_JSONL_LOG_PATH),
       notesPath: resolveProjectPath(projectRoot, HARNESS_NOTES_LOG_PATH),
     },
   };
-
-  if (parsed.logging !== undefined) {
-    warnings.push(
-      "`logging` is ignored — harness logs always live under `.harness/runs/`. " +
-        "Pointing them elsewhere left untracked files that failed the next run's clean-tree check.",
-    );
-  }
 
   assertBaselineHasInstall(spec);
 
@@ -106,7 +99,14 @@ export interface LoadedTemplateSpec {
 
 function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): number {
   const raw = parsed.schemaVersion;
-  if (raw === undefined) return ASSUMED_SCHEMA_VERSION;
+  if (raw === undefined) {
+    throw new Error(
+      [
+        `${specPath} is missing schemaVersion.`,
+        `Set schemaVersion: ${SPEC_SCHEMA_VERSION}.`,
+      ].join(" "),
+    );
+  }
 
   if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
     throw new Error(`"schemaVersion" must be a positive integer in ${specPath} (got ${JSON.stringify(raw)}).`);
@@ -124,9 +124,8 @@ function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): n
   if (raw < MIN_SUPPORTED_SCHEMA_VERSION) {
     throw new Error(
       [
-        `${specPath} declares schemaVersion ${raw}, which this harness no longer supports`,
-        `(minimum ${MIN_SUPPORTED_SCHEMA_VERSION}).`,
-        "Regenerate the recipe with `hedera-harness init` and reapply your edits.",
+        `${specPath} declares schemaVersion ${raw}, which this harness no longer supports.`,
+        `Set schemaVersion: ${SPEC_SCHEMA_VERSION}.`,
       ].join(" "),
     );
   }
@@ -135,11 +134,30 @@ function readSchemaVersion(parsed: Record<string, unknown>, specPath: string): n
 }
 
 /**
+ * Hard-cut removals must fail at load. Treating them as unknown keys would warn
+ * "upgrade the harness" (wrong fix) and then burn a generator session before
+ * EVALUATE noticed `eval` was never set.
+ */
+function rejectRemovedKeys(parsed: Record<string, unknown>, specPath: string): void {
+  const removed = Object.keys(parsed).filter(key => key in REMOVED_SPEC_KEYS);
+  if (removed.length === 0) return;
+
+  throw new Error(
+    [
+      `${specPath} uses removed key(s): ${removed.join(", ")}.`,
+      ...removed.map(key => REMOVED_SPEC_KEYS[key]),
+    ].join(" "),
+  );
+}
+
+/**
  * Unknown keys were silently ignored, so a recipe written for a newer harness could
  * lose an entire block — a renamed `baseline` would simply not run — with no error.
  */
 function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): void {
-  const unknown = Object.keys(parsed).filter(key => !KNOWN_SPEC_KEYS.has(key));
+  const unknown = Object.keys(parsed).filter(
+    key => !KNOWN_SPEC_KEYS.has(key) && !(key in REMOVED_SPEC_KEYS),
+  );
   if (unknown.length > 0) {
     warnings.push(
       `ignoring unknown key(s): ${unknown.join(", ")}. ` +
@@ -176,6 +194,40 @@ function readPrdPaths(parsed: Record<string, unknown>, projectRoot: string): str
   return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
 }
 
+/**
+ * `eval` accepts a path (same checklist for every slice) or an ordered list
+ * that must be 1:1 with `prd`. Absent means EVALUATE is not configured.
+ */
+function readEvalPaths(
+  parsed: Record<string, unknown>,
+  projectRoot: string,
+  prdCount: number,
+): string[] | undefined {
+  const raw = parsed.eval;
+
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  if (typeof raw === "string") {
+    if (!raw.trim()) throw new Error('Expected non-empty string "eval" in template spec.');
+    return [resolveProjectPath(projectRoot, raw)];
+  }
+
+  if (!Array.isArray(raw) || raw.some(item => typeof item !== "string" || !item.trim())) {
+    throw new Error('Expected "eval" to be a path or a non-empty list of paths.');
+  }
+  if (raw.length === 0) {
+    throw new Error('Expected "eval" to list at least one path.');
+  }
+  if (raw.length !== prdCount) {
+    throw new Error(
+      `"eval" list has ${raw.length} path(s) but "prd" has ${prdCount}; list form must be 1:1.`,
+    );
+  }
+  return (raw as string[]).map(value => resolveProjectPath(projectRoot, value));
+}
+
 function readValidators(
   parsed: Record<string, unknown>,
   projectRoot: string,
@@ -200,19 +252,6 @@ function readValidators(
 
 function resolveProjectPath(projectRoot: string, value: string): string {
   return path.isAbsolute(value) ? value : path.resolve(projectRoot, value);
-}
-
-function readOptionalProjectPath(
-  projectRoot: string,
-  parsed: Record<string, unknown>,
-  key: string,
-): string | undefined {
-  const candidate = parsed[key];
-  if (candidate === undefined) return undefined;
-  if (typeof candidate !== "string" || !candidate.trim()) {
-    throw new Error(`Expected optional non-empty string "${key}" in template spec.`);
-  }
-  return resolveProjectPath(projectRoot, candidate);
 }
 
 function readOptionalValidatorPath(
@@ -440,24 +479,10 @@ function readSecretScan(
 /**
  * Host-app health commands run once before generation.
  *
- * `baseline:` is the current key. `extend.baseline:` is the original spelling, kept
- * working with a deprecation warning — it named a command (`extend`) that no longer
- * exists, and it is already committed into template branches and users' projects.
+ * Only the top-level `baseline:` key is accepted.
  */
-function readBaseline(
-  parsed: Record<string, unknown>,
-  warnings: string[],
-): BaselineConfig | undefined {
-  let record: unknown = parsed.baseline;
-
-  if (record === undefined && parsed.extend !== undefined) {
-    const extend = parsed.extend;
-    if (!extend || typeof extend !== "object" || Array.isArray(extend)) {
-      throw new Error('Expected object "extend" in template spec.');
-    }
-    warnings.push('`extend.baseline` is deprecated — rename it to a top-level `baseline`.');
-    record = (extend as Record<string, unknown>).baseline;
-  }
+function readBaseline(parsed: Record<string, unknown>): BaselineConfig | undefined {
+  const record = parsed.baseline;
 
   if (record === undefined) return undefined;
   if (!record || typeof record !== "object" || Array.isArray(record)) {

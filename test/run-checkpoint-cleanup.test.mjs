@@ -9,7 +9,7 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 const gitMod = await import(pathToFileURL(path.resolve("dist/harnessGit.js")).href);
 const cleanupMod = await import(pathToFileURL(path.resolve("dist/runCleanup.js")).href);
 const outroMod = await import(pathToFileURL(path.resolve("dist/runOutro.js")).href);
-const contextMod = await import(pathToFileURL(path.resolve("dist/contextVendor.js")).href);
+const mcpMod = await import(pathToFileURL(path.resolve("dist/mcpBrowser.js")).href);
 
 function git(cwd, args) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -116,7 +116,7 @@ test("cleanupRuntimeInjections removes runtime/MCP but keeps runs", async () => 
     `${JSON.stringify(
       {
         mcpServers: {
-          playwright: await contextMod.playwrightMcpServer(root),
+          playwright: await mcpMod.playwrightMcpServer(root),
           other: { command: "echo" },
         },
       },

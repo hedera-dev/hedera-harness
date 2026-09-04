@@ -16,7 +16,7 @@ async function main(): Promise<void> {
 main()
   .then(() => {
     // Force exit so leftover agent/dev-server handles cannot hang the CLI after
-    // results are printed (see stopDevServer process-group teardown).
+    // results are printed (see DevServerSession.stop process-group teardown).
     process.exit(process.exitCode ?? 0);
   })
   .catch((error: unknown) => {

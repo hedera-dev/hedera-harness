@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   withPlaywrightMcpSnapshot,
   writePlaywrightMcpConfig,
-} from "./contextVendor.js";
+} from "./mcpBrowser.js";
 import { AGENT_PRESETS, type AgentPresetName } from "./specDefaults.js";
 
 export interface ValidatorMcpContext {
@@ -16,9 +16,9 @@ export interface ValidatorMcpContext {
 /**
  * Deliver one authoritative Playwright MCP server to the validator CLI.
  *
- * Claude accepts a config path, so its config stays entirely under harness
- * artifacts. Cursor reads a fixed workspace file, which is snapshotted and
- * restored around the validator invocation.
+ * Callers must wrap only the EVALUATE invocation: Claude accepts a config path
+ * under harness artifacts, while Cursor snapshots `.cursor/mcp.json` for the
+ * duration of `run` and restores it afterwards.
  */
 export async function withValidatorMcp<T>(
   context: ValidatorMcpContext,

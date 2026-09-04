@@ -4,7 +4,6 @@ export type HarnessCommand =
   | "init"
   | "run"
   | "doctor"
-  | "migrate"
   | "validate"
   | "validate-semantic";
 
@@ -30,8 +29,6 @@ export interface CliOptions {
   forceNew?: boolean;
   /** Explicit harness branch to checkout and continue. */
   continueBranch?: string;
-  /** `migrate` only: report the rewrite without writing it. */
-  dryRun?: boolean;
   /** `doctor` only: check the recipe alone, skipping host and project checks. */
   recipeOnly?: boolean;
 }
@@ -43,7 +40,6 @@ export interface InitCliOptions {
   /** Alias for ref (e.g. scaffold template branch). */
   template?: string;
   skipInstall?: boolean;
-  provisionSkills?: string[];
 }
 
 export interface InitResult {
@@ -58,7 +54,6 @@ export interface InitResult {
   writtenFiles: string[];
   /** Recipe files already present and left untouched. */
   skippedFiles: string[];
-  vendoredSkillCount: number;
   gitignoreUpdated: boolean;
   packageJsonUpdated: boolean;
   nextSteps: string[];
@@ -74,7 +69,6 @@ export interface AgentRunInput {
   workspacePath: string;
   prompt: string;
   attempt: number;
-  role?: "generator" | "validator";
   timeoutMs?: number;
   logPath?: string;
   activityLogPath?: string;
@@ -97,8 +91,6 @@ export interface CommandAgentConfig {
   env?: Record<string, string>;
   timeoutMs?: number;
 }
-
-export type AgentConfig = CommandAgentConfig;
 
 export interface PreflightCommandConfig {
   name?: string;
@@ -155,7 +147,7 @@ export interface ChainValidationDeployConfig {
 }
 
 /**
- * Optional Tier 3.5 on-chain validation: provision an ephemeral funded ECDSA
+ * Optional on-chain validation: provision an ephemeral funded ECDSA
  * testnet account, inject it as a burner wallet, and verify txs via mirror node.
  */
 export interface ChainValidationConfig {
@@ -194,12 +186,14 @@ export interface TemplateSpec {
   projectRoot: string;
   name: string;
   description?: string;
-  /**
-   * Ordered feature descriptions. The list form is the slice format; sequential
-   * delivery is not implemented yet, so exactly one entry is accepted today.
-   */
+  /** Ordered feature descriptions delivered as increments onto one branch. */
   prdPaths: string[];
-  contractPath?: string;
+  /**
+   * Absolute evaluate-checklist paths. Undefined = no eval configured.
+   * Length 1 (scalar) grades every slice with the same checklist; length N
+   * must match `prdPaths` for per-slice grading.
+   */
+  evalPaths?: string[];
   /**
    * Which agent CLI family this run targets. Drives MCP delivery and model
    * selection even when `generator:` overrides the invocation itself.
@@ -207,7 +201,6 @@ export interface TemplateSpec {
   agent: "cursor" | "claude";
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
-  skills?: string[];
   constraints?: TemplateConstraints;
   templateMetadata?: TemplateMetadata;
   validators: {
@@ -249,7 +242,7 @@ export interface PlaywrightGateResult {
 
 export interface ValidatorIssue {
   id: string;
-  contractAssertion?: string;
+  assertion?: string;
   severity: "critical" | "major" | "minor";
   route?: string;
   message: string;
@@ -262,7 +255,7 @@ export interface ValidatorVerdict {
   issues: ValidatorIssue[];
 }
 
-export interface SemanticValidationResult {
+export interface EvaluationResult {
   passed: boolean;
   verdict?: ValidatorVerdict;
   findings: ValidationFinding[];
@@ -282,8 +275,8 @@ export interface ValidationFinding {
     | "commands"
     | "agent"
     | "playwright"
-    | "semantic"
-    | "semantic-infra";
+    | "eval"
+    | "eval-infra";
   message: string;
   details?: string;
   /**
@@ -291,9 +284,9 @@ export interface ValidationFinding {
    * attempt to show what the last repair closed; they are not failures.
    */
   status?: "open" | "fixed";
-  /** Acceptance-contract assertion id when category is semantic (e.g. C7). */
-  contractAssertion?: string;
-  /** Route associated with a semantic finding, when known. */
+  /** Evaluate-checklist assertion id when category is eval (e.g. E7). */
+  assertion?: string;
+  /** Route associated with an eval finding, when known. */
   route?: string;
 }
 
@@ -302,7 +295,7 @@ export interface ValidationResult {
   findings: ValidationFinding[];
   commandResults: CommandExecutionResult[];
   playwrightGate?: PlaywrightGateResult;
-  semanticValidation?: SemanticValidationResult;
+  evaluation?: EvaluationResult;
 }
 
 /** Outcome of one increment in an ordered `prd:` list. */
@@ -310,6 +303,8 @@ export interface SliceReport {
   /** Zero-based position in `prd:`. */
   index: number;
   prdPath: string;
+  /** Absolute eval path for this slice, when EVALUATE is configured. */
+  evalPath?: string;
   passed: boolean;
   /** Attempts consumed by this increment alone. */
   attempts: number;
@@ -327,7 +322,7 @@ export interface RunReport {
   cycle?: number;
   /** Attempts consumed in this kick only (fresh maxAttempts budget). */
   attemptsThisCycle?: number;
-  /** True when deterministic, playwright gate, and semantic validation (if configured) all pass. */
+  /** True when deterministic, playwright gate, and evaluation (if configured) all pass. */
   passed: boolean;
   /** Finding ids still failing when the run stopped. */
   openFindingIds: string[];
@@ -339,7 +334,7 @@ export interface RunReport {
   finishedAt: string;
   durationMs: number;
   validation: ValidationResult;
-  semanticValidation?: SemanticValidationResult;
+  evaluation?: EvaluationResult;
 }
 
 export type HarnessLogEvent =
@@ -382,7 +377,7 @@ export type HarnessLogEvent =
       type: "context_vendored";
       timestamp: string;
       prdPath: string;
-      contractPath?: string;
+      evalPath?: string;
       workspaceContextDir: string;
     }
   | {

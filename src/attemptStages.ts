@@ -6,16 +6,17 @@ import type {
   AgentRunResult,
   ChainSigner,
   CommandExecutionResult,
+  EvaluationResult,
   PlaywrightGateResult,
-  SemanticValidationResult,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
 } from "./types.js";
 import { executeCommand } from "./command.js";
-import { runDeterministicValidation } from "./validation/index.js";
+import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
-import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
+import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
+import { specHasEval } from "./sliceSelection.js";
 import {
   createDevServerSession,
   loadDevServerConfig,
@@ -43,8 +44,8 @@ export interface AttemptStageContext {
   workspacePath: string;
   layout: RunLayout;
   chainSigner?: ChainSigner;
-  /** Vendored acceptance-contract path, relative to the workspace. */
-  contractRelativePath?: string;
+  /** Vendored eval checklist path, relative to the workspace. */
+  evalRelativePath?: string;
 }
 
 export interface GenerateStageResult {
@@ -121,7 +122,6 @@ export async function runGenerateStage(
       workspacePath,
       prompt: input.prompt,
       attempt,
-      role: "generator",
       timeoutMs: spec.generator.timeoutMs,
       logPath: input.agentLogPath,
       activityLogPath: input.agentActivityLogPath,
@@ -173,12 +173,8 @@ export async function runGenerateStage(
 }
 
 /** ASSERT — deterministic gates: required/forbidden files, static config, secrets, commands. */
-export async function runAssertStage(
-  context: AttemptStageContext,
-  options: { skipPlaywrightGate: boolean },
-): Promise<ValidationResult> {
+export async function runAssertStage(context: AttemptStageContext): Promise<ValidationResult> {
   return runDeterministicValidation(context.workspacePath, context.spec, {
-    skipPlaywrightGate: options.skipPlaywrightGate,
     installCachePath: path.join(context.layout.cacheDirectory, "install-fingerprint.txt"),
   });
 }
@@ -231,12 +227,12 @@ export async function runChainDeploy(
   return findings;
 }
 
-/** EVALUATE — adversarial validator grades the live app against the acceptance contract. */
+/** EVALUATE — adversarial validator grades the live app against the evaluate checklist. */
 export async function runEvaluateStage(
   context: AttemptStageContext,
   devServer: DevServerSession,
   extraValidatorArgs: string[] = [],
-): Promise<SemanticValidationResult> {
+): Promise<EvaluationResult> {
   const { attempt, layout } = context;
   const validatorPromptPath = path.join(
     layout.promptsDirectory,
@@ -252,7 +248,7 @@ export async function runEvaluateStage(
   });
   logStage("EVALUATE", devServer.url);
 
-  const semanticValidation = await runSemanticValidation({
+  const evaluation = await runEvaluation({
     workspacePath: context.workspacePath,
     spec: context.spec,
     attempt,
@@ -260,124 +256,134 @@ export async function runEvaluateStage(
     promptsDirectory: layout.promptsDirectory,
     devServer,
     chainSigner: context.chainSigner,
-    contractRelativePath: context.contractRelativePath,
+    evalRelativePath: context.evalRelativePath,
     extraArgs: extraValidatorArgs,
   });
 
   await writeJsonFile(
-    path.join(layout.logsDirectory, `semantic-validation-attempt-${attempt}.json`),
-    semanticValidation,
+    path.join(layout.logsDirectory, `evaluation-attempt-${attempt}.json`),
+    evaluation,
   );
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "validator_finished",
     timestamp: new Date().toISOString(),
     attempt,
-    passed: semanticValidation.passed,
-    findingCount: semanticValidation.findings.length,
-    durationMs: semanticValidation.durationMs,
-    infrastructureFailure: semanticValidation.infrastructureFailure,
-    infrastructureFailureReason: semanticValidation.infrastructureFailureReason,
+    passed: evaluation.passed,
+    findingCount: evaluation.findings.length,
+    durationMs: evaluation.durationMs,
+    infrastructureFailure: evaluation.infrastructureFailure,
+    infrastructureFailureReason: evaluation.infrastructureFailureReason,
   });
 
-  return semanticValidation;
+  return evaluation;
 }
 
 /**
- * Run ASSERT, then SMOKE and EVALUATE if the cheap gates left nothing open.
+ * Run ASSERT, then SMOKE (and EVALUATE when configured) if the cheap gates left
+ * nothing open.
  *
- * SMOKE and EVALUATE share one dev server for the attempt: booting a Next app
- * twice per attempt is the single most expensive thing the harness could do.
+ * Any configured Playwright path boots one DevServerSession; SMOKE and EVALUATE
+ * borrow it. ASSERT never owns a server.
  */
 export async function runValidationStages(
   context: AttemptStageContext,
   generateFinding?: ValidationFinding,
 ): Promise<ValidationResult> {
-  const usesSharedDevServer =
-    isValidatorEnabled(context.spec) && Boolean(context.spec.validators.playwrightPath);
+  const hasPlaywright = Boolean(context.spec.validators.playwrightPath);
+  const runEvaluate =
+    hasPlaywright && isValidatorEnabled(context.spec) && specHasEval(context.spec);
 
   logStage("ASSERT");
-  const deterministic = await runAssertStage(context, {
-    skipPlaywrightGate: usesSharedDevServer,
-  });
+  const deterministic = await runAssertStage(context);
 
-  const validation: ValidationResult = generateFinding
-    ? {
-        passed: false,
-        findings: [generateFinding, ...deterministic.findings],
-        commandResults: deterministic.commandResults,
-        playwrightGate: deterministic.playwrightGate,
-      }
-    : deterministic;
+  // Generator exit/timeout findings are recorded but must not fail ASSERT or skip
+  // SMOKE/EVALUATE — Cursor often hangs after finishing work; the gates decide pass.
+  const validation = mergeGenerateFinding(deterministic, generateFinding);
 
-  const deterministicClean =
-    validation.findings.filter(finding => finding.category !== "agent").length === 0;
-
-  if (generateFinding || !deterministicClean) {
+  if (!isReadyForPlaywrightSmoke(validation)) {
     logStage("SMOKE", "skipped — deterministic gates are not clean");
+    return { ...validation, passed: false };
+  }
+  if (!hasPlaywright) {
     return validation;
   }
-  if (!usesSharedDevServer) {
-    return validation;
+
+  const deployFindings = await runChainDeploy(context);
+  if (deployFindings.length > 0) {
+    logStage("SMOKE", "chain deploy failed");
+    return {
+      ...validation,
+      passed: false,
+      findings: [...validation.findings, ...deployFindings],
+    };
   }
 
-  let mcpArgs: string[] = [];
+  const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
+  let devServer: DevServerSession | null = null;
+  try {
+    logStage("SMOKE", "booting dev server");
+    devServer = await createDevServerSession(context.workspacePath, serverConfig, "runtime");
 
-  const runtimeStages = async (): Promise<ValidationResult> => {
-    const deployFindings = await runChainDeploy(context);
-    if (deployFindings.length > 0) {
-      logStage("SMOKE", "chain deploy failed");
-      return {
-        ...validation,
-        passed: false,
-        findings: [...validation.findings, ...deployFindings],
-      };
+    const smoke = await runSmokeStage(context, devServer);
+    const afterSmoke: ValidationResult = {
+      ...validation,
+      findings: [...validation.findings, ...smoke.findings],
+      playwrightGate: smoke.playwrightGate,
+    };
+    afterSmoke.passed =
+      afterSmoke.findings.filter(finding => finding.category !== "agent").length === 0;
+
+    if (!afterSmoke.passed) {
+      logStage("EVALUATE", "skipped — smoke gate failed");
+      return afterSmoke;
+    }
+    if (!runEvaluate) {
+      return afterSmoke;
     }
 
-    const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
-    let devServer: DevServerSession | null = null;
-    try {
-      logStage("SMOKE", "booting dev server");
-      devServer = await createDevServerSession(context.workspacePath, serverConfig, "runtime");
+    // MCP delivery is EVALUATE-only: Cursor's .cursor/mcp.json snapshot must not
+    // span deploy/boot/SMOKE (longer blast radius if the process is killed).
+    // Must `await` — bare `return promise` runs `finally` (and stops the server)
+    // before EVALUATE, which is exactly the SMOKE-green / EVALUATE-refused bug.
+    return await withValidatorMcp(
+      {
+        agent: context.spec.agent,
+        workspacePath: context.workspacePath,
+        artifactsDirectory: context.layout.runDirectory,
+      },
+      async mcpArgs => {
+        const evaluation = await runEvaluateStage(context, devServer!, mcpArgs);
+        return evaluation.passed
+          ? { ...afterSmoke, evaluation }
+          : {
+              ...afterSmoke,
+              passed: false,
+              findings: [...afterSmoke.findings, ...evaluation.findings],
+              evaluation,
+            };
+      },
+    );
+  } finally {
+    await devServer?.stop();
+  }
+}
 
-      const smoke = await runSmokeStage(context, devServer);
-      const afterSmoke: ValidationResult = {
-        ...validation,
-        findings: [...validation.findings, ...smoke.findings],
-        playwrightGate: smoke.playwrightGate,
-      };
-      afterSmoke.passed =
-        afterSmoke.findings.filter(finding => finding.category !== "agent").length === 0;
-
-      if (!afterSmoke.passed) {
-        logStage("EVALUATE", "skipped — smoke gate failed");
-        return afterSmoke;
-      }
-
-      const semanticValidation = await runEvaluateStage(context, devServer, mcpArgs);
-      return semanticValidation.passed
-        ? { ...afterSmoke, semanticValidation }
-        : {
-            ...afterSmoke,
-            passed: false,
-            findings: [...afterSmoke.findings, ...semanticValidation.findings],
-            semanticValidation,
-          };
-    } finally {
-      await devServer?.stop();
-    }
+/**
+ * Attach a GENERATE process finding without failing ASSERT.
+ * `isReadyForPlaywrightSmoke` already ignores `category: "agent"`; after SMOKE,
+ * `passed` ignores agent findings too. Skipping SMOKE solely because GENERATE
+ * timed out left green work ungraded (Cursor hang-after-done).
+ */
+export function mergeGenerateFinding(
+  deterministic: ValidationResult,
+  generateFinding?: ValidationFinding,
+): ValidationResult {
+  if (!generateFinding) return deterministic;
+  return {
+    ...deterministic,
+    findings: [generateFinding, ...deterministic.findings],
+    passed: deterministic.passed,
   };
-
-  return withValidatorMcp(
-    {
-      agent: context.spec.agent,
-      workspacePath: context.workspacePath,
-      artifactsDirectory: context.layout.runDirectory,
-    },
-    async extraArgs => {
-      mcpArgs = extraArgs;
-      return runtimeStages();
-    },
-  );
 }
 
 function truncate(value: string, maxLength = 1200): string {

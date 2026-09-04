@@ -5,13 +5,17 @@ import { decideBranchAction, isHarnessBranch, parseHarnessBranch } from "./branc
 import { executeCommand } from "./command.js";
 import {
   assertWorkingTreeCleanForRunStart,
-  commandExists,
   createAndCheckoutHarnessBranch,
   filterRelevantDirtyEntries,
   readGitRepoSnapshot,
   resolveHeadSha,
   type GitRepoSnapshot,
 } from "./harnessGit.js";
+import {
+  iterSharedPreflight,
+  runMessage,
+  SKIPPABLE_HOST_PREFLIGHT_IDS,
+} from "./preflight.js";
 import {
   createSessionLayout,
   openRunLayout,
@@ -168,7 +172,6 @@ export async function prepareSession(
   const { spec } = input.loaded;
 
   await assertPathExists(workspacePath, "workspace");
-  await assertRecipeFilesExist(spec);
 
   if (input.forceNew && input.continueBranch) {
     throw new SessionError(
@@ -182,11 +185,12 @@ export async function prepareSession(
   }
 
   const snapshot = await readGitRepoSnapshot(workspacePath);
-  await assertReadOnlyGitPreflight(snapshot);
-
-  if (!input.skipToolChecks) {
-    await assertHostTooling(workspacePath, spec);
-  }
+  await assertSharedPreflight({
+    workspacePath,
+    spec,
+    gitSnapshot: snapshot,
+    skipHostTooling: Boolean(input.skipToolChecks),
+  });
 
   const decision = decideBranchAction({
     currentBranch: snapshot.branch,
@@ -218,7 +222,7 @@ async function checkoutContinueBranch(workspacePath: string, branch: string): Pr
     throw new SessionError(
       "invalid-continue-branch",
       [
-        `--continue expects a harness branch (harness/run-* or legacy harness/extend-*).`,
+        `--continue expects a harness branch (harness/run-*).`,
         `Got ${JSON.stringify(branch)}.`,
       ].join(" "),
     );
@@ -454,124 +458,39 @@ export async function findMatchingSession(input: {
   return matches[0];
 }
 
-async function assertReadOnlyGitPreflight(snapshot: GitRepoSnapshot): Promise<void> {
-  if (snapshot.detached) {
-    throw new SessionError(
-      "detached-head",
-      "Harness run requires an attached HEAD (checkout a branch before running).",
-    );
-  }
-  if (snapshot.inProgressOperation) {
-    throw new SessionError(
-      "git-operation-in-progress",
-      `Harness run refuses to run while a git ${snapshot.inProgressOperation} is in progress. Finish or abort it first.`,
-    );
-  }
-  if (!snapshot.branch) {
-    throw new SessionError(
-      "missing-branch",
-      "Unable to determine the current git branch.",
-    );
-  }
-}
-
-async function assertHostTooling(cwd: string, spec: TemplateSpec): Promise<void> {
-  const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
-  if (!Number.isFinite(nodeMajor) || nodeMajor < 20) {
-    throw new SessionError(
-      "node-version",
-      `Harness run requires Node.js >= 20 (found ${process.versions.node}).`,
-    );
-  }
-
-  if (!(await commandExists("git", cwd))) {
-    throw new SessionError("missing-git", "Harness run requires `git` on PATH.");
-  }
-
-  const agentCommand = spec.generator.command?.trim() || "agent";
-  // Only enforce PATH presence for bare commands (not absolute paths / npx wrappers).
-  if (!agentCommand.includes("/") && !agentCommand.includes("\\")) {
-    if (!(await commandExists(agentCommand, cwd))) {
-      throw new SessionError(
-        "missing-agent",
-        `Harness run requires generator command ${JSON.stringify(agentCommand)} on PATH.`,
-      );
-    }
-  }
-
-  const packageManager = spec.constraints?.packageManager?.trim();
-  if (packageManager) {
-    const binary = packageManager.split("@")[0] || packageManager;
-    if (!(await commandExists(binary, cwd))) {
-      throw new SessionError(
-        "missing-package-manager",
-        `Harness run requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`,
-      );
-    }
-  }
-
-  await assertTier3BrowserUsable(cwd, spec);
-}
-
 /**
- * Fail before the first agent call when Tier 3 cannot open a browser.
+ * Shared doctor/run preflight — throw SessionError on the first fail.
  *
- * This used to surface only at EVALUATE, after a full generator session, and
- * the repair loop then spent further attempts "fixing" app code that was never
- * broken. A missing browser is a prerequisite, not a finding.
+ * Consumed lazily so a run that aborts early is not charged for the rules after
+ * it. That matters for the browser probe, which costs seconds and is last.
+ * `skipHostTooling` mirrors prepareSession's skipToolChecks (tests); skipped
+ * rules are never evaluated, so skipping the probe also skips its cost.
  */
-async function assertTier3BrowserUsable(cwd: string, spec: TemplateSpec): Promise<void> {
-  if (!spec.contractPath || !spec.validator?.enabled) {
-    return;
-  }
+async function assertSharedPreflight(input: {
+  workspacePath: string;
+  spec: TemplateSpec;
+  gitSnapshot: GitRepoSnapshot;
+  skipHostTooling: boolean;
+}): Promise<void> {
+  const verdicts = iterSharedPreflight({
+    workspacePath: input.workspacePath,
+    spec: input.spec,
+    gitSnapshot: input.gitSnapshot,
+    skipIds: input.skipHostTooling ? SKIPPABLE_HOST_PREFLIGHT_IDS : undefined,
+    onProgress: message => logPhase("Preflight", message),
+  });
 
-  const { probeMcpBrowser } = await import("./mcpBrowser.js");
-  logPhase("Preflight", "checking the Tier 3 browser");
-  const probe = await probeMcpBrowser(cwd);
+  for await (const verdict of verdicts) {
+    if (verdict.id === "evaluate-browser" && verdict.status === "ok") {
+      logPhase("Preflight", `EVALUATE browser ready — ${verdict.detail}`);
+    }
 
-  if (probe.ok) {
-    logPhase("Preflight", `Tier 3 browser ready — ${probe.choice.detail}`);
-    return;
-  }
+    if (verdict.status !== "fail") continue;
 
-  const fix =
-    probe.choice.source === "project-playwright"
-      ? "npx playwright install chromium"
-      : "yarn add -D playwright && npx playwright install chromium";
-
-  throw new SessionError(
-    "missing-tier3-browser",
-    [
-      "Harness run preflight failed: Tier 3 is enabled but the Playwright MCP browser could not be launched.",
-      probe.error ?? "",
-      `Fix: ${fix}`,
-      "Or disable Tier 3 by removing `contract` / `validator.enabled` from the recipe.",
-    ]
-      .filter(Boolean)
-      .join("\n  "),
-  );
-}
-
-async function assertRecipeFilesExist(spec: TemplateSpec): Promise<void> {
-  const required: Array<[string, string]> = [
-    ...spec.prdPaths.map(
-      (prdPath, index): [string, string] => [
-        spec.prdPaths.length > 1 ? `prd[${index}]` : "prd",
-        prdPath,
-      ],
-    ),
-    ["validators.static", spec.validators.staticPath],
-    ["validators.commands", spec.validators.commandsPath],
-  ];
-
-  for (const [label, filePath] of required) {
-    await assertPathExists(filePath, label);
-  }
-  if (spec.contractPath) {
-    await assertPathExists(spec.contractPath, "contract");
-  }
-  if (spec.validators.playwrightPath) {
-    await assertPathExists(spec.validators.playwrightPath, "validators.playwright");
+    throw new SessionError(
+      verdict.runErrorCode ?? "preflight-failed",
+      runMessage(verdict),
+    );
   }
 }
 

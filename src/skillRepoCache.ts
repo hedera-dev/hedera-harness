@@ -3,17 +3,11 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { executeCommand, executeCommandOrThrow } from "./command.js";
 import { pathExists } from "./fsUtils.js";
+import { SKILL_CACHE_DIRNAME } from "./runtimePaths.js";
 
 const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
-export const SKILL_CACHE_DIRNAME = ".skill-cache";
 
-/**
- * Ensure a git repo is available under `<projectRoot>/.skill-cache/<hash>/`
- * at the requested ref, then return the local checkout path.
- *
- * Reuses an existing cache when present (fetch + checkout) so multiple skills
- * from the same repo share one clone per harness project.
- */
+/** Cached clone of `repo` at `ref` under `<projectRoot>/.skill-cache/<hash>/`. */
 export async function ensureSkillRepoCheckout(input: {
   projectRoot: string;
   repo: string;
@@ -26,7 +20,6 @@ export async function ensureSkillRepoCheckout(input: {
   const exists = await pathExists(path.join(checkoutPath, ".git"));
 
   if (!exists) {
-    await mkdir(path.dirname(checkoutPath), { recursive: true });
     await executeCommandOrThrow({
       command: "git",
       args: ["clone", "--no-checkout", input.repo, checkoutPath],
@@ -54,7 +47,7 @@ export async function ensureSkillRepoCheckout(input: {
   return { checkoutPath, commitSha };
 }
 
-export function cacheKeyForRepo(repo: string): string {
+function cacheKeyForRepo(repo: string): string {
   const normalized = repo.trim().replace(/\.git$/i, "").toLowerCase();
   const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 12);
   const slug = normalized
@@ -84,6 +77,6 @@ async function resolveCommitSha(checkoutPath: string, ref: string): Promise<stri
 
   throw new Error(
     `Unable to resolve skill repo ref ${JSON.stringify(ref)} in ${checkoutPath}. ` +
-      `Check skills-index.json defaults.ref / entry.ref.`,
+      "Check HARNESS_SKILLS_REF (default master).",
   );
 }
