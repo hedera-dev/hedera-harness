@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Added
+
+- **A mirror node reader for CHAIN**, `src/validation/mirrorNode.ts`. Tier 3.5
+  verifies effects "against the mirror node rather than UI toasts" and shipped
+  no code for it. `waitForMirrorNode`, `waitForAccount`, `waitForTransaction`,
+  `topicExists` and `waitForTopicMessage` poll with a bounded backoff, treat 404
+  as mirror lag rather than absence, and stop on any other 4xx.
+  `normalizeTransactionId` converts the SDK's `0.0.x@sss.nnn` into the
+  `0.0.x-sss-nnn` the mirror node and HashScan accept.
+
+### Fixed
+
+- **The ephemeral chain signer is waited for on the mirror node** before the run
+  goes on. The scaffold resolves the account id from the EVM alias through the
+  mirror node, so a validator that connected first saw a wallet that did not
+  exist yet. Bounded at 20s and best effort; the wait is reported on the
+  provision line and in the JSONL log.
+- **A mirror node or JSON-RPC relay outage is classified as infrastructure.**
+  The network's real error text (`Mirror node upstream failure`, JSON-RPC
+  `-32020`, ethers' `could not coalesce error`, `THROTTLED_AT_CONSENSUS`)
+  matched none of the patterns in `evalInfra.ts`, so a transient outage was
+  graded as app defects and spent repair attempts.
+
+### Changed
+
+- **The validator prompt's on-chain verification recipe** now states what the
+  mirror node does: entity endpoints 404 for a second or two after consensus,
+  `/topics/{id}/messages` answers 200 with an empty list for a topic that does
+  not exist so existence must go through `/topics/{id}`, the two transaction id
+  forms, and that a 4xx which is not 404 is a bad request rather than lag.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

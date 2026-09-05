@@ -181,7 +181,41 @@ chainValidation:
   contracts are deployed before the app is graded
 
 Lifecycle: one account per run directory, reused across repair and continue
-attempts, best-effort sweep back to the operator at run end.
+attempts, best-effort sweep back to the operator at run end. A new account is
+waited for on the mirror node (bounded at 20s, best effort) before the run goes
+on, so the app under test can resolve it from its EVM alias straight away; the
+wait is printed on the provision line as `mirror 1843ms`.
+
+#### Reading the mirror node
+
+`src/validation/mirrorNode.ts` is the harness's own reader, and it is what the
+validator prompt describes. Import it in a custom validator command:
+
+```js
+import {
+  normalizeTransactionId,
+  topicExists,
+  waitForTopicMessage,
+  waitForTransaction,
+} from "hedera-harness/dist/validation/mirrorNode.js";
+
+const message = await waitForTopicMessage(topicId, sequenceNumber);
+if (!message.found) {
+  throw new Error(message.reason === "no-topic" ? `no such topic ${topicId}` : "message never landed");
+}
+```
+
+The four behaviours it exists to absorb, all measured on testnet:
+
+- entity endpoints answer 404 for one to three seconds after consensus, so a
+  single read straight after a receipt is a false negative; the waits poll with
+  a bounded backoff and treat 404 as "not yet"
+- `/topics/{id}/messages` answers 200 with an empty list for a topic that does
+  not exist, so existence goes through `/topics/{id}`, which answers 404
+- the SDK's transaction id (`0.0.x@sss.nnn`) is rejected with HTTP 400; the
+  mirror node and HashScan want `0.0.x-sss-nnn`, and `normalizeTransactionId`
+  converts it or throws rather than building a URL that reads as absence
+- any other 4xx stops the poll: waiting cannot fix a malformed request
 
 ## Building in increments
 

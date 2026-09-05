@@ -14,6 +14,7 @@ import { selectActiveSlice } from "./sliceSelection.js";
 import { provideSkills } from "./skillProvider.js";
 import {
   assertChainValidationOperatorEnv,
+  describeMirrorVisibility,
   provisionChainSigner,
   sweepChainSigner,
 } from "./validation/chainSigner.js";
@@ -187,10 +188,16 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         reused: provisioned.reused,
         ...(provisioned.toppedUpHbar !== undefined ? { toppedUpHbar: provisioned.toppedUpHbar } : {}),
         ...(provisioned.replacedDeleted ? { replacedDeleted: true } : {}),
+        ...(provisioned.mirrorVisibleAfterMs !== undefined
+          ? { mirrorVisibleAfterMs: provisioned.mirrorVisibleAfterMs }
+          : {}),
+        ...(provisioned.mirrorTimedOut ? { mirrorTimedOut: true } : {}),
       });
       logPhase(
         provisioned.reused ? "Chain signer reused" : "Chain signer provisioned",
-        `${chainSigner.accountId} (${chainSigner.evmAddress})`,
+        [`${chainSigner.accountId} (${chainSigner.evmAddress})`, describeMirrorVisibility(provisioned)]
+          .filter(Boolean)
+          .join(" "),
       );
     }
 
