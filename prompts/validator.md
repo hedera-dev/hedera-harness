@@ -28,20 +28,31 @@ It covers both native Hedera SDK signing and EVM (wagmi/burner) signing.
 4. Click the Connect Wallet control in the header/nav.
 5. In the RainbowKit modal, open the "Development" group and choose "Burner Wallet".
 6. Confirm the header shows a connected account (may show EVM address or Hedera account ID).
-7. If the app resolves a Hedera account ID from the EVM alias via mirror node, wait/retry a few seconds — newly created accounts can lag briefly.
+7. The harness already waited for this account on the mirror node before handing it to you, so it resolves from its EVM alias immediately.
 
 ### On-chain verification recipe
 After executing an executableWithTestSigner flow:
 - Verify effects via the Hedera testnet mirror node REST API (keyless ground truth), not only UI toasts.
-- Base URL: https://testnet.mirrornode.hedera.com
+- Base URL: https://testnet.mirrornode.hedera.com/api/v1
 - Useful endpoints:
-  - GET /api/v1/topics/{topicId}
-  - GET /api/v1/topics/{topicId}/messages
-  - GET /api/v1/tokens/{tokenId}
-  - GET /api/v1/contracts/{address}/results
-  - GET /api/v1/accounts/{accountIdOrEvm}
-- Use browser_navigate to the JSON URL or a shell curl from the workspace. Poll up to ~30s for mirror lag.
+  - GET /topics/{topicId}
+  - GET /topics/{topicId}/messages?sequencenumber=eq:{n}
+  - GET /tokens/{tokenId}
+  - GET /tokens/{tokenId}/nfts/{serial}
+  - GET /contracts/{address}/results
+  - GET /accounts/{accountIdOrEvm}
+  - GET /transactions/{transactionId}
+- Use browser_navigate to the JSON URL or a shell curl from the workspace.
+
+Four things about the mirror node that decide whether your read is evidence:
+
+1. **Entity endpoints answer 404 for a second or two after consensus**, then 200. One read straight after a receipt is a false negative. Poll: 250ms, doubling, up to ~30s, and treat 404 as "not yet". Measured on testnet: a topic message read 83ms after the receipt was 404 and became 200 918ms later.
+2. **`GET /topics/{topicId}/messages` answers 200 with `{"messages":[]}` for a topic that does not exist.** It cannot tell a wrong topic id from mirror lag, so check the topic itself with `GET /topics/{topicId}`, which does answer 404, before you conclude a message is missing.
+3. **A transaction id has two forms.** The SDK and most app UIs show `0.0.x@sss.nnn`; the mirror node wants `0.0.x-sss-nnn` and answers HTTP 400 for the other. Convert before you read. An id copied from the app is almost always in the wrong form.
+4. **A 4xx that is not 404 is your request being wrong, not the chain being slow.** Stop polling, fix the URL, and do not report it as an app failure.
+
 - Cite the mirror response (status, relevant fields) in issue evidence when an assertion fails; include it in your reasoning for passes.
+- If the mirror node or the JSON-RPC relay is itself failing (HTTP 5xx, `Mirror node upstream failure`, JSON-RPC `-32020`, `THROTTLED_AT_CONSENSUS`, or ethers' `could not coalesce error`), say so in the evidence in those words. That is an outage, not a defect in the app, and the harness reads those words to abort rather than spend a repair attempt.
 {{/hasSigner}}
 
 ## Output Requirements
