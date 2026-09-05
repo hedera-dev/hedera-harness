@@ -1,4 +1,9 @@
-import type { CommandAgentConfig, SecretScanConfig } from "./types.js";
+import type {
+  BlockingSeverity,
+  CommandAgentConfig,
+  ContractScanner,
+  SecretScanConfig,
+} from "./types.js";
 
 /**
  * Version of `.harness/spec.yaml` this harness writes.
@@ -19,6 +24,11 @@ export const DEFAULT_PRD_PATH = ".harness/prd.md";
 export const DEFAULT_STATIC_VALIDATOR_PATH = ".harness/validators/static.json";
 export const DEFAULT_COMMANDS_VALIDATOR_PATH = ".harness/validators/yarn.json";
 export const DEFAULT_MAX_ATTEMPTS = 3;
+
+/** Contract-security validator: block on High+ by default; 4-minute scan budget. */
+export const DEFAULT_CONTRACT_SECURITY_FAIL_ON: BlockingSeverity = "high";
+export const DEFAULT_CONTRACT_SECURITY_TIMEOUT_MS = 4 * 60 * 1000;
+export const DEFAULT_CONTRACT_SCANNERS: ContractScanner[] = ["slither"];
 
 /**
  * Harness-owned log locations.

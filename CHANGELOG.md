@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Contract-security validator (opt-in).** A new ASSERT-stage gate statically
+  analyzes generated Solidity with Slither before the harness spends time on
+  SMOKE, on-chain deploy, or semantic validation. A finding at or above
+  `failOnSeverity` (default `high`) becomes a native `security` finding that
+  enters the repair loop, so a vulnerable contract is fixed rather than
+  deployed. Enable it under `validators.contractSecurity`; absent, existing
+  recipes are unchanged. A missing scanner or un-compilable project is reported
+  as a harness/infrastructure failure (and pre-empted by `doctor`), never as a
+  contract "repair". Finding ids are stable across attempts
+  (`security:slither:<check>:<path>:<line>`) so the repair-lifecycle delta can
+  tell a fixed issue from a newly introduced one. Follows the opt-in
+  ASSERT-validator pattern proposed in #8 for AI-plugin risk, applied to the
+  contracts the harness actually deploys.
+
 ## 1.2.2
 
 ### Fixed

@@ -21,7 +21,7 @@ flowchart TD
   inputs[Recipe: spec + PRD + validators] --> branch[Create or continue harness/run-* branch]
   branch --> baseline[Baseline health checks on the existing app]
   baseline --> generate[1 GENERATE - coding agent]
-  generate --> assert[2 ASSERT - files, static, secrets, commands]
+  generate --> assert[2 ASSERT - files, static, secrets, commands, contract security]
   assert --> smoke[3 SMOKE - dev server + Playwright routes]
   smoke --> evaluate[4 EVALUATE - adversarial validator vs contract]
   evaluate --> outcome[Pass / Fail / Abort]
@@ -94,6 +94,7 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 | Tier | Enable with | What it proves | Cost |
 |---|---|---|---|
 | **0–1 deterministic** | on by default | files present, static assertions, no secrets, build passes | seconds |
+| **1.5 contract security** | `validators.contractSecurity` | generated Solidity has no High+ Slither finding before it is deployed | a static scan |
 | **2 Playwright gate** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
 | **3 semantic** | `contract` + `validator.enabled` | an adversarial agent drives the live app and grades numbered assertions | an agent session |
 | **3.5 on-chain** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
@@ -101,6 +102,8 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 Start at the bottom. Add a tier when the one below stops catching your failures.
 
 The Tier 3 validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
+
+**Tier 1.5 (contract security)** runs inside ASSERT, so a vulnerable contract is caught in the cheap deterministic gate — before a dev server boot or a testnet deploy. It drives [Slither](https://github.com/crytic/slither) over the generated Solidity and turns each finding at or above `failOnSeverity` (default `high`) into a native `security` finding that the repair loop must clear. A missing `slither` binary or an un-compilable project is treated as an infrastructure failure (surfaced by `doctor`), not a contract defect the agent is asked to "repair". See [docs/contract-security-validator.md](docs/contract-security-validator.md).
 
 ## Branch behaviour
 
@@ -174,6 +177,9 @@ Playwright and the Hedera SDK are **optional peer dependencies**, needed only by
 ```bash
 # Tier 2 — the browser API; no separate Chromium download is required
 npm install -D playwright
+
+# Tier 1.5 — the contract-security scanner
+pipx install slither-analyzer
 
 # Tier 3.5
 npm install -D @hiero-ledger/sdk
