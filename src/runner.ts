@@ -20,6 +20,7 @@ import {
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
 import {
   assertChainValidationOperatorEnv,
+  describeMirrorVisibility,
   provisionChainSigner,
 } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
@@ -122,9 +123,14 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
           ? "Chain signer reused + topped up"
           : "Chain signer reused"
         : "Chain signer provisioned",
-      provisioned.toppedUpHbar !== undefined
-        ? `${chainSigner.accountId} (+${provisioned.toppedUpHbar} HBAR → ${spec.chainValidation.fundingHbar})`
-        : `${chainSigner.accountId} (${chainSigner.evmAddress})`,
+      [
+        provisioned.toppedUpHbar !== undefined
+          ? `${chainSigner.accountId} (+${provisioned.toppedUpHbar} HBAR → ${spec.chainValidation.fundingHbar})`
+          : `${chainSigner.accountId} (${chainSigner.evmAddress})`,
+        describeMirrorVisibility(provisioned),
+      ]
+        .filter(Boolean)
+        .join(" "),
     );
   }
 

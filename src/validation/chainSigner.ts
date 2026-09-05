@@ -1,12 +1,21 @@
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { importHieroSdk } from "../optionalDeps.js";
+import { waitForAccount } from "./mirrorNode.js";
 import type { ChainSigner, ChainValidationConfig } from "../types.js";
 
 type HieroSdk = typeof import("@hiero-ledger/sdk");
 type PrivateKey = ReturnType<HieroSdk["PrivateKey"]["fromString"]>;
 
 export const CHAIN_SIGNER_FILENAME = "chain-signer.json";
+
+/**
+ * A freshly created account trails consensus on the mirror node by a second
+ * or two, and the validator prompt used to hand that wait to the agent as
+ * advice. Bounded and best-effort: a slow mirror node delays a run, it does
+ * not fail one.
+ */
+const MIRROR_VISIBILITY_TIMEOUT_MS = 20_000;
 
 interface PersistedChainSigner extends ChainSigner {
   createdAt: string;
@@ -21,7 +30,16 @@ interface PersistedChainSigner extends ChainSigner {
 export async function provisionChainSigner(
   config: ChainValidationConfig,
   runDirectory: string,
-): Promise<{ signer: ChainSigner; reused: boolean; toppedUpHbar?: number; replacedDeleted?: boolean }> {
+): Promise<{
+  signer: ChainSigner;
+  reused: boolean;
+  toppedUpHbar?: number;
+  replacedDeleted?: boolean;
+  /** How long the new account took to appear on the mirror node. */
+  mirrorVisibleAfterMs?: number;
+  /** The account never appeared within the budget; the run continues anyway. */
+  mirrorTimedOut?: boolean;
+}> {
   if (!config.enabled) {
     throw new Error("provisionChainSigner called with chainValidation.enabled=false");
   }
@@ -50,11 +68,38 @@ export async function provisionChainSigner(
   }
 
   const created = await createFundedSigner(config, persistPath);
+
+  // Wait for the mirror node before the app under test is pointed at this
+  // account: the scaffold resolves the account id from the EVM alias through
+  // the mirror node, and a validator that connects first sees a wallet that
+  // does not exist yet.
+  const mirror = await waitForAccount(created.accountId, {
+    network: config.network,
+    timeoutMs: MIRROR_VISIBILITY_TIMEOUT_MS,
+  });
+
   return {
     signer: created,
     reused: false,
     ...(existing ? { replacedDeleted: true } : {}),
+    ...(mirror.found
+      ? { mirrorVisibleAfterMs: mirror.elapsedMs }
+      : { mirrorTimedOut: true }),
   };
+}
+
+/**
+ * One-line note for the run log: how long the new account took to show up on
+ * the mirror node, or that it had not by the time the run went on.
+ */
+export function describeMirrorVisibility(provisioned: {
+  mirrorVisibleAfterMs?: number;
+  mirrorTimedOut?: boolean;
+}): string {
+  if (provisioned.mirrorVisibleAfterMs !== undefined) {
+    return `mirror ${provisioned.mirrorVisibleAfterMs}ms`;
+  }
+  return provisioned.mirrorTimedOut ? "mirror not visible yet" : "";
 }
 
 async function createFundedSigner(

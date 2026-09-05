@@ -19,6 +19,10 @@ const { detectEvalInfrastructureFailure } = await import(
   pathToFileURL(path.resolve("dist/evalInfra.js")).href
 );
 
+const { describeMirrorVisibility } = await import(
+  pathToFileURL(path.resolve("dist/validation/chainSigner.js")).href
+);
+
 /** Replaces global fetch with a scripted sequence and records every URL hit. */
 function stubFetch(responses) {
   const calls = [];
@@ -292,4 +296,10 @@ test("an app that genuinely mishandles a transaction is still repaired", () => {
     undefined,
     "mentioning the mirror node is not the same as the mirror node being down",
   );
+});
+
+test("the run log says how long the new signer took to reach the mirror node", () => {
+  assert.equal(describeMirrorVisibility({ mirrorVisibleAfterMs: 1843 }), "mirror 1843ms");
+  assert.equal(describeMirrorVisibility({ mirrorTimedOut: true }), "mirror not visible yet");
+  assert.equal(describeMirrorVisibility({}), "", "a reused signer adds nothing to the line");
 });
