@@ -119,6 +119,28 @@ export interface TemplateMetadata {
   solidityFramework?: string;
 }
 
+/** Static analyzers the contract-security validator can drive. */
+export type ContractScanner = "slither";
+
+export type SecuritySeverity = "critical" | "high" | "medium" | "low" | "informational";
+
+/** Severities that can act as the failing threshold (informational never fails). */
+export type BlockingSeverity = Exclude<SecuritySeverity, "informational">;
+
+/**
+ * Opt-in Tier 1.5 contract-security gate, run inside ASSERT after the secret
+ * scan. Disabled by default: an absent block leaves existing recipes unchanged.
+ */
+export interface ContractSecurityConfig {
+  enabled: boolean;
+  scanners: ContractScanner[];
+  /** Findings at or above this severity fail ASSERT. Default: "high". */
+  failOnSeverity: BlockingSeverity;
+  /** Resolved absolute path to the contracts root. Auto-detected when omitted. */
+  contractsDir?: string;
+  timeoutMs?: number;
+}
+
 export interface SecretScanConfig {
   failOnFiles: string[];
   patterns: Array<{
@@ -214,6 +236,7 @@ export interface TemplateSpec {
     staticPath: string;
     commandsPath: string;
     playwrightPath?: string;
+    contractSecurity?: ContractSecurityConfig;
   };
   requiredFiles: string[];
   forbiddenFiles: string[];
@@ -283,7 +306,8 @@ export interface ValidationFinding {
     | "agent"
     | "playwright"
     | "semantic"
-    | "semantic-infra";
+    | "semantic-infra"
+    | "security";
   message: string;
   details?: string;
   /**

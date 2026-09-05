@@ -10,6 +10,7 @@ import type {
   ValidationResult,
 } from "../types.js";
 import { runPlaywrightGate } from "./playwrightGate.js";
+import { validateContractSecurity } from "./contractSecurity.js";
 import {
   computeInstallFingerprint,
   readCachedInstallFingerprint,
@@ -88,6 +89,15 @@ export async function runDeterministicValidation(
   findings.push(...(await validateForbiddenFiles(workspacePath, spec.forbiddenFiles)));
   findings.push(...(await validateStaticConfig(workspacePath, spec.validators.staticPath)));
   findings.push(...(await validateSecretScan(workspacePath, spec)));
+
+  // Contract-security gate (opt-in). No-op unless the recipe enables it. A
+  // scanner/tooling failure throws ContractSecurityInfraError and aborts the
+  // attempt rather than becoming a repairable finding — see contractSecurity.ts.
+  const contractSecurity = await validateContractSecurity(
+    workspacePath,
+    spec.validators.contractSecurity,
+  );
+  findings.push(...contractSecurity.findings);
 
   const commandValidation = await validateCommands(
     workspacePath,

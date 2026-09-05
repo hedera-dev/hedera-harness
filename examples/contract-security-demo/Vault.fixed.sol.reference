@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+/// @notice The repaired Vault: state is zeroed BEFORE the external call
+/// (checks-effects-interactions), so Slither no longer reports reentrancy-eth
+/// and the contract-security gate passes. Swap this over Vault.sol to show the
+/// repaired attempt in the demo.
+contract Vault {
+    mapping(address => uint256) public balances;
+
+    function deposit() external payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw() external {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "nothing to withdraw");
+
+        // Effects before interaction — closes the reentrancy.
+        balances[msg.sender] = 0;
+
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok, "transfer failed");
+    }
+}

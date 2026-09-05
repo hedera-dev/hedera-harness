@@ -1,0 +1,16 @@
+schemaVersion: 2
+
+name: withdrawable-vault
+description: Vault with deposit/withdraw; the contract-security gate must catch an unsafe withdraw.
+
+baseline:
+  commands:
+    - name: install
+      command: "true"
+
+validators:
+  contractSecurity:
+    enabled: true
+    scanners: [slither]
+    failOnSeverity: high
+    contractsDir: contracts

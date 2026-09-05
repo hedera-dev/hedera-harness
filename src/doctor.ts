@@ -65,6 +65,7 @@ export async function runDoctor(
     checks.push(...(await checkRecipeFiles(spec)));
     checks.push(await checkPromptOverrides(spec.projectRoot));
     checks.push(...(await checkOptionalDeps(spec, workspacePath)));
+    checks.push(...(await checkContractSecurity(spec, workspacePath)));
     checks.push(...checkChainEnv(spec));
   }
 
@@ -110,6 +111,33 @@ async function checkCommand(command: string, cwd: string, why: string): Promise<
   return (await commandExists(command, cwd))
     ? { name: command, status: "ok", detail: "on PATH" }
     : { name: command, status: "fail", detail: "not on PATH", fix: why };
+}
+
+/**
+ * Only when contractSecurity is enabled: confirm each configured scanner binary
+ * is on PATH, so a missing scanner is a clear preflight failure instead of a
+ * mid-run ContractSecurityInfraError abort.
+ */
+async function checkContractSecurity(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {
+  const config = spec.validators.contractSecurity;
+  if (!config?.enabled) return [];
+
+  const checks: DoctorCheck[] = [];
+  for (const scanner of config.scanners) {
+    if (scanner === "slither") {
+      checks.push(
+        (await commandExists("slither", cwd))
+          ? { name: "slither", status: "ok", detail: "on PATH" }
+          : {
+              name: "slither",
+              status: "fail",
+              detail: "not on PATH",
+              fix: "Required by validators.contractSecurity (scanner: slither). Install: pipx install slither-analyzer",
+            },
+      );
+    }
+  }
+  return checks;
 }
 
 async function loadRecipe(

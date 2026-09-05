@@ -78,4 +78,16 @@ baseline:
 #     accountIdEnv: HEDERA_OPERATOR_ID
 #     privateKeyEnv: HEDERA_OPERATOR_KEY
 #
+# Contract-security gate (opt-in). Runs inside ASSERT after the secret scan and
+# statically analyzes generated Solidity with Slither; a finding at or above
+# failOnSeverity fails the attempt, so a vulnerable contract enters the repair
+# loop instead of being deployed. Requires `slither` on PATH (doctor checks it).
+# contractsDir is auto-detected (foundry.toml / hardhat.config / *.sol) when omitted.
+# validators:
+#   contractSecurity:
+#     enabled: true
+#     scanners: [slither]
+#     failOnSeverity: high      # critical | high | medium | low (default: high)
+#     contractsDir: packages/foundry
+#
 # Note: harness logs always live under .harness/runs/ and are not configurable.

@@ -3,8 +3,11 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import type {
   BaselineConfig,
+  BlockingSeverity,
   ChainValidationConfig,
   CommandAgentConfig,
+  ContractScanner,
+  ContractSecurityConfig,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
@@ -13,6 +16,9 @@ import {
   ASSUMED_SCHEMA_VERSION,
   DEFAULT_AGENT_PRESET,
   DEFAULT_COMMANDS_VALIDATOR_PATH,
+  DEFAULT_CONTRACT_SCANNERS,
+  DEFAULT_CONTRACT_SECURITY_FAIL_ON,
+  DEFAULT_CONTRACT_SECURITY_TIMEOUT_MS,
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_PRD_PATH,
   DEFAULT_SECRET_PATTERNS,
@@ -195,6 +201,59 @@ function readValidators(
       readOptionalString(validators, "commands") ?? DEFAULT_COMMANDS_VALIDATOR_PATH,
     ),
     playwrightPath: readOptionalValidatorPath(projectRoot, validators, "playwright"),
+    contractSecurity: readContractSecurity(projectRoot, validators),
+  };
+}
+
+const VALID_SCANNERS: ContractScanner[] = ["slither"];
+const VALID_FAIL_ON: BlockingSeverity[] = ["critical", "high", "medium", "low"];
+
+/**
+ * Parse the inline `validators.contractSecurity` block. Returns undefined when
+ * the block is absent or `enabled` is not true, so recipes that never opt in are
+ * byte-for-byte unchanged and the ASSERT stage skips the scanner entirely.
+ */
+function readContractSecurity(
+  projectRoot: string,
+  validators: Record<string, unknown>,
+): ContractSecurityConfig | undefined {
+  const candidate = validators.contractSecurity;
+  if (candidate === undefined) return undefined;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error(`Expected object "validators.contractSecurity" in template spec.`);
+  }
+  const config = candidate as Record<string, unknown>;
+  if (config.enabled !== true) return undefined;
+
+  const scanners = (readOptionalStringArray(config, "scanners") ??
+    DEFAULT_CONTRACT_SCANNERS) as ContractScanner[];
+  for (const scanner of scanners) {
+    if (!VALID_SCANNERS.includes(scanner)) {
+      throw new Error(
+        `Unknown validators.contractSecurity.scanners entry "${scanner}". Supported: ${VALID_SCANNERS.join(", ")}.`,
+      );
+    }
+  }
+  if (scanners.length === 0) {
+    throw new Error(`validators.contractSecurity.scanners must not be empty.`);
+  }
+
+  const failOnSeverity = (readOptionalString(config, "failOnSeverity") ??
+    DEFAULT_CONTRACT_SECURITY_FAIL_ON) as BlockingSeverity;
+  if (!VALID_FAIL_ON.includes(failOnSeverity)) {
+    throw new Error(
+      `validators.contractSecurity.failOnSeverity must be one of ${VALID_FAIL_ON.join(", ")}.`,
+    );
+  }
+
+  const contractsDirRaw = readOptionalString(config, "contractsDir");
+
+  return {
+    enabled: true,
+    scanners,
+    failOnSeverity,
+    contractsDir: contractsDirRaw ? resolveProjectPath(projectRoot, contractsDirRaw) : undefined,
+    timeoutMs: readOptionalNumber(config, "timeoutMs") ?? DEFAULT_CONTRACT_SECURITY_TIMEOUT_MS,
   };
 }
 
