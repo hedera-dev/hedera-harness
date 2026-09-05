@@ -8,6 +8,7 @@ dist/
 runs/
 .seed-cache/
 .skill-cache/
+.harness/wallet/
 
 # Private / WIP PRDs (example PRDs under docs/prds/ are tracked)
 docs/prds/local/

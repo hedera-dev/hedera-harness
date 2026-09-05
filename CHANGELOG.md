@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Persistent wallet runtime** (`hedera-harness wallet init|status|demo`): closes the wallet-boundary gap between browser EVALUATE and CHAIN with a persistent testnet identity, MV3 discovery extension, visible Approve/Sign UI, and mirror verification. See `docs/wallet/README.md` and `examples/harness-pay`.
+
 ## 1.2.2
 
 ### Fixed

@@ -3,6 +3,7 @@
 .harness/runtime/
 .harness/cache/
 .harness/skills/
+.harness/wallet/
 .skill-cache/
 .harness-skills/
 .harness-context/

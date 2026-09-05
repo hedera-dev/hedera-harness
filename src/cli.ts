@@ -2,9 +2,26 @@ import { runInit } from "./initRunner.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { formatMigrationResult, migrateSpecFile } from "./migrate.js";
 import { runHarness, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
-import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
+import type {
+  CliOptions,
+  HarnessCommand,
+  InitCliOptions,
+  ParsedCli,
+  WalletCliOptions,
+  WalletSubcommand,
+} from "./types.js";
+import { printWalletHelp, runWalletCommand } from "./wallet/cli.js";
 
-const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "migrate", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>([
+  "init",
+  "run",
+  "doctor",
+  "migrate",
+  "validate",
+  "validate-semantic",
+  "wallet",
+]);
+const WALLET_SUBCOMMANDS = new Set<WalletSubcommand>(["init", "status", "demo"]);
 const DEFAULT_RUN_SPEC = ".harness/spec.yaml";
 
 export function parseCliArgs(argv: string[]): ParsedCli {
@@ -12,7 +29,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
     throw new Error(
-      `Expected command "init", "run", "doctor", "migrate", "validate", or "validate-semantic".`,
+      `Expected command "init", "run", "doctor", "migrate", "validate", "validate-semantic", or "wallet".`,
     );
   }
 
@@ -21,6 +38,14 @@ export function parseCliArgs(argv: string[]): ParsedCli {
       command: "init",
       options: { specPath: DEFAULT_RUN_SPEC },
       initOptions: parseInitOptions(rest),
+    };
+  }
+
+  if (rawCommand === "wallet") {
+    return {
+      command: "wallet",
+      options: { specPath: DEFAULT_RUN_SPEC },
+      walletOptions: parseWalletOptions(rest),
     };
   }
 
@@ -42,6 +67,7 @@ Usage:
   hedera-harness migrate [spec] [--dry-run]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
+  hedera-harness wallet <init|status|demo> [options]
 
 Examples:
   hedera-harness init my-app
@@ -56,16 +82,31 @@ Examples:
   hedera-harness validate
   hedera-harness validate .harness/spec.yaml
   hedera-harness validate-semantic .harness/spec.yaml
+  hedera-harness wallet init
+  hedera-harness wallet status
+  hedera-harness wallet demo --asset hbar
 
 Project-centric run notes:
   - Workspace is the current directory (cwd). Bootstrap with \`init\` first (or use an existing app with .harness/).
   - On a matching harness/run-* (or legacy harness/extend-*) branch + same spec, continues automatically.
   - On a normal branch, or when the spec differs, creates harness/run-<slug>-<id>.
   - --new forces a fresh harness branch; --continue <branch> checks out that branch and resumes.
-  - Does not auto-stash, push, open a PR, merge, or delete branches.`);
+  - Does not auto-stash, push, open a PR, merge, or delete branches.
+
+Wallet notes:
+  - Persistent testnet identity under .harness/wallet/ (never swept, never injected into the agent).
+  - See \`hedera-harness wallet --help\` and docs/wallet/README.md.`);
 }
 
 export async function runCli(parsed: ParsedCli): Promise<void> {
+  if (parsed.command === "wallet") {
+    if (!parsed.walletOptions) {
+      throw new Error("Internal error: wallet command missing walletOptions");
+    }
+    await runWalletCommand(parsed.walletOptions);
+    return;
+  }
+
   if (parsed.command === "init") {
     const result = await runInit(parsed.initOptions ?? {});
     console.log(
@@ -283,6 +324,75 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
   }
 
   return options;
+}
+
+function parseWalletOptions(args: string[]): WalletCliOptions {
+  const [rawSubcommand, ...rest] = args;
+  if (!rawSubcommand || rawSubcommand === "--help" || rawSubcommand === "-h") {
+    printWalletHelp();
+    process.exit(0);
+  }
+  if (!WALLET_SUBCOMMANDS.has(rawSubcommand as WalletSubcommand)) {
+    throw new Error(`Expected wallet subcommand "init", "status", or "demo" (got ${JSON.stringify(rawSubcommand)}).`);
+  }
+
+  const options: WalletCliOptions = {
+    subcommand: rawSubcommand as WalletSubcommand,
+    headed: true,
+  };
+
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    switch (arg) {
+      case "--workspace":
+        options.workspacePath = readValue(rest, ++index, arg);
+        break;
+      case "--hbar-target":
+        options.hbarTarget = readPositiveNumber(rest, ++index, arg);
+        break;
+      case "--asset": {
+        const value = readValue(rest, ++index, arg);
+        if (value !== "hbar" && value !== "usdc") {
+          throw new Error(`--asset must be "hbar" or "usdc"`);
+        }
+        options.asset = value;
+        break;
+      }
+      case "--pay-to":
+        options.payTo = readValue(rest, ++index, arg);
+        break;
+      case "--amount":
+        options.amount = readPositiveNumber(rest, ++index, arg);
+        break;
+      case "--project-id":
+        options.projectId = readValue(rest, ++index, arg);
+        break;
+      case "--headed":
+        options.headed = true;
+        break;
+      case "--headless":
+        options.headed = false;
+        break;
+      case "--help":
+      case "-h":
+        printWalletHelp();
+        process.exitCode = 0;
+        break;
+      default:
+        throw new Error(`Unknown wallet option: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+function readPositiveNumber(args: string[], index: number, flag: string): number {
+  const raw = readValue(args, index, flag);
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`Expected a positive number after ${flag}.`);
+  }
+  return value;
 }
 
 function readValue(args: string[], index: number, flag: string): string {

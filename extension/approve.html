@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Harness Test Wallet</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #12121a;
+        --panel: #1c1c28;
+        --ink: #f4f4f8;
+        --muted: #9a9ab0;
+        --accent: #8259ef;
+        --danger: #e85d5d;
+        --ok: #3ecf8e;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(1200px 600px at 10% -10%, #2a1f4d, transparent), var(--bg);
+        color: var(--ink);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      main {
+        width: min(440px, 100%);
+        background: var(--panel);
+        border: 1px solid #2e2e40;
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 1.25rem;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 20px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 10px 0;
+        font-size: 0.95rem;
+      }
+      .row span:last-child {
+        font-family: ui-monospace, monospace;
+        text-align: right;
+      }
+      .pending {
+        margin-top: 20px;
+        padding: 16px;
+        border-radius: 12px;
+        background: #151522;
+        border: 1px solid #34344a;
+      }
+      .pending h2 {
+        margin: 0 0 8px;
+        font-size: 1rem;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 16px;
+      }
+      button {
+        flex: 1;
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #reject-btn {
+        background: transparent;
+        color: var(--ink);
+        border: 1px solid #4a4a60;
+      }
+      #approve-btn,
+      #sign-btn {
+        background: var(--accent);
+        color: white;
+      }
+      #sign-btn {
+        display: none;
+      }
+      .status {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 0.85rem;
+        min-height: 1.2em;
+      }
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.err {
+        color: var(--danger);
+      }
+      .idle {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Harness Test Wallet</h1>
+      <p class="sub">Testnet only — driven by hedera-harness</p>
+
+      <div class="row"><span>Network</span><span id="network">testnet</span></div>
+      <div class="row"><span>Account</span><span id="account">—</span></div>
+      <div class="row"><span>Session</span><span id="session">not paired</span></div>
+
+      <div id="pending-panel" class="pending" hidden>
+        <h2 id="pending-title">Request</h2>
+        <p id="pending-detail" class="idle"></p>
+        <div class="actions">
+          <button type="button" id="reject-btn">Reject</button>
+          <button type="button" id="approve-btn">Approve</button>
+          <button type="button" id="sign-btn">Sign</button>
+        </div>
+      </div>
+
+      <p id="idle-msg" class="idle">Waiting for connection or transaction requests…</p>
+      <p id="status" class="status" role="status"></p>
+    </main>
+    <script src="approve.js" type="module"></script>
+  </body>
+</html>

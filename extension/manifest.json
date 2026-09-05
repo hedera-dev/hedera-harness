@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Harness Test Wallet",
+  "version": "0.1.0",
+  "description": "Deterministic Hedera testnet wallet for hedera-harness EVALUATE flows.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["approve.html", "approve.js", "runtime-config.json", "icon.svg"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_title": "Harness Test Wallet"
+  }
+}

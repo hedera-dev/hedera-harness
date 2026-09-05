@@ -82,6 +82,10 @@ test("parseCliArgs rejects removed extend command", () => {
   );
 });
 
+test("parseCliArgs lists wallet in expected commands", () => {
+  assert.throws(() => cli.parseCliArgs(["nope"]), /"wallet"/);
+});
+
 test("parseCliArgs accepts init with target and flags", () => {
   const parsed = cli.parseCliArgs([
     "init",

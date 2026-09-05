@@ -1,0 +1,10 @@
+{
+  "name": "harness-pay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Minimal Hedera dApp that discovers Harness Test Wallet via standard extension protocol.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

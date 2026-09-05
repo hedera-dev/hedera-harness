@@ -126,8 +126,25 @@ hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
 hedera-harness migrate [spec] [--dry-run]
 hedera-harness validate [spec] [--workspace <path>]
 hedera-harness validate-semantic [spec] [--workspace <path>]
+hedera-harness wallet init|status|demo [options]
 ```
 
+### Persistent wallet runtime
+
+Hedera dApps have a trust boundary between the browser and the network: the **user wallet**. The harness already covers SMOKE/EVALUATE (browser) and CHAIN (network). `hedera-harness wallet` closes the gap with a persistent testnet wallet + extension that speaks the standard Hedera discovery protocol.
+
+```bash
+hedera-harness wallet init                 # create/reuse .harness/wallet/account.json
+hedera-harness wallet status
+hedera-harness wallet demo --asset hbar    # Connect → Approve → Sign → mirror verify
+```
+
+- Persistent identity (survives runs; never swept like `chainSigner`)
+- Disposable Chromium profile + unpacked extension per demo
+- Private key never injected into the coding agent or app env
+- Demo dApp: [`examples/harness-pay`](examples/harness-pay) (no Harness-specific wallet API)
+
+See [docs/wallet/README.md](docs/wallet/README.md) for proof obligations and known issues.
 **`init`** decides what to do from the target:
 
 | Target | Behaviour |

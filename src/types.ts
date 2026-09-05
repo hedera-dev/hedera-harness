@@ -6,7 +6,45 @@ export type HarnessCommand =
   | "doctor"
   | "migrate"
   | "validate"
-  | "validate-semantic";
+  | "validate-semantic"
+  | "wallet";
+
+export type WalletSubcommand = "init" | "status" | "demo";
+
+export interface WalletCliOptions {
+  subcommand: WalletSubcommand;
+  workspacePath?: string;
+  /** Funding target in HBAR before demo/status top-up (default 10). */
+  hbarTarget?: number;
+  /** Demo asset: hbar (default) or usdc. */
+  asset?: "hbar" | "usdc";
+  /** Hedera account that receives the demo payment (default: operator). */
+  payTo?: string;
+  /** Demo payment amount in whole HBAR or whole USDC units (default 1). */
+  amount?: number;
+  /** Run Playwright headed (default true for demo visibility). */
+  headed?: boolean;
+  /** WalletConnect / Reown project id (env REOWN_PROJECT_ID fallback). */
+  projectId?: string;
+  /** Skip opening the browser / Playwright automation (status-only helpers). */
+  skipBrowser?: boolean;
+}
+
+/** Persistent Harness Test Wallet identity (survives runs; never swept). */
+export interface PersistentWallet {
+  accountId: string;
+  privateKeyHex: string;
+  publicKeyHex: string;
+  network: "testnet";
+  createdAt: string;
+}
+
+export interface WalletStatus {
+  wallet: PersistentWallet;
+  hbarBalance: number;
+  usdcBalance?: number;
+  associated?: boolean;
+}
 
 export interface CommandExecutionResult {
   command: string;
@@ -68,6 +106,7 @@ export interface ParsedCli {
   command: HarnessCommand;
   options: CliOptions;
   initOptions?: InitCliOptions;
+  walletOptions?: WalletCliOptions;
 }
 
 export interface AgentRunInput {

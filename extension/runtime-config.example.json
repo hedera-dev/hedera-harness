@@ -1,0 +1,7 @@
+{
+  "runtimeBaseUrl": "http://127.0.0.1:0",
+  "accountId": "0.0.0",
+  "network": "testnet",
+  "extensionId": "harness-test-wallet",
+  "extensionName": "Harness Test Wallet"
+}

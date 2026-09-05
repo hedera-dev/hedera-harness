@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Harness Pay</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        --ink: #101018;
+        --muted: #5c5c70;
+        --accent: #2d6cdf;
+        --bg: #f6f4ef;
+        --panel: #ffffff;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, #efeae0 0%, var(--bg) 40%),
+          radial-gradient(800px 400px at 90% 0%, #dfe8ff, transparent);
+        color: var(--ink);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      main {
+        width: min(420px, 100%);
+        background: var(--panel);
+        border-radius: 4px;
+        padding: 32px 28px;
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 24px 60px rgba(40, 40, 60, 0.08);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.75rem;
+        letter-spacing: -0.03em;
+      }
+      p {
+        margin: 0 0 20px;
+        color: var(--muted);
+      }
+      button {
+        appearance: none;
+        border: 0;
+        background: var(--ink);
+        color: white;
+        padding: 12px 16px;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        width: 100%;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #pay-btn {
+        display: none;
+        margin-top: 12px;
+        background: var(--accent);
+      }
+      .meta {
+        margin-top: 20px;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+      }
+      #result {
+        margin-top: 16px;
+        font-weight: 600;
+      }
+      #result.ok {
+        color: #1b7f4a;
+      }
+      #extensions {
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      #extensions li {
+        padding: 8px 0;
+        border-top: 1px solid #ece8df;
+      }
+      #extensions button {
+        background: transparent;
+        color: var(--accent);
+        padding: 0;
+        width: auto;
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Harness Pay</h1>
+      <p>One-page Hedera dApp used to prove wallet boundary testing.</p>
+
+      <div class="meta">
+        Wallet: <span id="wallet-label">Not connected</span>
+      </div>
+
+      <button type="button" id="connect-btn">Connect Wallet</button>
+      <ul id="extensions"></ul>
+      <button type="button" id="pay-btn">Pay 1 HBAR</button>
+
+      <div id="result" role="status"></div>
+    </main>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
