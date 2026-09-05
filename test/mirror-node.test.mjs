@@ -15,6 +15,10 @@ const {
   waitForTransaction,
 } = await import(pathToFileURL(path.resolve("dist/validation/mirrorNode.js")).href);
 
+const { detectEvalInfrastructureFailure } = await import(
+  pathToFileURL(path.resolve("dist/evalInfra.js")).href
+);
+
 /** Replaces global fetch with a scripted sequence and records every URL hit. */
 function stubFetch(responses) {
   const calls = [];
@@ -228,4 +232,64 @@ test("a message on a live topic is polled past the empty list and returned unwra
   } finally {
     stub.restore();
   }
+});
+
+test("a mirror node outage is classified as infrastructure, not as app defects", () => {
+  // Verbatim from a testnet run against Hashio on 4 September 2026. The same
+  // call succeeded unchanged a minute later.
+  const outage = {
+    passed: false,
+    findings: [
+      {
+        id: "eval:e1",
+        category: "eval",
+        message:
+          'critical [E1] (/): Submitting the form failed. Console: Error: could not coalesce error (error={ "code": -32020, "message": "Mirror node upstream failure: statusCode=504, message=timeout of 30000ms exceeded" }, code=UNKNOWN_ERROR)',
+      },
+      { id: "eval:e2", category: "eval", message: "critical [E2] (/): The receipt panel never appeared." },
+      { id: "eval:e3", category: "eval", message: "major [E3] (/): No transaction id was shown." },
+    ],
+    verdict: { summary: "Three assertions failed against the running app.", issues: [] },
+  };
+
+  assert.ok(
+    detectEvalInfrastructureFailure(outage),
+    "a relay-side mirror outage must abort the run, not spend repair attempts",
+  );
+});
+
+test("a consensus-level throttle is a retry, not a defect", () => {
+  const throttled = {
+    passed: false,
+    findings: [
+      { id: "eval:e1", category: "eval", message: "critical [E1] (/): submit failed: THROTTLED_AT_CONSENSUS" },
+      { id: "eval:e2", category: "eval", message: "critical [E2] (/): no receipt" },
+      { id: "eval:e3", category: "eval", message: "major [E3] (/): no id" },
+    ],
+    verdict: { summary: "", issues: [] },
+  };
+
+  assert.ok(detectEvalInfrastructureFailure(throttled));
+});
+
+test("an app that genuinely mishandles a transaction is still repaired", () => {
+  const appBug = {
+    passed: false,
+    findings: [
+      {
+        id: "eval:e1",
+        category: "eval",
+        message: "critical [E1] (/): The app shows the transaction id as 0.0.7@1.2 and its HashScan link 404s.",
+      },
+      { id: "eval:e2", category: "eval", message: "major [E2] (/): The topic id input accepts an empty value." },
+      { id: "eval:e3", category: "eval", message: "major [E3] (/): No loading state while the mirror node is read." },
+    ],
+    verdict: { summary: "Three assertions failed against the running app.", issues: [] },
+  };
+
+  assert.equal(
+    detectEvalInfrastructureFailure(appBug),
+    undefined,
+    "mentioning the mirror node is not the same as the mirror node being down",
+  );
 });

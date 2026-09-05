@@ -37,6 +37,17 @@ const INFRA_TEXT_PATTERNS: RegExp[] = [
   // Chain / mirror-node infrastructure (not app defects)
   /mirror[_ ]?node (?:unreachable|unavailable|timeout|timed out|failed)/i,
   /testnet(?:\/relay)? (?:unreachable|unavailable|timeout|timed out)/i,
+  // The patterns above want an outage word straight after "mirror node", and
+  // the relay one wants "hashio" or "json-rpc" nearby. A real outage says
+  // neither. Measured against Hashio on testnet: eth_getBlockByNumber came back
+  // as code -32020 "Mirror node upstream failure: statusCode=504, message=
+  // timeout of 30000ms exceeded", which ethers rewraps as "could not coalesce
+  // error", and the same call succeeded unchanged a minute later. Unmatched,
+  // that is graded as app defects and burns repair attempts.
+  /mirror node upstream failure/i,
+  /(?:^|[^\d-])-32020(?:[^\d]|$)/,
+  /could not coalesce error/i,
+  /THROTTLED_AT_CONSENSUS/,
   // Require an outage signal — bare "hashio" matches normal RPC error text from app txs.
   /(?:hashio|json-?rpc(?: relay)?) .{0,60}(?:unreachable|unavailable|timeout|timed out|ECONNREFUSED)/i,
   /insufficient[_ ]payer[_ ]balance/i,
@@ -48,7 +59,8 @@ const INFRA_TEXT_PATTERNS: RegExp[] = [
 
 /**
  * Returns a short reason when evaluation failed due to harness / agent
- * tooling (MCP, browser, validator process) rather than the generated app.
+ * tooling (MCP, browser, validator process) or the chain it reads through
+ * (mirror node, JSON-RPC relay) rather than the generated app.
  */
 export function detectEvalInfrastructureFailure(
   result: EvaluationResult,
@@ -76,7 +88,7 @@ export function detectEvalInfrastructureFailure(
     return "Playwright MCP was unavailable or rejected; validator could not drive the live app.";
   }
 
-  if (!looksLikeBrowserAccessBlocked(result, corpus)) {
+  if (!looksLikeInfrastructureFailure(result, corpus)) {
     return undefined;
   }
 
@@ -87,7 +99,7 @@ export function detectEvalInfrastructureFailure(
 
   return (
     result.verdict?.summary?.trim() ||
-    "Evaluator could not access a browser / Playwright MCP (infrastructure), not an app defect."
+    "Evaluation failed on infrastructure (browser, MCP or the Hedera mirror node / relay), not on an app defect."
   );
 }
 
@@ -134,7 +146,7 @@ function buildFailureCorpus(result: EvaluationResult): string {
   ].join("\n");
 }
 
-function looksLikeBrowserAccessBlocked(result: EvaluationResult, corpus: string): boolean {
+function looksLikeInfrastructureFailure(result: EvaluationResult, corpus: string): boolean {
   const issues = result.verdict?.issues ?? [];
   if (issues.length >= 3) {
     const blocked = issues.filter(issue =>
