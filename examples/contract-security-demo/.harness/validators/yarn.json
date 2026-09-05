@@ -1,0 +1,1 @@
+{"commands":[{"name":"install","command":"true"},{"name":"build","command":"forge build","timeoutMs":120000}]}
