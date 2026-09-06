@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- **`doctor` checks that the chain operator can fund the run.** With
+  `chainValidation.enabled`, it reads the operator's HBAR balance and reports how
+  many runs it covers at `fundingHbar` plus fees: below one run fails, below three
+  warns. Provisioning the ephemeral signer happens inside `run`, after the baseline
+  installs and builds are already paid for, so an empty operator used to surface
+  as a mid-run failure. When the recipe deploys contracts the check also says that
+  `fundingHbar` has to cover what the relay *reserves* (`gasLimit × gasPrice`),
+  not the fee finally charged.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

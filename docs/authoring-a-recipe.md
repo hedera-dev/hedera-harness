@@ -173,6 +173,13 @@ chainValidation:
   #       command: yarn hardhat:deploy --network hederaTestnet
 ```
 
+`fundingHbar` is drawn from the operator once per run, inside `run`, after the baseline has
+already been installed and built. `doctor` reads the operator balance up front and reports how
+many runs it covers, so an empty operator is a line of output rather than a failure forty minutes
+in. When the recipe deploys contracts, size `fundingHbar` against what the JSON-RPC relay
+*reserves* — `gasLimit × gasPrice` — and not against the fee finally charged: a burner funded for
+the fee alone still fails with `Insufficient funds for transfer`.
+
 - the operator must be **ECDSA**, not ED25519 — ED25519 has no EVM alias
 - export the env vars in your shell; they are never written into the workspace
 - `@hiero-ledger/sdk` ships with `hedera-harness`; do not add it to the project
@@ -227,7 +234,9 @@ hedera-harness validate            # ASSERT only, no agent
 hedera-harness validate-semantic   # run EVALUATE only, against a workspace you already have
 ```
 
-`doctor` reports everything at once rather than stopping at the first problem.
+`doctor` reports everything at once rather than stopping at the first problem. With
+`chainValidation.enabled`, it also queries the operator's balance: not enough for one run fails,
+enough for fewer than three warns.
 
 Recipes must declare `schemaVersion: 3`. Older keys such as `contract:` or
 `extend:` are rejected at load (`use eval:` / `use baseline:`). Regenerating
