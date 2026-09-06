@@ -1,5 +1,14 @@
 # Changelog
 
+
+## Unreleased
+
+- `doctor` now verifies Hedera operator credentials against the declared network instead of only
+  checking that the environment variables are set: account id shape (an EVM address in the account
+  id variable is a distinct, named failure), private key curve against the account's actual key
+  type, account existence on the declared network, and balance against `chainValidation.fundingHbar`.
+  Network failures downgrade to warnings. No new dependencies; the key is never printed.
+
 ## 1.2.2
 
 ### Fixed

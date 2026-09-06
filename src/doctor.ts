@@ -10,6 +10,7 @@ import {
   PROMPT_TEMPLATE_NAMES,
   resolvePromptTemplatePath,
 } from "./promptTemplates.js";
+import { checkChainCredentials } from "./chainCredentials.js";
 import type { CliOptions, TemplateSpec } from "./types.js";
 
 export type CheckStatus = "ok" | "warn" | "fail";
@@ -65,7 +66,7 @@ export async function runDoctor(
     checks.push(...(await checkRecipeFiles(spec)));
     checks.push(await checkPromptOverrides(spec.projectRoot));
     checks.push(...(await checkOptionalDeps(spec, workspacePath)));
-    checks.push(...checkChainEnv(spec));
+    checks.push(...(await checkChainPreflight(spec)));
   }
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
@@ -346,6 +347,33 @@ async function checkImport(pkg: string, feature: string, tool: string): Promise<
       fix: `${tool} add -D ${pkg}`,
     };
   }
+}
+
+/**
+ * Chain preflight.
+ *
+ * The presence of the operator variables is reported as before, then the credentials are checked
+ * against the network the recipe declares. Presence alone lets a wrong-curve key or an account
+ * that only exists on another network reach the first transaction of a run that has already
+ * spent its agent budget.
+ */
+async function checkChainPreflight(spec: TemplateSpec): Promise<DoctorCheck[]> {
+  const chain = spec.chainValidation;
+  if (!chain?.enabled) return [];
+
+  const presence = checkChainEnv(spec);
+  const bothSet = presence.every(check => check.status === "ok");
+  if (!bothSet) return presence;
+
+  return [
+    ...presence,
+    ...(await checkChainCredentials({
+      accountIdEnv: chain.operator.accountIdEnv,
+      privateKeyEnv: chain.operator.privateKeyEnv,
+      network: chain.network,
+      fundingHbar: chain.fundingHbar,
+    })),
+  ];
 }
 
 function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {

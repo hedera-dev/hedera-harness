@@ -261,3 +261,21 @@ To author recipes with an agent, install the marketplace plugin:
 ## License
 
 MIT
+
+## What `doctor` checks about Hedera
+
+`doctor` verifies the operator credentials against the network the recipe declares, not just that
+the environment variables are set. Every one of these passes a presence check and then costs a
+full run:
+
+| Caught | Why it is otherwise expensive |
+|---|---|
+| An EVM address in the account id variable | Both are "the address" in conversation; the SDK operator needs `0.0.x` |
+| A key whose curve does not match the account | Surfaces much later as `INVALID_SIGNATURE`, with nothing pointing at the key format |
+| A raw 64 hex key | Valid for both curves, so `doctor` reports which `fromString*` the account actually needs |
+| An account that does not exist on this network | Accounts are per network; one created on mainnet is not on testnet |
+| A balance below what the run will fund | Checked against `chainValidation.fundingHbar`, not an arbitrary floor |
+
+Losing network access downgrades these to a warning rather than a failure: being offline is not a
+broken setup. The private key is never printed, and is never included in any check output.
+
