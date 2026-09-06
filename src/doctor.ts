@@ -11,7 +11,8 @@ import {
   PROMPT_TEMPLATE_NAMES,
   resolvePromptTemplatePath,
 } from "./promptTemplates.js";
-import type { CliOptions, TemplateSpec } from "./types.js";
+import { assessOperatorFunding, readOperatorBalanceHbar } from "./validation/chainFunding.js";
+import type { ChainValidationConfig, CliOptions, TemplateSpec } from "./types.js";
 
 export type CheckStatus = "ok" | "warn" | "fail";
 
@@ -273,6 +274,7 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
   }
   if (spec.chainValidation?.enabled) {
     checks.push(await checkHarnessSdk());
+    checks.push(await checkChainOperatorFunding(spec.chainValidation));
   }
   return checks;
 }
@@ -335,6 +337,36 @@ async function checkHarnessSdk(): Promise<DoctorCheck> {
       fix: "Reinstall hedera-harness — CHAIN uses the SDK bundled with the CLI, not a project peer.",
     };
   }
+}
+
+/**
+ * The operator has to fund the ephemeral signer before Tier 3.5 can do anything, and that
+ * transfer happens inside `run`, after the baseline has been paid for. Reading the balance here
+ * costs one query and turns a mid-run provisioning failure into a line of output before it.
+ */
+async function checkChainOperatorFunding(chain: ChainValidationConfig): Promise<DoctorCheck> {
+  const name = "CHAIN operator funding";
+  let balanceHbar: number;
+  try {
+    balanceHbar = await readOperatorBalanceHbar(chain);
+  } catch (error) {
+    return {
+      name,
+      status: "warn",
+      detail: error instanceof Error ? error.message : String(error),
+      fix: "Checked before the run only; provisioning will report the same problem later.",
+    };
+  }
+
+  const assessment = assessOperatorFunding(balanceHbar, chain);
+  const status: CheckStatus =
+    assessment.verdict === "insufficient" ? "fail" : assessment.verdict === "low" ? "warn" : "ok";
+  return {
+    name,
+    status,
+    detail: assessment.detail,
+    ...(assessment.fix ? { fix: assessment.fix } : {}),
+  };
 }
 
 function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
