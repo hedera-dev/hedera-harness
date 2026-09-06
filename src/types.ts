@@ -283,7 +283,8 @@ export interface ValidationFinding {
     | "agent"
     | "playwright"
     | "semantic"
-    | "semantic-infra";
+    | "semantic-infra"
+    | "mirror-node";
   message: string;
   details?: string;
   /**
