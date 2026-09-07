@@ -82,6 +82,10 @@ test("parseCliArgs rejects removed extend command", () => {
   );
 });
 
+test("parseCliArgs lists tui in expected commands", () => {
+  assert.throws(() => cli.parseCliArgs(["nope"]), /"tui"/);
+});
+
 test("parseCliArgs accepts init with target and flags", () => {
   const parsed = cli.parseCliArgs([
     "init",
@@ -113,6 +117,9 @@ test("printHelp documents init and project-centric run", () => {
   const help = lines.join("\n");
   assert.match(help, /hedera-harness init/);
   assert.match(help, /hedera-harness run/);
+  assert.match(help, /hedera-harness wallet/);
+  assert.match(help, /hedera-harness mcp/);
+  assert.match(help, /hedera-harness tasks/);
   assert.match(help, /continues automatically/i);
   assert.match(help, /--new/);
   assert.doesNotMatch(help, /hedera-harness extend/);

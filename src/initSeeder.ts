@@ -5,8 +5,12 @@ import { executeCommand, executeCommandOrThrow } from "./command.js";
 import type { CommandExecutionResult, PreflightCommandConfig } from "./types.js";
 
 const DEFAULT_GIT_TIMEOUT_MS = 5 * 60 * 1000;
+/** Cold `yarn install` on Windows has been seen past 5 minutes; INIT must wait. */
+export const DEFAULT_YARN_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 export const DEFAULT_SCAFFOLD_REPO = "https://github.com/hedera-dev/scaffold-hbar.git";
 export const DEFAULT_SCAFFOLD_REF = "main";
+/** A folder with only these names is still seedable (git clone needs it empty). */
+export const SEED_IGNORABLE_ENTRIES = new Set([".git", ".DS_Store", "Thumbs.db"]);
 const INITIAL_COMMIT_MESSAGE = "Initial scaffold from scaffold-hbar";
 /** scaffold-hbar keeps one template per branch under this prefix. */
 export const TEMPLATE_BRANCH_PREFIX = "templates/";
@@ -71,6 +75,9 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
   const ref = input.ref?.trim() || DEFAULT_SCAFFOLD_REF;
 
   const { emptyExisting } = await assertTargetReadyForInit(targetDir);
+  if (emptyExisting) {
+    await stripIgnorableSeedLeftovers(targetDir);
+  }
   if (!emptyExisting) {
     await mkdir(path.dirname(targetDir), { recursive: true });
   }
@@ -127,7 +134,7 @@ export async function seedProjectForInit(input: InitSeedInput): Promise<InitSeed
   const preflightCommands: Array<string | PreflightCommandConfig> = input.skipInstall
     ? [...(input.preflightCommands ?? [])]
     : [
-        { name: "install", command: "yarn install", timeoutMs: 300_000 },
+        { name: "install", command: "yarn install", timeoutMs: DEFAULT_YARN_INSTALL_TIMEOUT_MS },
         ...(input.preflightCommands ?? []),
       ];
 
@@ -216,7 +223,8 @@ export async function detectInitMode(targetDir: string): Promise<InitMode> {
     throw error;
   }
 
-  if (entries.length === 0) {
+  const meaningful = entries.filter(name => !SEED_IGNORABLE_ENTRIES.has(name));
+  if (meaningful.length === 0) {
     return { kind: "seed-empty" };
   }
   if (entries.includes("package.json")) {
@@ -230,6 +238,22 @@ export async function detectInitMode(targetDir: string): Promise<InitMode> {
       "Choose an empty directory to scaffold into, or run init inside a project to adopt the harness there.",
     ].join("\n"),
   );
+}
+
+async function stripIgnorableSeedLeftovers(targetDir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(targetDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const leftover = entries.filter(name => SEED_IGNORABLE_ENTRIES.has(name));
+  const blocking = entries.filter(name => !SEED_IGNORABLE_ENTRIES.has(name));
+  if (blocking.length > 0 || leftover.length === 0) return;
+  for (const name of leftover) {
+    await rm(path.join(targetDir, name), { recursive: true, force: true });
+  }
 }
 
 async function runPreflightCommands(

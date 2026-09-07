@@ -6,7 +6,67 @@ export type HarnessCommand =
   | "doctor"
   | "migrate"
   | "validate"
-  | "validate-semantic";
+  | "validate-semantic"
+  | "tui"
+  | "wallet"
+  | "mcp"
+  | "tasks"
+  | "serve";
+
+export type McpSubcommand = "status" | "enable" | "install";
+
+export interface McpCliOptions {
+  subcommand: McpSubcommand;
+  workspace?: string;
+}
+
+export type ServeSubcommand = "start" | "stop" | "status";
+
+export interface ServeCliOptions {
+  subcommand: ServeSubcommand;
+  workspace?: string;
+}
+
+export type TasksSubcommand = "status" | "done";
+
+export interface TasksCliOptions {
+  subcommand: TasksSubcommand;
+  workspace?: string;
+  taskId?: string;
+}
+
+export type WalletSubcommand = "status" | "provision" | "browser" | "e2e";
+
+export interface WalletCliOptions {
+  subcommand: WalletSubcommand;
+  workspace?: string;
+  /** provision: skip opening the system browser (tests). Default open. */
+  open?: boolean;
+  /** provision: bind 127.0.0.1 to this port. Default 0 (ephemeral). */
+  port?: number;
+  /** e2e: live app URL (default http://127.0.0.1:3000). */
+  url?: string;
+  /** e2e: HBAR amount to send. Default 0.01 (smoke). */
+  amount?: string;
+  /** e2e: destination 0x address. Default: first 0x on the payments page. */
+  to?: string;
+}
+
+export type TuiSubcommand = "install" | "uninstall";
+
+export interface TuiCliOptions {
+  subcommand: TuiSubcommand;
+  /** Project that should receive opencode.json + .opencode/. Defaults to cwd. */
+  targetDir?: string;
+  /** Leave default_agent unchanged so Gentle stays the Tab default. */
+  keepDefault?: boolean;
+  /** Overlay-only: skip auto scaffold when `.harness/spec.yaml` is missing. */
+  skipInit?: boolean;
+  /** Accepted for compatibility; `tui install` always skips yarn (INIT installs deps). */
+  skipInstall?: boolean;
+  /** Test seam: skip skill vendoring during auto-init. */
+  skipSkills?: boolean;
+}
 
 export interface CommandExecutionResult {
   command: string;
@@ -68,6 +128,11 @@ export interface ParsedCli {
   command: HarnessCommand;
   options: CliOptions;
   initOptions?: InitCliOptions;
+  tuiOptions?: TuiCliOptions;
+  walletOptions?: WalletCliOptions;
+  mcpOptions?: McpCliOptions;
+  tasksOptions?: TasksCliOptions;
+  serveOptions?: ServeCliOptions;
 }
 
 export interface AgentRunInput {

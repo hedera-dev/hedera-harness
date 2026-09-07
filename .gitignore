@@ -22,6 +22,8 @@ docs/prds/local/
 .env
 .env.*
 !.env.example
+.harness/wallet/
+.harness/dev-server.json
 
 # OS & editor
 .DS_Store
@@ -34,3 +36,8 @@ docs/prds/local/
 coverage/
 test-results/
 playwright-report/
+
+# Local nested dApp / scratch (not part of this repo)
+demo-app/
+test-app/
+.tmp-ui-test/

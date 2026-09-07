@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
 import { killProcessTree } from "../command.js";
+import { inspectNextAssetHealth, nextAssetHealthHint } from "../nextAssetHealth.js";
 import { parse as parseYaml } from "yaml";
 
 const LOCAL_URL_PATTERN = /Local:\s*(https?:\/\/[^\s-]+)/i;
@@ -181,9 +182,14 @@ export async function waitForServer(url: string, timeoutMs: number): Promise<voi
     try {
       const response = await fetch(url, { redirect: "follow" });
       if (response.status >= 200 && response.status < 400) {
-        return;
+        const health = await inspectNextAssetHealth(url);
+        if (health.cssOk && health.jsOk) {
+          return;
+        }
+        lastError = nextAssetHealthHint(health) || "HTML 200 but /_next CSS or JS 404";
+      } else {
+        lastError = `HTTP ${response.status}`;
       }
-      lastError = `HTTP ${response.status}`;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }

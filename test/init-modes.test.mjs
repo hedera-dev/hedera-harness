@@ -32,6 +32,12 @@ test("an empty directory is scaffolded", async () => {
   assert.equal((await detectInitMode(root)).kind, "seed-empty");
 });
 
+test("a directory that only has .git is still scaffolded", async () => {
+  const root = await makeTestTempDir("init-git-only-");
+  await mkdir(path.join(root, ".git"), { recursive: true });
+  assert.equal((await detectInitMode(root)).kind, "seed-empty");
+});
+
 test("a directory holding a project is adopted in place", async () => {
   const root = await makeTestTempDir("init-project-");
   await writeFile(path.join(root, "package.json"), '{"name":"x","version":"1.0.0"}\n');

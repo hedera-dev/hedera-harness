@@ -1,0 +1,63 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "hedera-orchestrator",
+  "mcp": {
+    "hedera-docs": {
+      "type": "remote",
+      "url": "https://docs.hedera.com/mcp",
+      "enabled": true,
+      "oauth": false,
+      "timeout": 15000
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "enabled": false
+    }
+  },
+  "tools": {
+    "playwright*": false,
+    "browser_*": false
+  },
+  "agent": {
+    "hedera-orchestrator": {
+      "description": "Hedera Harness conductor. INIT, PRD, GENERATE → EVALUATE, then RainbowKit Connect+Send in Chrome. Switch here with Tab.",
+      "mode": "primary",
+      "color": "#8259ef",
+      "prompt": "{file:./.opencode/prompts/hedera-orchestrator.md}",
+      "tools": {
+        "todowrite": true,
+        "todoread": true,
+        "playwright*": false,
+        "browser_*": false
+      },
+      "permission": {
+        "edit": "ask",
+        "question": "allow",
+        "todowrite": "allow",
+        "todoread": "allow",
+        "playwright*": "deny",
+        "browser_*": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "allow",
+          "node dist/index.js*": "ask",
+          "npm test*": "allow",
+          "yarn next:build*": "allow"
+        },
+        "task": {
+          "*": "deny",
+          "hedera-init": "allow",
+          "hedera-prd": "allow",
+          "hedera-generate": "allow",
+          "hedera-assert": "allow",
+          "hedera-smoke": "allow",
+          "hedera-evaluate": "allow",
+          "hedera-local": "allow"
+        }
+      }
+    }
+  }
+}

@@ -11,6 +11,8 @@
     "skills-index.json",
     "prompts",
     "skeletons",
+    "opencode.json",
+    ".opencode",
     "CHANGELOG.md",
     "README.md",
     "LICENSE"
@@ -52,10 +54,14 @@
   },
   "peerDependencies": {
     "@hiero-ledger/sdk": "^2.86.2",
+    "@tenkeylabs/dappwright": "^2.13.12",
     "playwright": "^1.61.1"
   },
   "peerDependenciesMeta": {
     "@hiero-ledger/sdk": {
+      "optional": true
+    },
+    "@tenkeylabs/dappwright": {
       "optional": true
     },
     "playwright": {
@@ -64,6 +70,8 @@
   },
   "devDependencies": {
     "@hiero-ledger/sdk": "^2.86.2",
+    "@playwright/test": "^1.61.1",
+    "@tenkeylabs/dappwright": "^2.13.12",
     "@types/node": "^26.1.0",
     "playwright": "^1.61.1",
     "typescript": "^6.0.3"

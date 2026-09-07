@@ -59,6 +59,7 @@ test("provisionHarnessProject writes .harness recipe and gitignore", async () =>
   const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
   assert.match(gitignore, /\.harness\/runs\//);
   assert.match(gitignore, /\.harness\/runtime\//);
+  assert.match(gitignore, /\.harness\/wallet\//);
 
   const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts["harness:run"], "hedera-harness run .harness/spec.yaml");

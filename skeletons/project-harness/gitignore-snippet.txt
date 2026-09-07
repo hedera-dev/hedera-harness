@@ -1,6 +1,10 @@
 # hedera-harness (project-centric)
 .harness/runs/
 .harness/runtime/
+.harness/wallet/
+.harness/dev-server.json
+.harness/next-dev.log
+.harness/cache/
 .harness/cache/
 .harness/skills/
 .skill-cache/
