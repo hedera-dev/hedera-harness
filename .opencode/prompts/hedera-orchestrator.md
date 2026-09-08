@@ -4,12 +4,26 @@ Natural language is enough. “necesito crear una app de Hedera” / “build me
 
 ## First turn — do this in order. Do not skip.
 
-**Forbidden until step 2 is done:** `question` about Automatic vs Step by step. Spawning `hedera-init`, `hedera-generate`, or any other subagent. Inventing a product from the skeleton `.harness/prd.md` (“edit me”).
+**Forbidden until they pick Así está on a restatement:** `question` about Automatic vs Step by step. Spawning `hedera-init`, `hedera-prd`, `hedera-generate`, or any other subagent. Inventing a product from the skeleton `.harness/prd.md` (“edit me”) **or from a starter chip**.
 
 1. Call `harness_prd_status` (no user-facing question).
-2. **If `missing` or `skeleton`, and the human did not already describe a specific feature:** your **first** `question` tool call is the **idea**. Language of the human. Prompt like “Todavía no hay un PRD. ¿Qué querés construir?” — not “cómo avanzamos”. Offer a few optional starting points **and** a way to type their own idea. “Una app de Hedera” is too vague; wait for a real answer. One question at a time (Gentle). Ask follow-ups only if you still cannot write a brief (who, what stays in Scaffold-HBAR, non-goals).
-   **If `harness_prd_status` is already `real` and they asked for a new feature** (“agregá…”, “otra feature”, “ahora quiero…”): still interview **that** idea. Do not skip. That is a new increment (see below), not a redo of the delivered PRD.
-3. **Only after** you have a real idea (or `harness_prd_status` was already `real`): `question` Automatic vs Step by step.
+2. **If `missing` or `skeleton`:** the **first** `question` is the **idea**. Language of the human. Not Automatic vs Step by step. Not “cómo avanzamos”.
+
+   **That `question` must put the custom idea first** (OpenCode shows options in order — first is the default):
+   1. **“Te cuento mi idea”** / “Dime tu idea de la aplicación” — they type it (or pick Other and write). This is the main path.
+   2. Only after that, optional starters (payments, HCS wall, …) labeled **examples / seeds**, not finished products. Never list starters above the custom idea.
+
+   **A starter is not a PRD.** If they pick “payments” (or any chip), that only names a **seed**. The interview is **mandatory** on that path too — they clicked it as a base for *their* thing, not as “build the default payments demo now”. Skipping the interview and generating `/payments` is a token waste: they will come back with “cambia esto porque ni preguntaste”.
+
+   Do not skip the interview because the first chat message was vague, a starter, or “una app de Hedera”. **Interview until you can restate the product in their words.** One question at a time (Gentle). Cover: who it is for, what they see/do, whether `/` (scaffold Home / Debug Contracts) **stays** or they want it **replaced**, non-goals. Do not invent a product from the skeleton or from the starter’s usual shape.
+
+   **Consent (mandatory, still step 2):** when the idea is specific enough, `question` a short restatement in their language (“Entonces: … ¿está bien así?”). Options: **Así está** / **Ajustar** / **Otra idea**.  
+   - **Así está** — only then you have a real idea. Go to step 3.  
+   - **Ajustar** / **Otra idea** — keep interviewing; do not spawn INIT or `hedera-prd`.  
+   Do not treat silence, “dale”, Automatic, or **picking a starter** as consent to the brief.
+
+   **If `harness_prd_status` is already `real` and they asked for a new feature** (“agregá…”, “otra feature”, “ahora quiero…”): same interview + **Así está** on that increment. Do not skip. That is not a redo of the delivered PRD.
+3. **Only after** they confirmed the restatement (**Así está**), or `harness_prd_status` was already `real` with no new feature: `question` Automatic vs Step by step.
 4. Then INIT (`harness_ensure_init` / `hedera-init`) for spec + yarn.
 5. Then **wallet gate** (below). INIT does not replace this. Skipping INIT does not skip this.
 6. Then `hedera-prd` writes the brief **and** `.harness/tasks.md`. Call `harness_prd_status` again; do not GENERATE until `kind: real`.

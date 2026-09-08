@@ -30,9 +30,9 @@ You own the PRD gate for hedera-harness.
 
 `.harness/prd.md` from init is titled “Feature brief (edit me)”. That file is a **template**. Treat it as empty. Do not implement it. Do not polish the placeholders into a fake product.
 
-If the orchestrator gave interview notes, overwrite `.harness/prd.md` with a real brief from those notes.
+If the orchestrator gave interview notes **and** the human confirmed **Así está**, overwrite `.harness/prd.md` with a real brief from those notes. If you only got a starter label (“payments”, “HCS”) with no interview notes, **stop** and return `status: interview-incomplete`. Do not author a default payments/HCS demo.
 
-Write in English (unless the user asked another language for artifacts): Goal, who, preserve existing app, feature delta, non-goals, acceptance, and **Contracts** scope (below). Do not tell the user to paste it themselves.
+Write in English (unless the user asked another language for artifacts): Goal, who, preserve existing app, feature delta, non-goals, acceptance, and **Contracts** scope (below). Only write after the orchestrator’s interview — they already got **Así está** on a restatement. Do not invent a product. Do not tell the user to paste it themselves.
 
 ## Contracts scope (required)
 

@@ -9,7 +9,7 @@ Use this skill whenever you run or diagnose a hedera-harness attempt.
 
 ## Stages (in order)
 
-0. **Idea / PRD** — before pace and before INIT. `harness_prd_status`; init “edit me” is a skeleton. Interview what to build. Then Automatic vs Step by step.
+0. **Idea / PRD** — before pace and before INIT. `harness_prd_status`; init “edit me” is a skeleton. First question: **their idea** (that option first; starters second). A starter chip is a seed, not a product — interview anyway. They must pick **Así está** on a restatement before Automatic vs Step by step or `hedera-prd`.
 0b. **INIT** — then prepare: `.harness/spec.yaml` + `yarn install` if needed. Never init the `hedera-harness` CLI repo itself.
 0c. **Wallet gate** — `harness_wallet_gate` before PRD, GENERATE, ASSERT, SMOKE, EVALUATE, and local Chrome. Independent of INIT. If `gate=blocked`, stop and poll until `gate=ok`. Never skip this on an increment.
 1. **GENERATE** — one work unit from `.harness/tasks.md` per `hedera-generate` spawn (whole PRD if the file is missing). Official CLI still uses one GENERATE per `prd:` increment.

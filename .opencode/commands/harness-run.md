@@ -5,12 +5,12 @@ agent: hedera-orchestrator
 
 Natural language is enough — treat this as /harness-run.
 
-**First `question` is the idea**, not Automatic vs Step by step. “Una app de Hedera” is not a PRD. Do not spawn INIT until they said what to build (or `harness_prd_status` is already `real`).
+**First `question` is the idea**, custom path **first**. Starters (payments, HCS…) are **seeds**, not a brief: picking one still requires the full interview + **Así está**. Never jump to INIT/`hedera-prd`/GENERATE because they clicked payments. That is how the last demo wasted a build they then had to undo.
 
 Order:
 
 1. `harness_prd_status`
-2. missing/skeleton → interview the idea (question tool)
+2. missing/skeleton → idea first (custom option **first**). Starter chip ≠ skip interview. Interview + **Así está** on the restatement.
 3. Then Automatic vs Step by step
 4. Then INIT (yarn if needed)
 5. `harness_wallet_gate` until `gate=ok` (even if INIT was skipped)

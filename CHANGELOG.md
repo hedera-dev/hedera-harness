@@ -22,6 +22,7 @@
 - **MetaMask E2E stuck on “Opening MetaMask…”** when a leftover Chromium still held `.harness/wallet/chrome-profile` or leftover `chrome-extension://` tabs ate the approval popup. Launch now kills that profile’s Chromium, does **not** `serviceWorkers: "block"` (that hid MetaMask notifications), closes extra extension tabs, and clicks Connect/Confirm on those tabs if dappwright’s popup helper misses them. Pass requires `tx=new` — yesterday’s HashScan row is `tx=stale`, not ok.
 - **MetaMask E2E ignored the requested amount.** `harness_wallet_e2e` had no `amount`/`to` args and always filled `0.01` (or left the payments input default `0.1` if React ignored `fill`). The tool now accepts `amount=` / `to=`, writes the live input via native setter, prints `amount_filled=`, and will not Send if the field still shows the default.
 - **MetaMask session DOM.** `harness_wallet_session` keeps the extension Chromium alive. `harness_wallet_dom` snapshot/click/fill that dapp tab (aria refs + live input values) so EVALUATE works on any form, not only `pay-amount`. `harness_wallet_mm` still owns Connect/Sign. Playwright MCP stays vanilla-Chrome and stays denied.
+- **Idea consent before PRD.** First `question` puts **“Te cuento mi idea”** first (starters are examples below it). A starter chip (e.g. payments) is a **seed**, not a brief — interview is mandatory on that path too. They must pick **Así está** before Automatic vs Step by step or `hedera-prd`. “dale” / pace / clicking a starter is not consent.
 
 ## 1.2.2
 
