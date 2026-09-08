@@ -16,6 +16,11 @@
 - The validator prompt now takes its mirror node base URL and the signer's
   network from the recipe, so a local run is told to verify against the local
   mirror.
+- **Chain state is snapshotted per repair attempt on `network: "local"`.** The
+  harness calls `evm_snapshot` before an attempt and `evm_revert` after a failed
+  one, so attempt N+1 starts from the chain state attempt N started from. On
+  testnet nothing is snapshotted and a line says so. `chain_snapshot_taken` and
+  `chain_snapshot_reverted` are recorded in the run log.
 
 ## 2.0.0-rc.4 — 2026-09-03
 

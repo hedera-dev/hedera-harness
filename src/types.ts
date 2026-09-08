@@ -404,6 +404,19 @@ export type HarnessLogEvent =
       reused: boolean;
     }
   | {
+      type: "chain_snapshot_taken";
+      timestamp: string;
+      attempt: number;
+      snapshotId: string;
+    }
+  | {
+      type: "chain_snapshot_reverted";
+      timestamp: string;
+      attempt: number;
+      snapshotId: string;
+      success: boolean;
+    }
+  | {
       type: "chain_signer_swept";
       timestamp: string;
       accountId: string;

@@ -8,8 +8,13 @@ import {
   buildSessionPrompt,
   buildSessionRepairPrompt,
 } from "./promptBuilder.js";
-import { appendHarnessNote, type RunLayout } from "./runArtifacts.js";
+import { appendHarnessLog, appendHarnessNote, type RunLayout } from "./runArtifacts.js";
 import { runGenerateStage, runValidationStages, type AttemptStageContext } from "./attemptStages.js";
+import {
+  revertChainSnapshot,
+  takeChainSnapshot,
+  type ChainSnapshotId,
+} from "./validation/chainSnapshot.js";
 import {
   announceAttempt,
   attemptKind,
@@ -154,6 +159,10 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       evalRelativePath: vendoredContext.evalRelativePath,
     };
 
+    // Snapshot before the generator runs, so a failed attempt can be undone and the next one
+    // starts from the same chain state this one did.
+    const snapshot = await snapshotBeforeAttempt(spec, layout, attempts);
+
     const kind = attemptKind(isContinue, attempts, attemptsThisCycle);
     const choice = selectModel({
       spec,
@@ -226,6 +235,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     if (validation.passed) break;
 
     if (attemptsThisCycle < maxAttempts) {
+      await revertAfterFailedAttempt(spec, layout, attempts, snapshot);
       latestPrompt = await promptStrategy.buildRepairPrompt(
         validation.findings.filter(finding => finding.status !== "fixed"),
         attempts + 1,
@@ -247,6 +257,75 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     validation,
     delta,
   });
+}
+
+/**
+ * `evm_snapshot` on a local chain. On testnet there is nothing to snapshot, so this logs why and
+ * the attempts share state as they always have.
+ */
+async function snapshotBeforeAttempt(
+  spec: AttemptLoopInput["spec"],
+  layout: AttemptLoopInput["layout"],
+  attempt: number,
+): Promise<ChainSnapshotId | undefined> {
+  const chain = spec.chainValidation;
+  if (!chain?.enabled) return undefined;
+  if (chain.network !== "local") {
+    if (attempt === 1) {
+      logPhase("Chain snapshots skipped", `network is ${chain.network}; attempts share state`);
+    }
+    return undefined;
+  }
+
+  try {
+    const snapshotId = await takeChainSnapshot(chain);
+    if (!snapshotId) {
+      logPhase("Chain snapshot unavailable", "node did not return an evm_snapshot id");
+      return undefined;
+    }
+    await appendHarnessLog(layout.jsonlLogPath, {
+      type: "chain_snapshot_taken",
+      timestamp: new Date().toISOString(),
+      attempt,
+      snapshotId,
+    });
+    logPhase("Chain snapshot taken", `attempt ${attempt} — ${snapshotId}`);
+    return snapshotId;
+  } catch (error) {
+    logPhase("Chain snapshot failed", error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
+}
+
+/** `evm_revert` after a failed attempt, so the repair attempt does not inherit its side effects. */
+async function revertAfterFailedAttempt(
+  spec: AttemptLoopInput["spec"],
+  layout: AttemptLoopInput["layout"],
+  attempt: number,
+  snapshotId: ChainSnapshotId | undefined,
+): Promise<void> {
+  const chain = spec.chainValidation;
+  if (!chain?.enabled || !snapshotId) return;
+
+  let success = false;
+  try {
+    success = await revertChainSnapshot(chain, snapshotId);
+  } catch (error) {
+    logPhase("Chain revert failed", error instanceof Error ? error.message : String(error));
+  }
+  await appendHarnessLog(layout.jsonlLogPath, {
+    type: "chain_snapshot_reverted",
+    timestamp: new Date().toISOString(),
+    attempt,
+    snapshotId,
+    success,
+  });
+  logPhase(
+    success ? "Chain reverted" : "Chain revert refused",
+    success
+      ? `attempt ${attempt} rolled back to ${snapshotId}`
+      : `attempt ${attempt + 1} starts on the state attempt ${attempt} left`,
+  );
 }
 
 export { findingIds, logPhase };
