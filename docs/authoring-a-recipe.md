@@ -183,6 +183,60 @@ chainValidation:
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.
 
+#### `chainValidation.assertions` — deterministic on-chain postconditions
+
+> **Status: recipe schema only.** The loader parses and validates this block;
+> the execution/evaluation engine that runs an assertion and turns a mismatch
+> into a `ValidationFinding` ships in a follow-up change. A recipe with
+> `assertions:` configured today is accepted but nothing consumes it yet.
+
+CHAIN proves a real signed transaction landed. It does not, on its own, prove
+the app enforced a specific rule for that transaction — a deploy command that
+exits `0` is treated as successful regardless of what it actually did
+on-chain. `chainValidation.assertions` closes that gap: each entry executes
+one signed action and evaluates its outcome **in code**, against real chain
+evidence, independent of EVALUATE's LLM judgment.
+
+```yaml
+chainValidation:
+  # ...enabled/network/operator/fundingHbar/sweepBack/expose as above...
+  actors:                          # optional — additional named ephemeral signers
+    attacker: { fundingHbar: 5 }   # provisioned like the primary signer, own account
+    complianceOfficer: {}          # fundingHbar defaults to chainValidation.fundingHbar
+  assertions:
+    - id: reject-unverified-transfer   # stable across repair attempts — do not rename to "fix" a finding
+      description: "Unverified investor must not receive the bond"
+      actor: attacker                  # omit to use the primary chainSigner
+      action:
+        name: attempt-transfer-to-bob
+        command: yarn hardhat run scripts/transfer-to-bob.ts --network hederaTestnet
+        timeoutMs: 60000
+      expect:
+        outcome: mustRevert            # or mustSucceed
+        reasonContains: KYC            # optional, only valid with mustRevert
+    - id: coupon-balance-delta
+      action:
+        name: run-coupon
+        command: yarn hardhat run scripts/pay-coupon.ts --network hederaTestnet
+      expect:
+        outcome: mustSucceed
+        balanceDelta:
+          accountEnv: ALICE_ACCOUNT_ID   # exactly one of account / accountEnv
+          asset: hbar                    # or { tokenId: "0.0.x" }
+          equals: "500000000"            # signed integer as a string — tinybars for hbar
+```
+
+- `id` must be unique per recipe and **stable across repair attempts** — the
+  repair loop tracks findings by id (see `findingsLifecycle.ts`); renaming an
+  id makes a fix look like a new, unrelated finding instead of a closed one.
+- `actor`, if set, must name an entry in `chainValidation.actors` — an
+  undeclared actor is a load-time error, not a run-time surprise.
+- `expect.reasonContains` only applies to `mustRevert` — rejected at load
+  otherwise.
+- `expect.balanceDelta` needs exactly one of `account` (a literal `0.0.x`) or
+  `accountEnv` (an env var read at execution time, e.g. an actor's own
+  account) — never both, never neither.
+
 ## Building in increments
 
 For anything larger than a single change, list PRDs in order:

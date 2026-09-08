@@ -3,7 +3,11 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import type {
   BaselineConfig,
+  ChainAssertionBalanceDeltaConfig,
+  ChainAssertionConfig,
+  ChainValidationActorConfig,
   ChainValidationConfig,
+  ChainValidationDeployCommand,
   CommandAgentConfig,
   SecretScanConfig,
   TemplateSpec,
@@ -593,6 +597,9 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
     throw new Error('Expected positive number "chainValidation.fundingHbar".');
   }
 
+  const actors = readChainActors(record);
+  const assertions = readChainAssertions(record, actors);
+
   return {
     enabled: record.enabled !== false,
     network: "testnet",
@@ -611,5 +618,133 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
       envVars: readOptionalStringArray(exposeRecord, "envVars") ?? [],
     },
     deploy,
+    actors,
+    assertions,
   };
+}
+
+function readChainActors(
+  record: Record<string, unknown>,
+): Record<string, ChainValidationActorConfig> | undefined {
+  const actorsRaw = record.actors;
+  if (actorsRaw === undefined) return undefined;
+  if (!actorsRaw || typeof actorsRaw !== "object" || Array.isArray(actorsRaw)) {
+    throw new Error('Expected object "chainValidation.actors" in template spec.');
+  }
+
+  const actors: Record<string, ChainValidationActorConfig> = {};
+  for (const [name, value] of Object.entries(actorsRaw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error(`Expected object at chainValidation.actors.${name}.`);
+    }
+    const actorRecord = value as Record<string, unknown>;
+    const fundingHbar = readOptionalNumber(actorRecord, "fundingHbar");
+    if (fundingHbar !== undefined && (!Number.isFinite(fundingHbar) || fundingHbar <= 0)) {
+      throw new Error(`Expected positive number "chainValidation.actors.${name}.fundingHbar".`);
+    }
+    actors[name] = fundingHbar !== undefined ? { fundingHbar } : {};
+  }
+  return actors;
+}
+
+function readChainAssertions(
+  record: Record<string, unknown>,
+  actors: Record<string, ChainValidationActorConfig> | undefined,
+): ChainAssertionConfig[] | undefined {
+  const assertionsRaw = record.assertions;
+  if (assertionsRaw === undefined) return undefined;
+  if (!Array.isArray(assertionsRaw)) {
+    throw new Error('Expected array "chainValidation.assertions" in template spec.');
+  }
+
+  const seenIds = new Set<string>();
+  return assertionsRaw.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`Expected object at chainValidation.assertions[${index}].`);
+    }
+    const entry = item as Record<string, unknown>;
+    const path = `chainValidation.assertions[${index}]`;
+
+    const id = readString(entry, "id");
+    if (seenIds.has(id)) {
+      throw new Error(
+        `Duplicate chainValidation.assertions id "${id}" — ids must be unique and stable ` +
+          "across repair attempts.",
+      );
+    }
+    seenIds.add(id);
+
+    const actor = readOptionalString(entry, "actor");
+    if (actor !== undefined && !(actors && actor in actors)) {
+      throw new Error(
+        `${path} ("${id}") references actor "${actor}", which is not declared in ` +
+          "chainValidation.actors.",
+      );
+    }
+
+    const actionRecord = readObject(entry, "action");
+    const action: ChainValidationDeployCommand = {
+      name: readString(actionRecord, "name"),
+      command: readString(actionRecord, "command"),
+      timeoutMs: readOptionalNumber(actionRecord, "timeoutMs"),
+    };
+
+    const expectRecord = readObject(entry, "expect");
+    const outcome = readString(expectRecord, "outcome");
+    if (outcome !== "mustSucceed" && outcome !== "mustRevert") {
+      throw new Error(
+        `${path} ("${id}") expect.outcome must be "mustSucceed" or "mustRevert" ` +
+          `(got ${JSON.stringify(outcome)}).`,
+      );
+    }
+    const reasonContains = readOptionalString(expectRecord, "reasonContains");
+    if (reasonContains !== undefined && outcome !== "mustRevert") {
+      throw new Error(`${path} ("${id}") expect.reasonContains only applies to mustRevert.`);
+    }
+
+    const balanceDelta = readChainAssertionBalanceDelta(expectRecord, path, id);
+
+    return {
+      id,
+      description: readOptionalString(entry, "description"),
+      actor,
+      action,
+      expect: { outcome, reasonContains, balanceDelta },
+    };
+  });
+}
+
+function readChainAssertionBalanceDelta(
+  expectRecord: Record<string, unknown>,
+  path: string,
+  id: string,
+): ChainAssertionBalanceDeltaConfig | undefined {
+  const raw = expectRecord.balanceDelta;
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Expected object "${path}.expect.balanceDelta" in template spec.`);
+  }
+  const record = raw as Record<string, unknown>;
+
+  const account = readOptionalString(record, "account");
+  const accountEnv = readOptionalString(record, "accountEnv");
+  if ((account === undefined) === (accountEnv === undefined)) {
+    throw new Error(
+      `${path} ("${id}") expect.balanceDelta needs exactly one of "account" or "accountEnv".`,
+    );
+  }
+
+  const assetRaw = record.asset;
+  let asset: ChainAssertionBalanceDeltaConfig["asset"];
+  if (assetRaw === "hbar") {
+    asset = "hbar";
+  } else if (assetRaw && typeof assetRaw === "object" && !Array.isArray(assetRaw)) {
+    asset = { tokenId: readString(assetRaw as Record<string, unknown>, "tokenId") };
+  } else {
+    throw new Error(
+      `${path} ("${id}") expect.balanceDelta.asset must be "hbar" or { tokenId: "0.0.x" }.`,
+    );
+  }
+
+  return { account, accountEnv, asset, equals: readString(record, "equals") };
 }

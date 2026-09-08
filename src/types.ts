@@ -146,6 +146,51 @@ export interface ChainValidationDeployConfig {
   commands: ChainValidationDeployCommand[];
 }
 
+/** An additional named ephemeral signer, provisioned the same way as the primary one. */
+export interface ChainValidationActorConfig {
+  /** Defaults to chainValidation.fundingHbar when omitted. */
+  fundingHbar?: number;
+}
+
+export type ChainAssertionOutcome = "mustSucceed" | "mustRevert";
+
+/**
+ * Deterministic balance-delta check, composable with outcome. `asset` is HBAR or an HTS
+ * token id; `equals` is a signed integer as a string (tinybars for HBAR, smallest unit for
+ * HTS) to avoid floating-point precision loss.
+ */
+export interface ChainAssertionBalanceDeltaConfig {
+  /** Hedera account id (0.0.x) the balance is sampled on. Exactly one of account/accountEnv. */
+  account?: string;
+  /** Env var holding the account id at execution time (e.g. an actor's own account). */
+  accountEnv?: string;
+  asset: "hbar" | { tokenId: string };
+  equals: string;
+}
+
+export interface ChainAssertionExpectConfig {
+  outcome: ChainAssertionOutcome;
+  /** Only meaningful with outcome: "mustRevert" — substring match against the failure reason. */
+  reasonContains?: string;
+  balanceDelta?: ChainAssertionBalanceDeltaConfig;
+}
+
+/**
+ * A single deterministic on-chain behavioral postcondition: execute `action` with `actor`'s
+ * signer (default: the primary chainSigner), then evaluate `expect` against real chain
+ * evidence — never an LLM judgment. See docs/authoring-a-recipe.md.
+ */
+export interface ChainAssertionConfig {
+  /** Stable across repair attempts — reused findings/report ids are keyed on this. */
+  id: string;
+  description?: string;
+  /** Name of an entry in chainValidation.actors. Omitted = the primary chainSigner. */
+  actor?: string;
+  /** Same shape as a deploy command — one named shell step, signer env vars injected. */
+  action: ChainValidationDeployCommand;
+  expect: ChainAssertionExpectConfig;
+}
+
 /**
  * Optional on-chain validation: provision an ephemeral funded ECDSA
  * testnet account, inject it as a burner wallet, and verify txs via mirror node.
@@ -158,6 +203,10 @@ export interface ChainValidationConfig {
   sweepBack: boolean;
   expose: ChainValidationExposeConfig;
   deploy?: ChainValidationDeployConfig;
+  /** Additional named ephemeral signers, alongside the primary chainSigner. */
+  actors?: Record<string, ChainValidationActorConfig>;
+  /** Deterministic on-chain behavioral postcondition checks. See ChainAssertionConfig. */
+  assertions?: ChainAssertionConfig[];
 }
 
 /** Ephemeral ECDSA test signer provisioned for a harness run. */
