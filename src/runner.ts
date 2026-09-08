@@ -20,8 +20,13 @@ import {
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
 import {
   assertChainValidationOperatorEnv,
+  buildAppServerEnv,
   provisionChainSigner,
 } from "./validation/chainSigner.js";
+import {
+  attachChainVerification,
+  verifyChainTransactions,
+} from "./validation/chainVerification.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { withValidatorMcp } from "./validatorMcp.js";
 
@@ -130,10 +135,17 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
 
   logPhase(`Evaluation attempt ${attempt} started`, workspacePath);
 
+  const chainVerificationSince = new Date();
   const serverConfig = await loadDevServerConfig(spec.validators.playwrightPath);
+  const appEnv = buildAppServerEnv(chainSigner, spec.chainValidation);
   let devServer: DevServerSession | null = null;
   try {
-    devServer = await createDevServerSession(workspacePath, serverConfig, "validate-semantic");
+    devServer = await createDevServerSession(
+      workspacePath,
+      serverConfig,
+      "validate-semantic",
+      appEnv,
+    );
     const result = await withValidatorMcp(
       {
         agent: spec.agent,
@@ -141,8 +153,8 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
         artifactsDirectory:
           artifactDirs.runDirectory ?? path.join(workspacePath, ".harness-semantic"),
       },
-      extraArgs =>
-        runEvaluation({
+      async extraArgs => {
+        const evaluation = await runEvaluation({
           workspacePath,
           spec,
           attempt,
@@ -151,7 +163,17 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
           chainSigner,
           extraArgs,
           devServer: devServer!,
-        }),
+        });
+        if (!evaluation.passed || !chainSigner || !spec.chainValidation?.verify) {
+          return evaluation;
+        }
+        const chainVerification = await verifyChainTransactions(
+          chainSigner,
+          spec.chainValidation.verify,
+          chainVerificationSince,
+        );
+        return attachChainVerification(evaluation, chainVerification);
+      },
     );
 
     const resultPath = path.join(

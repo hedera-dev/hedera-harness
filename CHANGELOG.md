@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **CHAIN can expose its disposable signer to native app servers.** Recipe
+  `chainValidation.expose.appEnv` maps the signer's account ID, EVM address, or
+  private key to environment variable names for SDK-backed API routes. Values
+  are injected into deploy commands and the dev-server process without writing
+  an `.env` file. The funded operator credentials are blanked in those child
+  processes so the generated app cannot see them. Mapping `privateKey` onto
+  `NEXT_PUBLIC_*`, `VITE_*`, or `PUBLIC_*` names is rejected at load time.
+- **CHAIN can prove native transactions deterministically.** Optional
+  `chainValidation.verify.transactionTypes` polls testnet Mirror Node for
+  successful transaction types paid by the disposable signer after deploy
+  completes (so deploy itself cannot satisfy the check). Missing transactions
+  are app findings; Mirror Node outages and malformed Mirror Node responses
+  abort as infrastructure failures.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

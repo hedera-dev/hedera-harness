@@ -166,7 +166,19 @@ chainValidation:
   sweepBack: true
   expose:
     browserLocalStorageKey: burnerWallet.pk
-    envVars: []               # e.g. [DEPLOYER_PRIVATE_KEY] for Solidity templates
+    # Native SDK/API templates: inject the disposable signer into the app server.
+    appEnv:
+      HEDERA_OPERATOR_ID: accountId
+      HEDERA_OPERATOR_PRIVATE_KEY: privateKey
+    # Solidity templates: private-key aliases for deploy commands only.
+    envVars: [DEPLOYER_PRIVATE_KEY]
+  # Deterministic proof: successful transactions paid by the disposable signer
+  # after this attempt began. Names are Mirror Node transaction types.
+  verify:
+    transactionTypes:
+      - CONSENSUSSUBMITMESSAGE
+      - TOKENCREATION
+    timeoutMs: 30000          # default; allows for Mirror Node indexing lag
   # deploy:
   #   commands:
   #     - name: deploy-testnet
@@ -177,8 +189,23 @@ chainValidation:
 - export the env vars in your shell; they are never written into the workspace
 - `@hiero-ledger/sdk` ships with `hedera-harness`; do not add it to the project
 - the template must keep the burner connector enabled so headless signing works
+- for native SDK/API templates, map `accountId` and `privateKey` under
+  `expose.appEnv`; the harness injects them only into deploy commands and the
+  app server process, never an `.env` file. The funded operator credentials are
+  blanked in those child processes. Do not map `privateKey` onto
+  `NEXT_PUBLIC_*`, `VITE_*`, or `PUBLIC_*` names — those are inlined into the
+  browser bundle and rejected by the loader
+- do not reuse a name across `expose.appEnv` and `expose.envVars`, and do not
+  override the reserved `HARNESS_SIGNER_*` variables
 - for Solidity templates, map `expose.envVars` and `deploy.commands` so
   contracts are deployed before the app is graded
+- `verify.transactionTypes` is signer- and attempt-bound: a transaction must be
+  successful, paid by the disposable signer, and indexed after deploy completes;
+  an old testnet transaction or a deploy-only transaction cannot produce a
+  false pass
+- a reachable Mirror Node with no matching transaction is an app finding;
+  Mirror Node unavailability or a malformed Mirror Node response is
+  infrastructure and aborts the repair loop
 
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.

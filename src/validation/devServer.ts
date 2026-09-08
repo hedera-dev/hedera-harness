@@ -36,8 +36,15 @@ export async function createDevServerSession(
   workspacePath: string,
   config: DevServerConfig,
   logPrefix = "dev",
+  env: NodeJS.ProcessEnv = {},
 ): Promise<DevServerSession> {
-  const handle = startDevServer(workspacePath, config.command, config.configuredUrl, logPrefix);
+  const handle = startDevServer(
+    workspacePath,
+    config.command,
+    config.configuredUrl,
+    logPrefix,
+    env,
+  );
 
   let url: string;
   try {
@@ -93,6 +100,7 @@ function startDevServer(
   command: string,
   configuredUrl: string,
   logPrefix = "playwright",
+  env: NodeJS.ProcessEnv = {},
 ): DevServerHandle {
   let resolveUrl: (url: string) => void = () => undefined;
   let rejectUrl: (error: Error) => void = () => undefined;
@@ -125,6 +133,8 @@ function startDevServer(
     );
   }, URL_DETECT_TIMEOUT_MS);
 
+  const redactValues = collectRedactValues(env);
+
   // detached: true makes this child the leader of a new process group so
   // stopDevServer can signal -pid and tear down yarn/next grandchildren.
   const child = spawn(command, {
@@ -134,6 +144,7 @@ function startDevServer(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      ...env,
       FORCE_COLOR: "0",
     },
   });
@@ -146,7 +157,9 @@ function startDevServer(
         stream === "stderr"
           ? `[hedera-harness:${logPrefix}:server:stderr]`
           : `[hedera-harness:${logPrefix}:server]`;
-      console.log(`${prefix} ${truncate(trimmed.replace(/\s+/g, " "), 240)}`);
+      console.log(
+        `${prefix} ${truncate(redactSecrets(trimmed.replace(/\s+/g, " "), redactValues), 240)}`,
+      );
     }
 
     const localUrl = extractLocalUrl(text);
@@ -257,4 +270,27 @@ function truncate(value: string, maxLength: number): string {
   const trimmed = value.trim().replace(/\s+/g, " ");
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, maxLength)}...`;
+}
+
+/** Values injected for signing that must not appear in harness server logs. */
+function collectRedactValues(env: NodeJS.ProcessEnv): string[] {
+  const values = new Set<string>();
+  for (const [name, value] of Object.entries(env)) {
+    if (!value || value.length < 16) continue;
+    if (
+      /PRIVATE_KEY|OPERATOR_KEY|SECRET|HARNESS_SIGNER_PRIVATE_KEY/i.test(name) ||
+      /^(0x)?[0-9a-fA-F]{64}$/.test(value)
+    ) {
+      values.add(value);
+    }
+  }
+  return [...values];
+}
+
+function redactSecrets(text: string, secrets: string[]): string {
+  let out = text;
+  for (const secret of secrets) {
+    out = out.split(secret).join("<redacted>");
+  }
+  return out;
 }

@@ -116,6 +116,128 @@ ${MINIMAL_BASELINE}`);
   assert.ok(spec.secretScan.patterns.length > 0);
 });
 
+test("chain signer app env maps only supported signer fields", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: native-chain
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  expose:
+    appEnv:
+      APP_OPERATOR_ID: accountId
+      APP_OPERATOR_KEY: privateKey
+      APP_OPERATOR_EVM_ADDRESS: evmAddress
+  verify:
+    transactionTypes:
+      - consensusSubmitMessage
+      - TOKENCREATION
+      - TOKENCREATION
+    timeoutMs: 15000
+${MINIMAL_BASELINE}`);
+
+  const { spec } = await loadTemplateSpec(specPath);
+  assert.deepEqual(spec.chainValidation.expose.appEnv, {
+    APP_OPERATOR_ID: "accountId",
+    APP_OPERATOR_KEY: "privateKey",
+    APP_OPERATOR_EVM_ADDRESS: "evmAddress",
+  });
+  assert.deepEqual(spec.chainValidation.verify, {
+    transactionTypes: ["CONSENSUSSUBMITMESSAGE", "TOKENCREATION"],
+    timeoutMs: 15000,
+  });
+
+  const configuredMirrorNode = await writeRecipe(`schemaVersion: 3
+name: bad-mirror-node
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  verify:
+    transactionTypes:
+      - TOKENCREATION
+    mirrorNodeUrl: http://127.0.0.1:5551
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(configuredMirrorNode.specPath),
+    /mirrorNodeUrl" is not configurable/,
+  );
+
+  const invalidSelector = await writeRecipe(`schemaVersion: 3
+name: bad-native-chain
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  expose:
+    appEnv:
+      APP_OPERATOR_ID: operatorId
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(invalidSelector.specPath),
+    /appEnv\.APP_OPERATOR_ID must be "accountId", "evmAddress", or "privateKey"/,
+  );
+
+  const publicPrivateKey = await writeRecipe(`schemaVersion: 3
+name: bad-public-key
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  expose:
+    appEnv:
+      NEXT_PUBLIC_OPERATOR_KEY: privateKey
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(publicPrivateKey.specPath),
+    /NEXT_PUBLIC_OPERATOR_KEY cannot map privateKey/,
+  );
+
+  const reservedCollision = await writeRecipe(`schemaVersion: 3
+name: bad-reserved
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  expose:
+    appEnv:
+      HARNESS_SIGNER_PRIVATE_KEY: privateKey
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(reservedCollision.specPath),
+    /collides with a reserved harness signer variable/,
+  );
+
+  const envVarsCollision = await writeRecipe(`schemaVersion: 3
+name: bad-overlap
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  expose:
+    appEnv:
+      DEPLOYER_PRIVATE_KEY: privateKey
+    envVars:
+      - DEPLOYER_PRIVATE_KEY
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(envVarsCollision.specPath),
+    /also appears in expose\.appEnv/,
+  );
+});
+
 test("a schemaVersion above the supported max names the fix", async () => {
   const { specPath } = await writeRecipe(`schemaVersion: 99
 name: too-new

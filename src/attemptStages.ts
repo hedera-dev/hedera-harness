@@ -14,7 +14,11 @@ import type {
 } from "./types.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
-import { buildDeployEnv } from "./validation/chainSigner.js";
+import { buildAppServerEnv, buildDeployCommandEnv } from "./validation/chainSigner.js";
+import {
+  attachChainVerification,
+  verifyChainTransactions,
+} from "./validation/chainVerification.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
 import {
@@ -199,10 +203,7 @@ export async function runChainDeploy(
   const commands = context.spec.chainValidation?.deploy?.commands ?? [];
   if (!context.chainSigner || commands.length === 0) return [];
 
-  const env = buildDeployEnv(
-    context.chainSigner,
-    context.spec.chainValidation?.expose.envVars ?? [],
-  );
+  const env = buildDeployCommandEnv(context.chainSigner, context.spec.chainValidation!);
   const findings: ValidationFinding[] = [];
 
   for (const commandConfig of commands) {
@@ -232,6 +233,7 @@ export async function runEvaluateStage(
   context: AttemptStageContext,
   devServer: DevServerSession,
   extraValidatorArgs: string[] = [],
+  chainVerificationSince?: Date,
 ): Promise<EvaluationResult> {
   const { attempt, layout } = context;
   const validatorPromptPath = path.join(
@@ -248,7 +250,7 @@ export async function runEvaluateStage(
   });
   logStage("EVALUATE", devServer.url);
 
-  const evaluation = await runEvaluation({
+  let evaluation = await runEvaluation({
     workspacePath: context.workspacePath,
     spec: context.spec,
     attempt,
@@ -259,6 +261,24 @@ export async function runEvaluateStage(
     evalRelativePath: context.evalRelativePath,
     extraArgs: extraValidatorArgs,
   });
+
+  const verifyConfig = context.spec.chainValidation?.verify;
+  if (
+    evaluation.passed &&
+    context.chainSigner &&
+    verifyConfig &&
+    chainVerificationSince
+  ) {
+    console.log(
+      `[hedera-harness] CHAIN — verifying ${verifyConfig.transactionTypes.join(", ")} via Mirror Node`,
+    );
+    const chainVerification = await verifyChainTransactions(
+      context.chainSigner,
+      verifyConfig,
+      chainVerificationSince,
+    );
+    evaluation = attachChainVerification(evaluation, chainVerification);
+  }
 
   await writeJsonFile(
     path.join(layout.logsDirectory, `evaluation-attempt-${attempt}.json`),
@@ -318,11 +338,20 @@ export async function runValidationStages(
     };
   }
 
+  // Stamp after deploy so a deploy transaction cannot satisfy verify.transactionTypes.
+  const chainVerificationSince = new Date();
+
   const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
+  const appEnv = buildAppServerEnv(context.chainSigner, context.spec.chainValidation);
   let devServer: DevServerSession | null = null;
   try {
     logStage("SMOKE", "booting dev server");
-    devServer = await createDevServerSession(context.workspacePath, serverConfig, "runtime");
+    devServer = await createDevServerSession(
+      context.workspacePath,
+      serverConfig,
+      "runtime",
+      appEnv,
+    );
 
     const smoke = await runSmokeStage(context, devServer);
     const afterSmoke: ValidationResult = {
@@ -352,7 +381,12 @@ export async function runValidationStages(
         artifactsDirectory: context.layout.runDirectory,
       },
       async mcpArgs => {
-        const evaluation = await runEvaluateStage(context, devServer!, mcpArgs);
+        const evaluation = await runEvaluateStage(
+          context,
+          devServer!,
+          mcpArgs,
+          chainVerificationSince,
+        );
         return evaluation.passed
           ? { ...afterSmoke, evaluation }
           : {
