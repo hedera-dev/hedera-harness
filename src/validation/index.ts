@@ -316,11 +316,13 @@ async function validateCommands(
     });
     commandResults.push(result);
 
-    if (result.exitCode !== 0) {
+    // A clean shutdown is not proof that the validation finished in time.
+    // In particular, never cache a timed-out install as successful.
+    if (result.timedOut || result.exitCode !== 0) {
       findings.push({
         id: `command:${commandConfig.name}`,
         category: "commands",
-        message: `Validation command failed: ${commandConfig.name}`,
+        message: `Validation command ${result.timedOut ? "timed out" : "failed"}: ${commandConfig.name}`,
         details: truncateOutput(result.stderr || result.stdout),
       });
       continue;

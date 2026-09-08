@@ -189,7 +189,8 @@ export function executeCommand(options: ExecuteCommandOptions): Promise<CommandE
 export async function executeCommandOrThrow(options: ExecuteCommandOptions): Promise<CommandExecutionResult> {
   const result = await executeCommand(options);
 
-  if (result.exitCode !== 0) {
+  // A graceful SIGTERM handler may exit zero after the deadline expired.
+  if (result.timedOut || result.exitCode !== 0) {
     throw new Error(formatFailedCommand(result));
   }
 
