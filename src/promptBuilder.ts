@@ -358,6 +358,12 @@ function formatHardConstraints(spec: TemplateSpec): string {
       : undefined,
     "- Do not add `.env` files, private keys, API keys, or live-network credential requirements.",
     "- Produce `template.json`, `README.md`, and `AGENTS.md` suitable for scaffold-hbar.",
+    "- Hedera native-currency precision: the EVM layer uses 18-decimal wei, but the underlying " +
+      "ledger only has 8 decimals (tinybar) — 1 tinybar = 1e10 wei. Any native-value amount below " +
+      "1e10 wei silently rounds to zero on a real transfer, including internal contract-to-contract " +
+      "forwarded calls. If a contract computes and forwards a refund/remainder as native value " +
+      "(e.g. `msg.value - fee` via `.call{value: ...}`/`.transfer`/`.send`), round it up to the " +
+      "nearest 1e10 wei first, or it will silently drop sub-tinybar amounts instead of reverting.",
   ]
     .filter((line): line is string => Boolean(line))
     .join("\n");

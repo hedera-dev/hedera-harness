@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- New Tier 0–1 deterministic check: flags Solidity that forwards a computed
+  native-value refund/remainder (e.g. `msg.value - fee` via
+  `.call{value: ...}`/`.transfer`/`.send`) without evidence of rounding to
+  Hedera's 1-tinybar (1e10 wei) granularity. Below that, a real transfer
+  silently drops the amount instead of reverting — including internal
+  contract-to-contract forwards — which is easy to hit and hard to notice in
+  a first Hedera integration. The same gotcha is now called out directly in
+  the generator/repair prompts' Hard Constraints.
+
 ## 1.2.2
 
 ### Fixed
