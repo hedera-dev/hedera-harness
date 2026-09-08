@@ -178,6 +178,28 @@ chainValidation:
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.
 
+#### What the chain gate checks
+
+After the `deploy.commands` run, the harness reads the ephemeral signer's
+transactions from the mirror node and grades them. The exit code is not the
+evidence:
+
+| Condition | Finding | Category |
+|---|---|---|
+| The signer submitted no transactions | `chain-verify:no-transactions` | `commands` |
+| A transaction reached consensus with a non-success status | `chain-verify:<tx id>` | `commands` |
+| The mirror node was unreachable | `chain-verify:mirror-node-unreachable` | `semantic-infra` |
+
+The middle row is why this is a gate rather than a log line. On Hedera,
+`execute()` is a **pre-check** — it returns once a node accepts the transaction,
+which is before consensus. Failures such as `CONTRACT_REVERT_EXECUTED`,
+`INSUFFICIENT_GAS` and `TOKEN_NOT_ASSOCIATED_TO_ACCOUNT` are only visible
+through `getReceipt()`, which deploy scripts routinely omit. Such a script
+prints "deployed", exits 0, and has deployed nothing.
+
+A mirror-node outage is reported as `semantic-infra`, so an outage never marks
+the generated app as defective.
+
 ## Building in increments
 
 For anything larger than a single change, list PRDs in order:

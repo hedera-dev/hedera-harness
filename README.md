@@ -96,7 +96,7 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 | **0–1 deterministic** | on by default | files present, static assertions, no secrets, build passes | seconds |
 | **2 Playwright gate** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
 | **3 semantic** | `contract` + `validator.enabled` | an adversarial agent drives the live app and grades numbered assertions | an agent session |
-| **3.5 on-chain** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
+| **3.5 on-chain** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, and the mirror node — not the exit code — decides whether they landed | testnet HBAR |
 
 Start at the bottom. Add a tier when the one below stops catching your failures.
 

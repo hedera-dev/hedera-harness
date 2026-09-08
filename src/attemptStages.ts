@@ -15,6 +15,7 @@ import type {
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
+import { summarizeChainActivity, verifyOnChainActivity } from "./validation/mirrorNode.js";
 import { isValidatorEnabled, runSemanticValidation } from "./semanticValidator.js";
 import {
   createDevServerSession,
@@ -196,7 +197,16 @@ export async function runSmokeStage(
   return { findings: gate.findings, playwrightGate: gate.result };
 }
 
-/** Optional on-chain deploy hook (Solidity templates), before the app starts. */
+/**
+ * Optional on-chain deploy hook (Solidity templates), before the app starts.
+ *
+ * Runs the configured deploy commands, then asks the mirror node whether the
+ * chain agrees. The exit code alone is not evidence on Hedera: `execute()` is a
+ * pre-check that returns before consensus, so a script can exit 0 having
+ * deployed nothing, or having submitted a transaction that failed at consensus
+ * with `CONTRACT_REVERT_EXECUTED` or `INSUFFICIENT_GAS`. Tier 3.5 exists to
+ * catch exactly that, so the verification is a gate rather than a log line.
+ */
 export async function runChainDeploy(
   context: AttemptStageContext,
 ): Promise<ValidationFinding[]> {
@@ -208,6 +218,10 @@ export async function runChainDeploy(
     context.spec.chainValidation?.expose.envVars ?? [],
   );
   const findings: ValidationFinding[] = [];
+  // Anchor verification at the moment the first deploy command starts, so a
+  // reused signer's earlier transactions are not credited to this attempt.
+  const since = `${Math.floor(Date.now() / 1000)}.000000000`;
+  let anyCommandFailed = false;
 
   for (const commandConfig of commands) {
     console.log(`[hedera-harness] Chain deploy: ${commandConfig.name} — ${commandConfig.command}`);
@@ -219,6 +233,7 @@ export async function runChainDeploy(
       shell: true,
     });
     if (result.exitCode !== 0) {
+      anyCommandFailed = true;
       findings.push({
         id: `chain-deploy:${commandConfig.name}`,
         category: "commands",
@@ -227,6 +242,18 @@ export async function runChainDeploy(
       });
     }
   }
+
+  // A command that already failed loudly does not also need the chain to say so;
+  // the useful case is the command that succeeded quietly and did nothing.
+  if (anyCommandFailed) return findings;
+
+  const verification = await verifyOnChainActivity({
+    accountId: context.chainSigner.accountId,
+    network: context.spec.chainValidation?.network ?? "testnet",
+    since,
+  });
+  console.log(`[hedera-harness] ${summarizeChainActivity(verification)}`);
+  findings.push(...verification.findings);
 
   return findings;
 }
