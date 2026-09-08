@@ -1,7 +1,9 @@
+import { connect } from "node:net";
 import path from "node:path";
 import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { isValidatorEnabled } from "./evaluation.js";
+import { DEFAULT_LOCAL_CHAIN } from "./specDefaults.js";
 import {
   checkSharedPreflight,
   type PreflightVerdict,
@@ -86,7 +88,7 @@ export async function runDoctor(
   checks.push(await checkPromptOverrides(recipe.spec.projectRoot));
   checks.push(...(await checkOptionalDeps(recipe.spec, workspacePath)));
   checks.push(...evaluate.map(toDoctorCheck));
-  checks.push(...checkChainEnv(recipe.spec));
+  checks.push(...(await checkChainEnv(recipe.spec)));
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
 }
@@ -337,9 +339,21 @@ async function checkHarnessSdk(): Promise<DoctorCheck> {
   }
 }
 
-function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
+async function checkChainEnv(spec: TemplateSpec): Promise<DoctorCheck[]> {
   const chain = spec.chainValidation;
   if (!chain?.enabled) return [];
+
+  // On local there is nothing to authenticate against: what matters is whether
+  // the three listeners are up. The node ships predefined funded accounts, so
+  // the operator env vars are optional there.
+  if (chain.network === "local") {
+    const local = chain.local ?? DEFAULT_LOCAL_CHAIN;
+    return Promise.all([
+      checkJsonRpc("chain rpc", local.rpcUrl),
+      checkMirror("chain mirror", local.mirrorUrl),
+      checkPort("chain grpc", local.grpcUrl),
+    ]);
+  }
 
   return [chain.operator.accountIdEnv, chain.operator.privateKeyEnv].map(name => {
     const value = process.env[name]?.trim();
@@ -352,4 +366,82 @@ function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
           fix: `Required by chainValidation. Testnet credentials from https://portal.hedera.com.`,
         };
   });
+}
+
+/** `eth_chainId` — an open port is not a chain, and a wrong port answers a TCP connect. */
+async function checkJsonRpc(name: string, url: string): Promise<DoctorCheck> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+      signal: AbortSignal.timeout(2_000),
+    });
+    const body = (await response.json()) as { result?: string };
+    if (typeof body.result !== "string") {
+      return unreachable(name, url, "answered, but not with a chain id");
+    }
+    return { name, status: "ok", detail: `${url} chain id ${parseInt(body.result, 16)}` };
+  } catch {
+    return unreachable(name, url, "no JSON-RPC answer");
+  }
+}
+
+/** The mirror's node list: present on a Hedera mirror, absent on anything else. */
+async function checkMirror(name: string, url: string): Promise<DoctorCheck> {
+  try {
+    const response = await fetch(`${url.replace(/\/$/, "")}/api/v1/network/nodes`, {
+      signal: AbortSignal.timeout(2_000),
+    });
+    const body = (await response.json()) as { nodes?: unknown[] };
+    if (!Array.isArray(body.nodes)) {
+      return unreachable(name, url, "answered, but not like a mirror node");
+    }
+    return { name, status: "ok", detail: `${url} ${body.nodes.length} node(s)` };
+  } catch {
+    return unreachable(name, url, "no mirror node answer");
+  }
+}
+
+/** gRPC has no cheap unauthenticated probe, so this is a TCP connect and says so. */
+async function checkPort(name: string, url: string): Promise<DoctorCheck> {
+  const target = parseHostPort(url);
+  if (!target) {
+    return unreachable(name, url, "not host:port");
+  }
+  const open = await new Promise<boolean>(resolve => {
+    const socket = connect({ host: target.host, port: target.port });
+    const settle = (value: boolean) => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(2_000);
+    socket.once("connect", () => settle(true));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", () => settle(false));
+  });
+  return open
+    ? { name, status: "ok", detail: `${url} accepting connections (TCP only)` }
+    : unreachable(name, url, "nothing listening");
+}
+
+function unreachable(name: string, url: string, detail: string): DoctorCheck {
+  return {
+    name,
+    status: "fail",
+    detail: `${url}: ${detail}`,
+    fix: "Start a local Hedera node - hanvil, or hiero-local-node - before `run`.",
+  };
+}
+
+/** `http://host:port`, `host:port`, and the ports each protocol defaults to. */
+function parseHostPort(url: string): { host: string; port: number } | undefined {
+  const withScheme = url.includes("://") ? url : `tcp://${url}`;
+  try {
+    const parsed = new URL(withScheme);
+    const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+    return parsed.hostname && Number.isInteger(port) ? { host: parsed.hostname, port } : undefined;
+  } catch {
+    return undefined;
+  }
 }

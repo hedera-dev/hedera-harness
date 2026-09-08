@@ -188,3 +188,42 @@ test("the validator prompt includes signer material only when a signer exists", 
   assert.match(withSigner, /0\.0\.1234/);
   assert.match(withSigner, /mirrornode\.hedera\.com/);
 });
+
+test("the validator prompt points at the local mirror when the recipe names local", async () => {
+  const root = await makeTestTempDir("prompt-validator-local-");
+  const spec = {
+    name: "demo",
+    projectRoot: root,
+    prdPaths: [],
+    requiredFiles: [],
+    forbiddenFiles: [],
+    validators: {},
+    generator: { provider: "command", command: "agent" },
+    maxAttempts: 1,
+    logging: { jsonlPath: "x", notesPath: "y" },
+    chainValidation: {
+      enabled: true,
+      network: "local",
+      operator: { accountIdEnv: "HEDERA_OPERATOR_ID", privateKeyEnv: "HEDERA_OPERATOR_KEY" },
+      local: {
+        rpcUrl: "http://localhost:7546",
+        grpcUrl: "localhost:50211",
+        mirrorUrl: "http://localhost:5551",
+      },
+      fundingHbar: 10,
+      sweepBack: true,
+      expose: { browserLocalStorageKey: "burnerWallet.pk", envVars: [] },
+    },
+  };
+
+  const prompt = await prompts.buildValidatorPrompt(spec, "{}", "http://localhost:3000", {
+    accountId: "0.0.1234",
+    privateKeyHex: "0xdeadbeef",
+    evmAddress: "0xabc",
+    network: "local",
+  });
+
+  assert.match(prompt, /Base URL: http:\/\/localhost:5551/);
+  assert.doesNotMatch(prompt, /mirrornode\.hedera\.com/);
+  assert.match(prompt, /account on local/);
+});

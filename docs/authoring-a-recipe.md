@@ -151,14 +151,14 @@ true incremental grading, use a list 1:1 with `prd:` (see below).
 
 ### CHAIN — on-chain validation
 
-The harness provisions an **ephemeral funded ECDSA testnet account** per run,
-injects it as the scaffold burner wallet, and verifies effects against the
-**mirror node** rather than UI toasts.
+The harness provisions an **ephemeral funded ECDSA account** per run, injects it
+as the scaffold burner wallet, and verifies effects against the **mirror node**
+rather than UI toasts.
 
 ```yaml
 chainValidation:
   enabled: true
-  network: testnet            # mainnet is rejected by the loader
+  network: testnet            # or local; mainnet is rejected by the loader
   operator:
     accountIdEnv: HEDERA_OPERATOR_ID
     privateKeyEnv: HEDERA_OPERATOR_KEY
@@ -172,6 +172,31 @@ chainValidation:
   #     - name: deploy-testnet
   #       command: yarn hardhat:deploy --network hederaTestnet
 ```
+
+#### `network: local`
+
+`local` runs the same provisioning against a local node — `hanvil` or
+`hiero-local-node` — so a run needs no portal credentials, spends no testnet
+HBAR, and does not wait on a public network. The published verdict should still
+come from a testnet run; local is the inner loop.
+
+```yaml
+chainValidation:
+  enabled: true
+  network: local
+  # operator and local are both optional; these are the defaults
+  # operator:
+  #   accountIdEnv: HEDERA_OPERATOR_ID
+  #   privateKeyEnv: HEDERA_OPERATOR_KEY
+  # local:
+  #   rpcUrl: http://localhost:7546
+  #   grpcUrl: localhost:50211
+  #   mirrorUrl: http://localhost:5551
+```
+
+With the operator env vars unset, the operator is the node's first predefined
+account, `0.0.1002`. Setting them overrides it. `doctor` stops asking for
+credentials on `local` and instead reports whether the three ports answer.
 
 - the operator must be **ECDSA**, not ED25519 — ED25519 has no EVM alias
 - export the env vars in your shell; they are never written into the workspace

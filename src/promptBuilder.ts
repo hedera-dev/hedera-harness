@@ -8,6 +8,7 @@ import {
 import type { VendoredSkill } from "./skillProvider.js";
 import { HARNESS_CONTEXT_DIR, HARNESS_SKILLS_DIR } from "./runtimePaths.js";
 import { renderPrompt } from "./promptTemplates.js";
+import { mirrorBaseUrl } from "./validation/chainSigner.js";
 import type { SliceContext } from "./attemptLoop.js";
 import { selectActiveSlice } from "./sliceSelection.js";
 
@@ -228,7 +229,7 @@ export async function buildValidatorPrompt(
 
   const walletRule = chainSigner
     ? [
-        "- Assertions flagged executableWithTestSigner=true MUST be executed end-to-end with the harness test signer and verified on the Hedera testnet mirror node.",
+        `- Assertions flagged executableWithTestSigner=true MUST be executed end-to-end with the harness test signer and verified on the Hedera ${chainSigner.network} mirror node.`,
         "- Other walletRequired assertions (without executableWithTestSigner) stay affordance-only: verify controls and no-wallet handling; do not require a completed on-chain tx.",
         "- Never use the test signer against mainnet.",
       ].join("\n")
@@ -244,6 +245,7 @@ export async function buildValidatorPrompt(
     signerEvmAddress: chainSigner?.evmAddress,
     signerPrivateKey: chainSigner?.privateKeyHex,
     signerNetwork: chainSigner?.network,
+    mirrorBaseUrl: mirrorBaseUrl(spec.chainValidation),
     browserKey: browserLocalStorageKey,
   });
 }

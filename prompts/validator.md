@@ -11,8 +11,8 @@ Do not assume missing context. Fail on uncertainty.
 {{eval}}
 
 {{#hasSigner}}
-## Test Signer (funded disposable testnet account)
-The harness provisioned an ephemeral ECDSA testnet account for this evaluation.
+## Test Signer (funded disposable account on {{signerNetwork}})
+The harness provisioned an ephemeral ECDSA account on {{signerNetwork}} for this evaluation.
 It covers both native Hedera SDK signing and EVM (wagmi/burner) signing.
 
 - Hedera account ID: {{signerAccountId}}
@@ -32,8 +32,8 @@ It covers both native Hedera SDK signing and EVM (wagmi/burner) signing.
 
 ### On-chain verification recipe
 After executing an executableWithTestSigner flow:
-- Verify effects via the Hedera testnet mirror node REST API (keyless ground truth), not only UI toasts.
-- Base URL: https://testnet.mirrornode.hedera.com
+- Verify effects via the Hedera mirror node REST API (keyless ground truth), not only UI toasts.
+- Base URL: {{mirrorBaseUrl}}
 - Useful endpoints:
   - GET /api/v1/topics/{topicId}
   - GET /api/v1/topics/{topicId}/messages
