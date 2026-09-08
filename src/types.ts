@@ -279,6 +279,7 @@ export interface ValidationFinding {
     | "files"
     | "static"
     | "secret"
+    | "hedera-precision"
     | "commands"
     | "agent"
     | "playwright"

@@ -10,6 +10,7 @@ import type {
   ValidationResult,
 } from "../types.js";
 import { runPlaywrightGate } from "./playwrightGate.js";
+import { scanForHederaPrecisionRisks } from "./hederaPrecision.js";
 import {
   computeInstallFingerprint,
   readCachedInstallFingerprint,
@@ -88,6 +89,7 @@ export async function runDeterministicValidation(
   findings.push(...(await validateForbiddenFiles(workspacePath, spec.forbiddenFiles)));
   findings.push(...(await validateStaticConfig(workspacePath, spec.validators.staticPath)));
   findings.push(...(await validateSecretScan(workspacePath, spec)));
+  findings.push(...(await scanForHederaPrecisionRisks(workspacePath)));
 
   const commandValidation = await validateCommands(
     workspacePath,
