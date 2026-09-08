@@ -1,6 +1,11 @@
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { importHieroSdk } from "../optionalDeps.js";
+import {
+  DEFAULT_LOCAL_CHAIN,
+  DEFAULT_LOCAL_OPERATOR,
+  LOCAL_NODE_ACCOUNT_ID,
+} from "../specDefaults.js";
 import type { ChainSigner, ChainValidationConfig } from "../types.js";
 
 type HieroSdk = typeof import("@hiero-ledger/sdk");
@@ -13,7 +18,29 @@ interface PersistedChainSigner extends ChainSigner {
 }
 
 /**
- * Provision (or reuse) an ephemeral funded ECDSA testnet account for a run.
+ * A client for the network the recipe names. `local` points the SDK at one node
+ * on this machine; the mirror network stays empty because the harness reads the
+ * mirror over REST, not gRPC.
+ */
+function clientFor(sdk: HieroSdk, config: ChainValidationConfig) {
+  if (config.network !== "local") {
+    return sdk.Client.forTestnet();
+  }
+  const grpcUrl = config.local?.grpcUrl ?? DEFAULT_LOCAL_CHAIN.grpcUrl;
+  return sdk.Client.forNetwork({ [grpcUrl]: sdk.AccountId.fromString(LOCAL_NODE_ACCOUNT_ID) });
+}
+
+/** The mirror node REST base URL for the network the recipe names. */
+export function mirrorBaseUrl(
+  config?: Pick<ChainValidationConfig, "network" | "local">,
+): string {
+  return config?.network === "local"
+    ? (config.local?.mirrorUrl ?? DEFAULT_LOCAL_CHAIN.mirrorUrl)
+    : "https://testnet.mirrornode.hedera.com";
+}
+
+/**
+ * Provision (or reuse) an ephemeral funded ECDSA account for a run.
  * Persists to `runs/<id>/chain-signer.json` so continue/repair attempts share it.
  * When reusing, tops up HBAR if the balance is below `fundingHbar`.
  * If the persisted account was swept/deleted, provisions a fresh one.
@@ -26,9 +53,9 @@ export async function provisionChainSigner(
     throw new Error("provisionChainSigner called with chainValidation.enabled=false");
   }
 
-  if (config.network !== "testnet") {
+  if (config.network !== "testnet" && config.network !== "local") {
     throw new Error(
-      `chainValidation.network must be "testnet" (got ${JSON.stringify(config.network)}). Mainnet is not allowed.`,
+      `chainValidation.network must be "testnet" or "local" (got ${JSON.stringify(config.network)}). Mainnet is not allowed.`,
     );
   }
 
@@ -66,7 +93,7 @@ async function createFundedSigner(
   const ephemeralKey = sdk.PrivateKey.generateECDSA();
   const evmAddress = ephemeralKey.publicKey.toEvmAddress();
 
-  const client = sdk.Client.forTestnet();
+  const client = clientFor(sdk, config);
   client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
   try {
@@ -91,11 +118,11 @@ async function createFundedSigner(
       accountId,
       privateKeyHex: normalizePrivateKeyHex(ephemeralKey.toStringRaw()),
       evmAddress: ensure0x(evmAddress),
-      network: "testnet",
+      network: config.network,
       createdAt: new Date().toISOString(),
     };
 
-    // 0600: the file holds a live (funded) testnet private key.
+    // 0600: the file holds a live (funded) private key.
     await writeFile(persistPath, `${JSON.stringify(signer, null, 2)}\n`, {
       encoding: "utf8",
       mode: 0o600,
@@ -107,7 +134,7 @@ async function createFundedSigner(
 }
 
 /**
- * Returns whether the persisted signer account still exists on testnet.
+ * Returns whether the persisted signer account still exists on the network.
  */
 async function checkSignerLiveliness(
   signer: ChainSigner,
@@ -115,7 +142,7 @@ async function checkSignerLiveliness(
 ): Promise<"alive" | "deleted"> {
   const sdk = await importHieroSdk();
   const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
-  const client = sdk.Client.forTestnet();
+  const client = clientFor(sdk, config);
   client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
   try {
@@ -146,7 +173,7 @@ async function topUpSignerIfNeeded(
   const sdk = await importHieroSdk();
   const target = new sdk.Hbar(config.fundingHbar);
   const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
-  const client = sdk.Client.forTestnet();
+  const client = clientFor(sdk, config);
   client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
   try {
@@ -199,7 +226,7 @@ export async function sweepChainSigner(
     const ephemeralKey = sdk.PrivateKey.fromStringECDSA(strip0x(signer.privateKeyHex));
 
     // Operator pays fees; ephemeral key must sign the delete of its own account.
-    const client = sdk.Client.forTestnet();
+    const client = clientFor(sdk, config);
     client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
 
     try {
@@ -260,9 +287,18 @@ function readOperatorEnv(config: ChainValidationConfig): {
   const accountId = process.env[config.operator.accountIdEnv]?.trim();
   const privateKeyRaw = process.env[config.operator.privateKeyEnv]?.trim();
 
+  // A local node ships predefined funded accounts, so an unset operator is not
+  // an error there — it is the whole point. Set the env vars to override.
+  if (config.network === "local" && !accountId && !privateKeyRaw) {
+    return {
+      accountId: DEFAULT_LOCAL_OPERATOR.accountId,
+      privateKeyRaw: DEFAULT_LOCAL_OPERATOR.privateKeyHex,
+    };
+  }
+
   if (!accountId) {
     throw new Error(
-      `chainValidation requires env var ${config.operator.accountIdEnv} (Hedera testnet operator account ID, e.g. 0.0.xxxx).`,
+      `chainValidation requires env var ${config.operator.accountIdEnv} (Hedera ${config.network} operator account ID, e.g. 0.0.xxxx).`,
     );
   }
   if (!HEDERA_ACCOUNT_ID_RE.test(accountId)) {
@@ -271,8 +307,10 @@ function readOperatorEnv(config: ChainValidationConfig): {
       [
         `$${config.operator.accountIdEnv} must be a Hedera account ID like 0.0.xxxx (got ${JSON.stringify(accountId)}).`,
         looksEvm
-          ? "That value looks like an EVM address — use the Account ID from the Hedera portal, not the EVM/alias address."
-          : "Copy the Account ID field from https://portal.hedera.com (format 0.0.12345).",
+          ? "That value looks like an EVM address — use the Account ID, not the EVM/alias address."
+          : config.network === "local"
+            ? "Use an account ID your local node printed at boot (format 0.0.1002)."
+            : "Copy the Account ID field from https://portal.hedera.com (format 0.0.12345).",
       ].join(" "),
     );
   }
@@ -365,9 +403,11 @@ function wrapProvisionError(
   if (isPayerNotFound) {
     return new Error(
       [
-        `chainValidation: payer account not found for ${operatorId}.`,
-        "HEDERA_OPERATOR_ID must be an existing testnet account ID (0.0.xxxx), not an EVM address.",
-        "Create/fund an ECDSA account at https://portal.hedera.com and use that Account ID + matching private key.",
+        `chainValidation: payer account not found for ${operatorId} on ${config.network}.`,
+        `$${config.operator.accountIdEnv} must be an existing account ID (0.0.xxxx), not an EVM address.`,
+        config.network === "local"
+          ? "Use one of the accounts the local node printed at boot, or leave the env vars unset."
+          : "Create/fund an ECDSA account at https://portal.hedera.com and use that Account ID + matching private key.",
         `SDK: ${message}`,
       ].join(" "),
     );
@@ -377,7 +417,9 @@ function wrapProvisionError(
     return new Error(
       [
         `chainValidation: operator account ${operatorId} has insufficient HBAR to fund the ephemeral signer.`,
-        "Top up the testnet account from the Hedera portal faucet, then re-run.",
+        config.network === "local"
+          ? "Lower chainValidation.fundingHbar, or start the local node with larger predefined balances."
+          : "Top up the testnet account from the Hedera portal faucet, then re-run.",
         `SDK: ${message}`,
       ].join(" "),
     );
@@ -394,7 +436,7 @@ async function readPersistedSigner(persistPath: string): Promise<PersistedChainS
       typeof raw.accountId === "string" &&
       typeof raw.privateKeyHex === "string" &&
       typeof raw.evmAddress === "string" &&
-      raw.network === "testnet"
+      (raw.network === "testnet" || raw.network === "local")
     ) {
       return raw;
     }
@@ -417,7 +459,7 @@ function toPublicSigner(persisted: PersistedChainSigner): ChainSigner {
     accountId: persisted.accountId,
     privateKeyHex: normalizePrivateKeyHex(persisted.privateKeyHex),
     evmAddress: ensure0x(persisted.evmAddress),
-    network: "testnet",
+    network: persisted.network,
   };
 }
 

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- **`chainValidation.network: "local"`.** CHAIN can provision its ephemeral
+  signer against a local Hedera node — `hanvil` or `hiero-local-node` — instead
+  of testnet. No portal credentials, no testnet HBAR, no public-network round
+  trip. `local: { rpcUrl, grpcUrl, mirrorUrl }` overrides the endpoints;
+  the defaults are hiero-local-node's `7546` / `50211` / `5551`. With the
+  operator env vars unset the operator is the node's first predefined account,
+  `0.0.1002`. `mainnet` is still rejected by the loader.
+- `doctor` on `network: local` TCP-probes the three endpoints and reports which
+  are up, instead of demanding `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY`.
+- The validator prompt now takes its mirror node base URL and the signer's
+  network from the recipe, so a local run is told to verify against the local
+  mirror.
+- **Chain state is snapshotted per repair attempt on `network: "local"`.** The
+  harness calls `evm_snapshot` before an attempt and `evm_revert` after a failed
+  one, so attempt N+1 starts from the chain state attempt N started from. On
+  testnet nothing is snapshotted and a line says so. `chain_snapshot_taken` and
+  `chain_snapshot_reverted` are recorded in the run log.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

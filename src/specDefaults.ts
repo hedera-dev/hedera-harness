@@ -1,4 +1,4 @@
-import type { CommandAgentConfig, SecretScanConfig } from "./types.js";
+import type { ChainLocalConfig, CommandAgentConfig, SecretScanConfig } from "./types.js";
 
 /**
  * `.harness/spec.yaml` schema this harness writes and accepts.
@@ -16,6 +16,34 @@ export const DEFAULT_PRD_PATH = ".harness/prd.md";
 export const DEFAULT_STATIC_VALIDATOR_PATH = ".harness/validators/static.json";
 export const DEFAULT_COMMANDS_VALIDATOR_PATH = ".harness/validators/yarn.json";
 export const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * `chainValidation.network: local` endpoints. These are hiero-local-node's
+ * published ports, which hanvil also serves, so a recipe naming `local` needs
+ * no URLs of its own.
+ */
+export const DEFAULT_LOCAL_CHAIN: ChainLocalConfig = {
+  rpcUrl: "http://localhost:7546",
+  grpcUrl: "localhost:50211",
+  mirrorUrl: "http://localhost:5551",
+};
+
+/** Env var names a recipe inherits when it names no operator. */
+export const DEFAULT_OPERATOR_ACCOUNT_ID_ENV = "HEDERA_OPERATOR_ID";
+export const DEFAULT_OPERATOR_PRIVATE_KEY_ENV = "HEDERA_OPERATOR_KEY";
+
+/** The single consensus node a local network runs. */
+export const LOCAL_NODE_ACCOUNT_ID = "0.0.3";
+
+/**
+ * hiero-local-node's first predefined ECDSA account, used as the local operator
+ * when the operator env vars are unset. These keys are published development
+ * keys; they hold value on no real network.
+ */
+export const DEFAULT_LOCAL_OPERATOR = {
+  accountId: "0.0.1002",
+  privateKeyHex: "0x7f109a9e3b0d8ecfba9cc23a3614433ce0fa7ddcc80f2a8f10b222179a5a80d6",
+};
 
 /**
  * Not configurable. Logs live under `.harness/runs/` because that is the only

@@ -83,12 +83,18 @@ baseline:
 # validator:
 #   enabled: true
 #
-# CHAIN provisions a funded ephemeral testnet account. Testnet only.
+# CHAIN provisions a funded ephemeral account. testnet, or local for a node on
+# this machine (hanvil / hiero-local-node) — mainnet is rejected.
 # chainValidation:
 #   enabled: true
 #   network: testnet
 #   operator:
 #     accountIdEnv: HEDERA_OPERATOR_ID
 #     privateKeyEnv: HEDERA_OPERATOR_KEY
+#
+# On local the operator and the URLs are optional:
+# chainValidation:
+#   enabled: true
+#   network: local
 #
 # Note: harness logs always live under .harness/runs/ and are not configurable.

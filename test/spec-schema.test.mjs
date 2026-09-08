@@ -377,3 +377,79 @@ baseline:
     return true;
   });
 });
+
+test('chainValidation network: local loads on defaults and keeps rejecting mainnet', async () => {
+  const local = await writeRecipe(`schemaVersion: 3
+name: local-chain
+chainValidation:
+  enabled: true
+  network: local
+${MINIMAL_BASELINE}`);
+
+  const { spec } = await loadTemplateSpec(local.specPath);
+  assert.equal(spec.chainValidation.network, "local");
+  assert.deepEqual(spec.chainValidation.local, defaults.DEFAULT_LOCAL_CHAIN);
+  // The operator block is optional on local; the documented env var names stand in.
+  assert.equal(spec.chainValidation.operator.accountIdEnv, defaults.DEFAULT_OPERATOR_ACCOUNT_ID_ENV);
+  assert.equal(
+    spec.chainValidation.operator.privateKeyEnv,
+    defaults.DEFAULT_OPERATOR_PRIVATE_KEY_ENV,
+  );
+
+  const mainnet = await writeRecipe(`schemaVersion: 3
+name: mainnet-chain
+chainValidation:
+  enabled: true
+  network: mainnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+${MINIMAL_BASELINE}`);
+  await assert.rejects(() => loadTemplateSpec(mainnet.specPath), /Mainnet is not allowed/);
+});
+
+test('chainValidation local URLs are overridable, and rejected on testnet', async () => {
+  const overridden = await writeRecipe(`schemaVersion: 3
+name: local-urls
+chainValidation:
+  enabled: true
+  network: local
+  local:
+    rpcUrl: http://127.0.0.1:9000
+    grpcUrl: 127.0.0.1:9001
+    mirrorUrl: http://127.0.0.1:9002
+${MINIMAL_BASELINE}`);
+
+  const { spec } = await loadTemplateSpec(overridden.specPath);
+  assert.deepEqual(spec.chainValidation.local, {
+    rpcUrl: "http://127.0.0.1:9000",
+    grpcUrl: "127.0.0.1:9001",
+    mirrorUrl: "http://127.0.0.1:9002",
+  });
+
+  const onTestnet = await writeRecipe(`schemaVersion: 3
+name: local-on-testnet
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  local:
+    rpcUrl: http://127.0.0.1:9000
+${MINIMAL_BASELINE}`);
+  await assert.rejects(
+    () => loadTemplateSpec(onTestnet.specPath),
+    /chainValidation.local is only valid/,
+  );
+});
+
+test('a testnet recipe still requires an operator', async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: testnet-no-operator
+chainValidation:
+  enabled: true
+  network: testnet
+${MINIMAL_BASELINE}`);
+  await assert.rejects(() => loadTemplateSpec(specPath), /"operator"/);
+});

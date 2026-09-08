@@ -12,7 +12,10 @@ import {
   AGENT_PRESETS,
   DEFAULT_AGENT_PRESET,
   DEFAULT_COMMANDS_VALIDATOR_PATH,
+  DEFAULT_LOCAL_CHAIN,
   DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_OPERATOR_ACCOUNT_ID_ENV,
+  DEFAULT_OPERATOR_PRIVATE_KEY_ENV,
   DEFAULT_PRD_PATH,
   DEFAULT_SECRET_PATTERNS,
   DEFAULT_STATIC_VALIDATOR_PATH,
@@ -550,13 +553,23 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
   }
 
   const network = readString(record, "network");
-  if (network !== "testnet") {
+  if (network !== "testnet" && network !== "local") {
     throw new Error(
-      `chainValidation.network must be "testnet" (got ${JSON.stringify(network)}). Mainnet is not allowed.`,
+      `chainValidation.network must be "testnet" or "local" (got ${JSON.stringify(network)}). Mainnet is not allowed.`,
     );
   }
 
-  const operator = readObject(record, "operator");
+  // On local the operator falls back to the node's predefined account, so a
+  // recipe that names no operator is complete.
+  const operator =
+    network === "local" && record.operator === undefined ? {} : readObject(record, "operator");
+  const localRecord =
+    record.local && typeof record.local === "object" && !Array.isArray(record.local)
+      ? (record.local as Record<string, unknown>)
+      : undefined;
+  if (localRecord && network !== "local") {
+    throw new Error('chainValidation.local is only valid with network: "local".');
+  }
   const exposeRecord =
     record.expose && typeof record.expose === "object" && !Array.isArray(record.expose)
       ? (record.expose as Record<string, unknown>)
@@ -593,13 +606,31 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
     throw new Error('Expected positive number "chainValidation.fundingHbar".');
   }
 
+  // On testnet an operator is mandatory and readString says so; on local a
+  // missing name falls back to the documented one.
+  const operatorEnv = (key: string, fallback: string): string =>
+    network === "local"
+      ? readOptionalString(operator, key)?.trim() || fallback
+      : readString(operator, key);
+  const localUrl = (key: keyof typeof DEFAULT_LOCAL_CHAIN): string =>
+    readOptionalString(localRecord ?? {}, key)?.trim() || DEFAULT_LOCAL_CHAIN[key];
+
   return {
     enabled: record.enabled !== false,
-    network: "testnet",
+    network,
     operator: {
-      accountIdEnv: readString(operator, "accountIdEnv"),
-      privateKeyEnv: readString(operator, "privateKeyEnv"),
+      accountIdEnv: operatorEnv("accountIdEnv", DEFAULT_OPERATOR_ACCOUNT_ID_ENV),
+      privateKeyEnv: operatorEnv("privateKeyEnv", DEFAULT_OPERATOR_PRIVATE_KEY_ENV),
     },
+    ...(network === "local"
+      ? {
+          local: {
+            rpcUrl: localUrl("rpcUrl"),
+            grpcUrl: localUrl("grpcUrl"),
+            mirrorUrl: localUrl("mirrorUrl"),
+          },
+        }
+      : {}),
     fundingHbar,
     sweepBack: record.sweepBack !== false,
     expose: {
