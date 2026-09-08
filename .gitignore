@@ -24,6 +24,7 @@ docs/prds/local/
 !.env.example
 .harness/wallet/
 .harness/dev-server.json
+.harness/wallet-session.json
 
 # OS & editor
 .DS_Store

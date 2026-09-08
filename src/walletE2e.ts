@@ -337,7 +337,7 @@ async function forceInputValue(page: PageLike, testId: string, value: string): P
   }
 }
 
-async function waitForDappReady(page: PageLike): Promise<{ css: boolean; js: boolean }> {
+export async function waitForDappReady(page: PageLike): Promise<{ css: boolean; js: boolean }> {
   try {
     await page.waitForLoadState?.("load", { timeout: 20_000 });
   } catch {

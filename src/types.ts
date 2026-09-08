@@ -35,7 +35,19 @@ export interface TasksCliOptions {
   taskId?: string;
 }
 
-export type WalletSubcommand = "status" | "provision" | "browser" | "e2e";
+export type WalletSubcommand = "status" | "provision" | "browser" | "e2e" | "session";
+
+export type WalletSessionAction =
+  | "start"
+  | "stop"
+  | "status"
+  | "serve"
+  | "snapshot"
+  | "click"
+  | "fill"
+  | "goto"
+  | "mm"
+  | "press";
 
 export interface WalletCliOptions {
   subcommand: WalletSubcommand;
@@ -50,6 +62,24 @@ export interface WalletCliOptions {
   amount?: string;
   /** e2e: destination 0x address. Default: first 0x on the payments page. */
   to?: string;
+  /** session: start|stop|status|serve|snapshot|click|fill|goto|mm|press */
+  sessionAction?: WalletSessionAction;
+  /** session click/fill: Playwright aria-ref from the last snapshot (e12). */
+  ref?: string;
+  /** session click/fill: data-testid */
+  testId?: string;
+  /** session click/fill: ARIA role, e.g. button */
+  role?: string;
+  /** session click/fill: accessible name / button text */
+  name?: string;
+  /** session click/fill: visible text */
+  text?: string;
+  /** session fill: value to type */
+  value?: string;
+  /** session mm: approve | confirm */
+  mmAction?: string;
+  /** session press: Escape, Enter, … */
+  key?: string;
 }
 
 export type TuiSubcommand = "install" | "uninstall";

@@ -3,6 +3,7 @@
 .harness/runtime/
 .harness/wallet/
 .harness/dev-server.json
+.harness/wallet-session.json
 .harness/next-dev.log
 .harness/cache/
 .harness/cache/

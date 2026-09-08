@@ -65,7 +65,7 @@ In step-by-step, pause after each **work unit** (not only after ASSERT). "dale" 
 
 **FORBIDDEN:** `browser_navigate`, `browser_snapshot`, `browser_click`, or any Playwright MCP tool. Those open vanilla Chrome with the RainbowKit **burner** and **no MetaMask fox**. That screenshot is a fail, not E2E.
 
-After ASSERT (pass) and SMOKE (app up), spawn `hedera-evaluate` (or call `harness_wallet_e2e` yourself). The window must be dappwright Chromium with the extension. Success: `metamask_e2e=ok` and `tx=new` (a hash that did not exist before Send). `tx=stale` / HashScan from yesterday is a fail. If they asked for a specific send, pass `amount=` and `to=` into `harness_wallet_e2e` and quote `amount_filled` from the tool — do not invent 1 HBAR when the tool filled 0.01 or left the UI default. Port may be 3003, not 3000 — the tool probes.
+After ASSERT (pass) and SMOKE (app up), spawn `hedera-evaluate`. Prefer `harness_wallet_session` + `harness_wallet_dom` snapshot/click/fill on the **MetaMask Chromium**, then `harness_wallet_mm` approve/confirm. Quote live `value=` from the snapshot — never invent 1 HBAR. `harness_wallet_e2e` is the scripted fallback. Playwright MCP vanilla Chrome is still forbidden. Port may be 3003, not 3000.
 
 Do not run a Playwright MCP “UI pass” in this loop.
 

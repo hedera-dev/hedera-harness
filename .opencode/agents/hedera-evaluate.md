@@ -41,16 +41,23 @@ You are the EVALUATE / E2E stage of hedera-harness.
 
 **Forbidden:** `browser_navigate`, `browser_snapshot`, `browser_click`, or any Playwright MCP tool. Those open vanilla Chrome **without MetaMask**. RainbowKit burner “CONNECTED ADDRESS” in that window is **not** a pass.
 
-The app must already be up (`harness_dev_serve` status). Do not start a second Next and do not `nohup`. Pass `url=` from that status into `harness_wallet_e2e` when present.
+The app must already be up (`harness_dev_serve` status). Do not start a second Next and do not `nohup`. Pass `url=` from that status into the session start.
 
-## Only this tool
+## Drive the MetaMask Chromium (not Playwright MCP)
 
-Call `harness_wallet_e2e`. That launches headed Chromium **with the MetaMask extension** (dappwright + vault in `.harness/wallet/chrome-profile/`). You will see the fox / puzzle-piece extension, not a clean Chrome. It must Connect → **approve MetaMask** → Send → **confirm the sign popup**.
+**Forbidden:** `browser_navigate`, `browser_snapshot`, `browser_click`, or any Playwright MCP tool. Those open vanilla Chrome **without MetaMask**.
 
-- `metamask_e2e=ok` and `tx=new` — pass. `tx=present` / `tx=stale` is old HashScan history, not a new send.
-- Quote `amount_filled=` / `to_filled=` from the tool. If the human asked for 1 HBAR, pass `amount=1` (and `to=` if they gave an address). Never report the requested amount unless it matches `amount_filled`. Default without args is 0.01 HBAR.
-- Do not print keys or 0x blobs.
-- Burner address without `metamask_connect=approved` / `metamask_sign=confirmed` — **fail**.
+1. `harness_wallet_session` `start` with `url=` of the live app. Wait until `session=up`.
+2. `harness_wallet_dom` `snapshot`. You will see `inputs:` with **live values** and an aria tree with `[ref=e12]`. Quote those values. Never invent the amount the human asked for.
+3. Click Connect / MetaMask with `click` (`name=` or `text=` or `ref=`). Then `harness_wallet_mm` `approve`.
+4. `goto` the send/payments route if the snapshot is not already there. `fill` destination and amount from the snapshot fields (`testid=` or `ref=` + `value=`). **Snapshot again.** If `value=` on the amount input is not what the human asked, fill again — do not Send and do not claim you sent 1 HBAR.
+5. Click Send. `harness_wallet_mm` `confirm`.
+6. Snapshot once more. Pass only if you see a **new** tx (not leftover HashScan history). Then `harness_wallet_session` `stop`.
+
+`harness_wallet_e2e` is the scripted fallback if the session cannot start. Prefer the session so this works on any dapp form, not only `pay-amount`.
+
+- Burner address without MetaMask approve/confirm — **fail**.
+- Do not print keys or 0x blobs (64-hex).
 
 Never read `account.json` or any key material.
 

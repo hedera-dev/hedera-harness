@@ -454,6 +454,83 @@ export const HederaHarnessPlugin = async () => {
           return redact(combined || "(no output)");
         },
       }),
+      harness_wallet_session: tool({
+        description:
+          "Keep the MetaMask Chromium (dappwright profile) alive. action=start|stop|status. start unlocks the vault extension and opens the live dapp. This is NOT Playwright MCP vanilla Chrome. After start, use harness_wallet_dom to see/click/fill that page and harness_wallet_mm to approve/sign.",
+        args: {
+          action: tool.schema.string().optional().describe("start | stop | status (default start)"),
+          url: tool.schema.string().optional().describe("Live app URL, default http://127.0.0.1:3000"),
+          workspace: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const cwd = toolWorkspace(args, context);
+          const status = await walletStatusText(cwd);
+          const action = String(args.action || "start").trim().toLowerCase();
+          if (action === "start" && !isWalletReady(status) && !vaultFileLooksPresent(cwd)) {
+            return `${await openWalletGate(cwd)}\nWallet session needs gate=ok.`;
+          }
+          if (!["start", "stop", "status"].includes(action)) {
+            return `Unknown action ${action}. Use start, stop, or status.`;
+          }
+          const session = await importDist(cwd, "walletSession.js");
+          return redact(
+            await session.runWalletSession(cwd, action, { url: args.url ? String(args.url) : undefined }),
+          );
+        },
+      }),
+      harness_wallet_dom: tool({
+        description:
+          "See and drive the dapp tab in the MetaMask Chromium session (aria snapshot + input values). action=snapshot|click|fill|goto|press. Snapshot first; quote input value= from that dump — never invent the amount the human asked for. click/fill with ref= (e12 from snapshot), testid=, name=, or text=. fill requires value=. goto needs url=. press key=Escape to dismiss RainbowKit. Playwright MCP vanilla Chrome is NOT this.",
+        args: {
+          action: tool.schema.string().describe("snapshot | click | fill | goto | press"),
+          url: tool.schema.string().optional(),
+          ref: tool.schema.string().optional().describe("aria-ref from the last snapshot, e.g. e12"),
+          testid: tool.schema.string().optional(),
+          role: tool.schema.string().optional(),
+          name: tool.schema.string().optional(),
+          text: tool.schema.string().optional(),
+          value: tool.schema.string().optional().describe("Required for fill"),
+          key: tool.schema.string().optional().describe("For press, e.g. Escape"),
+          workspace: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const cwd = toolWorkspace(args, context);
+          const action = String(args.action || "snapshot").trim().toLowerCase();
+          if (!["snapshot", "click", "fill", "goto", "press"].includes(action)) {
+            return `Unknown action ${action}. Use snapshot, click, fill, goto, or press.`;
+          }
+          const session = await importDist(cwd, "walletSession.js");
+          return redact(
+            await session.runWalletSession(cwd, action, {
+              url: args.url ? String(args.url) : undefined,
+              ref: args.ref ? String(args.ref) : undefined,
+              testId: args.testid ? String(args.testid) : undefined,
+              role: args.role ? String(args.role) : undefined,
+              name: args.name ? String(args.name) : undefined,
+              text: args.text ? String(args.text) : undefined,
+              value: args.value ? String(args.value) : undefined,
+              key: args.key ? String(args.key) : undefined,
+            }),
+          );
+        },
+      }),
+      harness_wallet_mm: tool({
+        description:
+          "Approve Connect or confirm Send in the MetaMask extension of the live wallet session. action=approve (connect) or confirm (sign). Do not use Playwright MCP for this. Never prints keys.",
+        args: {
+          action: tool.schema.string().optional().describe("approve | confirm (default approve)"),
+          workspace: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const cwd = toolWorkspace(args, context);
+          const mm = String(args.action || "approve").trim().toLowerCase();
+          if (!["approve", "confirm"].includes(mm)) {
+            return `Unknown action ${mm}. Use approve or confirm.`;
+          }
+          const session = await importDist(cwd, "walletSession.js");
+          return redact(await session.runWalletSession(cwd, "mm", { mmAction: mm }));
+        },
+      }),
       harness_tasks_status: tool({
         description:
           "Read .harness/tasks.md work units (T1, T2…) and contract scope. contracts=none|solidity, hardhat=skip|run, assert=next-only|next+hardhat. Default none (payments/HCS) — skip Hardhat. If file is missing, spawn one hedera-generate for the whole PRD.",

@@ -14,6 +14,7 @@ import type {
   TuiCliOptions,
   TuiSubcommand,
   WalletCliOptions,
+  WalletSessionAction,
   WalletSubcommand,
   ServeCliOptions,
   ServeSubcommand,
@@ -44,7 +45,19 @@ const COMMANDS = new Set<HarnessCommand>([
   "serve",
 ]);
 const TUI_SUBCOMMANDS = new Set<TuiSubcommand>(["install", "uninstall"]);
-const WALLET_SUBCOMMANDS = new Set<WalletSubcommand>(["status", "provision", "browser", "e2e"]);
+const WALLET_SUBCOMMANDS = new Set<WalletSubcommand>(["status", "provision", "browser", "e2e", "session"]);
+const WALLET_SESSION_ACTIONS = new Set<WalletSessionAction>([
+  "start",
+  "stop",
+  "status",
+  "serve",
+  "snapshot",
+  "click",
+  "fill",
+  "goto",
+  "mm",
+  "press",
+]);
 const MCP_SUBCOMMANDS = new Set<McpSubcommand>(["status", "enable", "install"]);
 const TASKS_SUBCOMMANDS = new Set<TasksSubcommand>(["status", "done"]);
 const SERVE_SUBCOMMANDS = new Set<ServeSubcommand>(["start", "stop", "status"]);
@@ -126,7 +139,7 @@ Usage:
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
   hedera-harness tui <install|uninstall> [target-dir] [--keep-default] [--no-init] [--skip-install]
-  hedera-harness wallet <status|provision|browser> [--workspace <dir>] [--no-open] [--port <n>]
+  hedera-harness wallet <status|provision|browser|e2e|session> [--workspace <dir>] [--no-open] [--port <n>]
   hedera-harness mcp <status|enable|install> [--workspace <dir>]
   hedera-harness tasks <status|done> [--workspace <dir>] [--id <T1>]
   hedera-harness serve <start|stop|status> [--workspace <dir>]
@@ -161,7 +174,7 @@ OpenCode TUI notes:
   - \`tui install\` scaffolds the target if \`.harness/spec.yaml\` is missing (clone/adopt, no yarn), then copies the overlay. Yarn runs later in OpenCode INIT.
   - Does not write ~/.config/opencode (Gentle stays global).
   - See \`hedera-harness tui --help\`.
-  - \`wallet provision\` opens a local 127.0.0.1 page for a TESTNET MetaMask key+password. Never paste keys in chat. \`wallet browser\` loads MetaMask via dappwright into a persistent Chromium profile under .harness/wallet/ (first run imports; later runs unlock). \`wallet e2e --url http://127.0.0.1:3000\` drives Connect + MetaMask approve/sign on the live app (not Playwright MCP burner).
+  - \`wallet provision\` opens a local 127.0.0.1 page for a TESTNET MetaMask key+password. Never paste keys in chat. \`wallet browser\` loads MetaMask via dappwright into a persistent Chromium profile under .harness/wallet/ (first run imports; later runs unlock). \`wallet session start\` keeps that browser alive and exposes snapshot/click/fill on the dapp tab (not Playwright MCP vanilla Chrome). \`wallet e2e\` is the one-shot scripted send.
   - \`mcp status|enable|install\` inspects Playwright MCP in project/user opencode.json. Install writes the project file only (never ~/.config/opencode unless the entry already lives there). New sessions pick up MCP tools.
   - \`tasks status\` reads .harness/tasks.md (T1, T2… work units) and \`contracts=none|solidity\` (Hardhat skip vs run).
   - \`serve start|stop|status\` tracks one \`yarn next:dev\` in \`.harness/dev-server.json\`. Reuses it if CSS is healthy; otherwise kills leftover nohup/orphan next:dev for this app before starting. Do not \`nohup yarn next:dev\`.`);
@@ -421,11 +434,11 @@ function parseTuiOptions(args: string[]): TuiCliOptions {
 function parseWalletOptions(args: string[]): WalletCliOptions {
   const [rawSubcommand, ...rest] = args;
   if (!rawSubcommand || rawSubcommand === "--help" || rawSubcommand === "-h") {
-    throw new Error('Expected wallet subcommand "status", "provision", "browser", or "e2e".');
+    throw new Error('Expected wallet subcommand "status", "provision", "browser", "e2e", or "session".');
   }
   if (!WALLET_SUBCOMMANDS.has(rawSubcommand as WalletSubcommand)) {
     throw new Error(
-      `Expected wallet subcommand "status", "provision", "browser", or "e2e" (got ${JSON.stringify(rawSubcommand)}).`,
+      `Expected wallet subcommand "status", "provision", "browser", "e2e", or "session" (got ${JSON.stringify(rawSubcommand)}).`,
     );
   }
 
@@ -434,26 +447,67 @@ function parseWalletOptions(args: string[]): WalletCliOptions {
     open: true,
   };
 
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index];
+  let flags = rest;
+  if (options.subcommand === "session") {
+    const action = rest[0];
+    if (!action || action.startsWith("--")) {
+      options.sessionAction = "status";
+    } else {
+      if (!WALLET_SESSION_ACTIONS.has(action as WalletSessionAction)) {
+        throw new Error(
+          `Expected wallet session action "start", "stop", "status", "snapshot", "click", "fill", "goto", "mm", or "press" (got ${JSON.stringify(action)}).`,
+        );
+      }
+      options.sessionAction = action as WalletSessionAction;
+      flags = rest.slice(1);
+    }
+  }
+
+  for (let index = 0; index < flags.length; index += 1) {
+    const arg = flags[index];
     switch (arg) {
       case "--workspace":
-        options.workspace = readValue(rest, ++index, arg);
+        options.workspace = readValue(flags, ++index, arg);
         break;
       case "--no-open":
         options.open = false;
         break;
       case "--port":
-        options.port = readPositiveInteger(rest, ++index, arg);
+        options.port = readPositiveInteger(flags, ++index, arg);
         break;
       case "--url":
-        options.url = readValue(rest, ++index, arg);
+        options.url = readValue(flags, ++index, arg);
         break;
       case "--amount":
-        options.amount = readValue(rest, ++index, arg);
+        options.amount = readValue(flags, ++index, arg);
         break;
       case "--to":
-        options.to = readValue(rest, ++index, arg);
+        options.to = readValue(flags, ++index, arg);
+        break;
+      case "--ref":
+        options.ref = readValue(flags, ++index, arg);
+        break;
+      case "--testid":
+      case "--test-id":
+        options.testId = readValue(flags, ++index, arg);
+        break;
+      case "--role":
+        options.role = readValue(flags, ++index, arg);
+        break;
+      case "--name":
+        options.name = readValue(flags, ++index, arg);
+        break;
+      case "--text":
+        options.text = readValue(flags, ++index, arg);
+        break;
+      case "--value":
+        options.value = readValue(flags, ++index, arg);
+        break;
+      case "--action":
+        options.mmAction = readValue(flags, ++index, arg);
+        break;
+      case "--key":
+        options.key = readValue(flags, ++index, arg);
         break;
       default:
         throw new Error(`Unknown wallet option: ${arg}`);
@@ -481,6 +535,24 @@ async function runWalletCommand(options: WalletCliOptions): Promise<void> {
   if (options.subcommand === "e2e") {
     const { runWalletE2e } = await import("./walletE2e.js");
     console.log(await runWalletE2e(workspace, options.url, { amount: options.amount, to: options.to }));
+    return;
+  }
+  if (options.subcommand === "session") {
+    const { runWalletSession } = await import("./walletSession.js");
+    console.log(
+      await runWalletSession(workspace, options.sessionAction ?? "status", {
+        url: options.url,
+        port: options.port,
+        ref: options.ref,
+        testId: options.testId,
+        role: options.role,
+        name: options.name,
+        text: options.text,
+        value: options.value,
+        mmAction: options.mmAction,
+        key: options.key,
+      }),
+    );
     return;
   }
   const { runWalletBrowser } = await import("./walletBrowser.js");

@@ -17,7 +17,7 @@ RainbowKit + wagmi + WalletConnect / injected. MetaMask and HashPack in that mod
 
 If blocked, `http://127.0.0.1:17373/` must be **listening** (`server=up`) **until they save**. Connection refused *before* save means the provision process is not Node — call `harness_wallet_gate` again. Do **not** tell the human to run `opencode.exe … wallet provision`. Repair: `node <harness>/dist/index.js wallet provision --workspace <app> --port 17373`. After **Saved**, the process exits — `server=down` is expected. Poll `harness_wallet_gate`; `gate=ok` does not need the page still open.
 
-`wallet browser` / `harness_wallet_e2e` uses [dappwright](https://github.com/TenKeyLabs/dappwright) to load MetaMask into persistent Chromium (`.harness/wallet/chrome-profile/`), import the vault key, and add Hedera Testnet. E2E must approve Connect and confirm Send in that extension. Playwright MCP vanilla Chrome is not a MetaMask signature. Later sessions unlock; they do not re-paste.
+`wallet browser` / `harness_wallet_session` / `harness_wallet_e2e` uses [dappwright](https://github.com/TenKeyLabs/dappwright) to load MetaMask into persistent Chromium (`.harness/wallet/chrome-profile/`), import the vault key, and add Hedera Testnet. Session tools snapshot/click/fill the **dapp tab** in that window; `harness_wallet_mm` approve/confirm the extension. Playwright MCP vanilla Chrome is not a MetaMask signature. Later sessions unlock; they do not re-paste.
 
 ## Default path (scaffold-hbar)
 

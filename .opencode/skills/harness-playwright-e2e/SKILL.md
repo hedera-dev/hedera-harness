@@ -9,7 +9,8 @@ Two different browsers.
 
 | Layer | Browser | What it proves |
 |------|---------|----------------|
-| **MetaMask E2E** (`harness_wallet_e2e`) | Chromium + MetaMask extension (dappwright, vault profile) | Connect popup **approved**, Send **signed**, `tx=new` (not leftover HashScan history) |
+| **MetaMask session** (`harness_wallet_session` + `harness_wallet_dom`) | Same Chromium + MetaMask extension, kept alive | Aria snapshot + live input values; click/fill any dapp form; `harness_wallet_mm` for Connect/Sign |
+| **MetaMask E2E** (`harness_wallet_e2e`) | Same browser, one-shot script | Connect approved, Send signed, `tx=new` |
 | **Playwright MCP** | Vanilla Chrome, **no** extension | Routes, empty states, Connect **button** visible |
 | **hedera-local** | Human Chrome | Same Connect+Send the user will demo |
 
