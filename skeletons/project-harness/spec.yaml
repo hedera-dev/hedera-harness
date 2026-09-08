@@ -90,5 +90,18 @@ baseline:
 #   operator:
 #     accountIdEnv: HEDERA_OPERATOR_ID
 #     privateKeyEnv: HEDERA_OPERATOR_KEY
+#   expose:
+#     browserLocalStorageKey: burnerWallet.pk
+#     # Map signer fields into the app server without writing an .env file.
+#     # appEnv:
+#     #   HEDERA_OPERATOR_ID: accountId
+#     #   HEDERA_OPERATOR_PRIVATE_KEY: privateKey
+#     envVars: []             # private-key vars for deploy commands only
+#   # Require successful transactions paid by the disposable signer during
+#   # this attempt; the harness polls testnet Mirror Node for up to 30 seconds.
+#   verify:
+#     transactionTypes:
+#       - CONSENSUSSUBMITMESSAGE
+#       - TOKENCREATION
 #
 # Note: harness logs always live under .harness/runs/ and are not configurable.
