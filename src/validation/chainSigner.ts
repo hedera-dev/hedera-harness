@@ -8,6 +8,11 @@ type PrivateKey = ReturnType<HieroSdk["PrivateKey"]["fromString"]>;
 
 export const CHAIN_SIGNER_FILENAME = "chain-signer.json";
 
+/** Persisted filename for a named actor's ephemeral signer, alongside chain-signer.json. */
+export function chainActorFilename(name: string): string {
+  return `chain-actor-${name}.json`;
+}
+
 interface PersistedChainSigner extends ChainSigner {
   createdAt: string;
 }
@@ -25,7 +30,35 @@ export async function provisionChainSigner(
   if (!config.enabled) {
     throw new Error("provisionChainSigner called with chainValidation.enabled=false");
   }
+  return provisionSigner(config, chainSignerPath(runDirectory), config.fundingHbar);
+}
 
+/**
+ * Provision (or reuse) an additional named ephemeral signer for `chainValidation.actors.<name>`
+ * — same lifecycle as the primary signer (persisted, reused, topped up, replaced if swept),
+ * under its own file so it never collides with the primary signer or another actor.
+ */
+export async function provisionChainActor(
+  name: string,
+  actorFundingHbar: number | undefined,
+  config: ChainValidationConfig,
+  runDirectory: string,
+): Promise<{ signer: ChainSigner; reused: boolean; toppedUpHbar?: number; replacedDeleted?: boolean }> {
+  if (!config.enabled) {
+    throw new Error("provisionChainActor called with chainValidation.enabled=false");
+  }
+  return provisionSigner(
+    config,
+    path.join(runDirectory, chainActorFilename(name)),
+    actorFundingHbar ?? config.fundingHbar,
+  );
+}
+
+async function provisionSigner(
+  config: ChainValidationConfig,
+  persistPath: string,
+  fundingHbar: number,
+): Promise<{ signer: ChainSigner; reused: boolean; toppedUpHbar?: number; replacedDeleted?: boolean }> {
   if (config.network !== "testnet") {
     throw new Error(
       `chainValidation.network must be "testnet" (got ${JSON.stringify(config.network)}). Mainnet is not allowed.`,
@@ -35,13 +68,12 @@ export async function provisionChainSigner(
   // Confirm the SDK the harness ships is loadable before any network calls.
   await importHieroSdk();
 
-  const persistPath = chainSignerPath(runDirectory);
   const existing = await readPersistedSigner(persistPath);
   if (existing) {
     const signer = toPublicSigner(existing);
     const liveliness = await checkSignerLiveliness(signer, config);
     if (liveliness === "alive") {
-      const toppedUpHbar = await topUpSignerIfNeeded(signer, config);
+      const toppedUpHbar = await topUpSignerIfNeeded(signer, config, fundingHbar);
       return { signer, reused: true, ...(toppedUpHbar !== undefined ? { toppedUpHbar } : {}) };
     }
 
@@ -49,7 +81,7 @@ export async function provisionChainSigner(
     await clearPersistedSigner(persistPath);
   }
 
-  const created = await createFundedSigner(config, persistPath);
+  const created = await createFundedSigner(config, persistPath, fundingHbar);
   return {
     signer: created,
     reused: false,
@@ -60,6 +92,7 @@ export async function provisionChainSigner(
 async function createFundedSigner(
   config: ChainValidationConfig,
   persistPath: string,
+  fundingHbar: number,
 ): Promise<ChainSigner> {
   const sdk = await importHieroSdk();
   const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
@@ -75,7 +108,7 @@ async function createFundedSigner(
       receipt = await (
         await new sdk.AccountCreateTransaction()
           .setECDSAKeyWithAlias(ephemeralKey)
-          .setInitialBalance(new sdk.Hbar(config.fundingHbar))
+          .setInitialBalance(new sdk.Hbar(fundingHbar))
           .execute(client)
       ).getReceipt(client);
     } catch (error) {
@@ -142,9 +175,10 @@ async function checkSignerLiveliness(
 async function topUpSignerIfNeeded(
   signer: ChainSigner,
   config: ChainValidationConfig,
+  fundingHbar: number,
 ): Promise<number | undefined> {
   const sdk = await importHieroSdk();
-  const target = new sdk.Hbar(config.fundingHbar);
+  const target = new sdk.Hbar(fundingHbar);
   const { accountId: operatorId, privateKey: operatorKey } = await readOperatorCredentials(config);
   const client = sdk.Client.forTestnet();
   client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
@@ -187,7 +221,8 @@ async function topUpSignerIfNeeded(
 export async function sweepChainSigner(
   signer: ChainSigner,
   config: ChainValidationConfig,
-  runDirectory?: string,
+  /** Exact persisted-signer file to clear on success (chainSignerPath(...) or an actor's path). */
+  persistPath?: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!config.sweepBack) {
     return { success: true };
@@ -209,8 +244,8 @@ export async function sweepChainSigner(
         .freezeWith(client);
       const signed = await frozen.sign(ephemeralKey);
       await (await signed.execute(client)).getReceipt(client);
-      if (runDirectory) {
-        await clearPersistedSigner(chainSignerPath(runDirectory));
+      if (persistPath) {
+        await clearPersistedSigner(persistPath);
       }
       return { success: true };
     } finally {

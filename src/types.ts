@@ -436,6 +436,8 @@ export type HarnessLogEvent =
       evmAddress: string;
       network: "testnet";
       reused: boolean;
+      /** Name of the chainValidation.actors entry this signer is for; absent = the primary signer. */
+      actor?: string;
     }
   | {
       type: "chain_signer_swept";
@@ -443,6 +445,8 @@ export type HarnessLogEvent =
       accountId: string;
       success: boolean;
       error?: string;
+      /** Name of the chainValidation.actors entry this signer is for; absent = the primary signer. */
+      actor?: string;
     }
   | {
       type: "workspace_git_committed";

@@ -44,6 +44,8 @@ export interface AttemptStageContext {
   workspacePath: string;
   layout: RunLayout;
   chainSigner?: ChainSigner;
+  /** Additional named ephemeral signers, keyed by chainValidation.actors entry name. */
+  chainActors?: Record<string, ChainSigner>;
   /** Vendored eval checklist path, relative to the workspace. */
   evalRelativePath?: string;
 }
