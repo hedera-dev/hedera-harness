@@ -167,9 +167,13 @@ chainValidation:
   #   commands:
   #     - name: deploy-testnet
   #       command: yarn hardhat:deploy --network hederaTestnet
+  # x402FacilitatorUrl: https://api.testnet.blocky402.com   # metered-API recipes: doctor checks it settles hedera:testnet
 ```
 
 - the operator must be **ECDSA**, not ED25519 — ED25519 has no EVM alias
+- for a recipe that meters its API over x402, set `x402FacilitatorUrl`; `doctor`
+  asks the facilitator's `/supported` and fails fast unless it advertises `exact`
+  on `hedera:testnet` (and warns if it names no fee payer)
 - export the env vars in your shell; they are never written into the workspace
 - the template must keep the burner connector enabled so headless signing works
 - for Solidity templates, map `expose.envVars` and `deploy.commands` so

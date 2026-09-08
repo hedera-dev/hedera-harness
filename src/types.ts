@@ -166,6 +166,12 @@ export interface ChainValidationConfig {
   sweepBack: boolean;
   expose: ChainValidationExposeConfig;
   deploy?: ChainValidationDeployConfig;
+  /**
+   * Base URL of the x402 facilitator a metered-API recipe settles through
+   * (e.g. https://api.testnet.blocky402.com). When set, `doctor` confirms it
+   * advertises `exact` on `hedera:testnet` before a run is committed to.
+   */
+  x402FacilitatorUrl?: string;
 }
 
 /** Ephemeral ECDSA test signer provisioned for a harness run. */

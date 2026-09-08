@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { makeTestTempDir } from "./tmpDir.mjs";
 import { execFile } from "node:child_process";
+import { createServer } from "node:http";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -145,4 +146,79 @@ test("doctor reports an unknown agent CLI as a failure", async () => {
   assert.equal(agentCheck.status, "fail");
   assert.match(agentCheck.detail, /not on PATH/);
   assert.equal(report.passed, false);
+});
+
+/** A stand-in facilitator: answers /supported with whatever the test hands it. */
+async function facilitator(body, status = 200) {
+  const server = createServer((req, res) => {
+    if (req.url === "/supported") {
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(JSON.stringify(body));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return { url: `http://127.0.0.1:${port}`, close: () => new Promise(resolve => server.close(resolve)) };
+}
+
+const chainValidationWith = url => `chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  x402FacilitatorUrl: ${url}
+`;
+
+test("doctor passes a facilitator that settles hedera:testnet with a fee payer", async () => {
+  const fac = await facilitator({
+    kinds: [{ x402Version: 2, scheme: "exact", network: "hedera:testnet", extra: { feePayer: "0.0.7162784" } }],
+  });
+  try {
+    const root = await makeProject({ specBody: specWith("node", chainValidationWith(fac.url)) });
+    const report = await runDoctor({ specPath: path.join(root, ".harness", "spec.yaml"), workspacePath: root });
+    assert.equal(statusOf(report, "x402 facilitator"), "ok");
+    assert.match(formatDoctorReport(report), /fee payer 0\.0\.7162784/);
+  } finally {
+    await fac.close();
+  }
+});
+
+test("doctor fails a facilitator that does not advertise hedera:testnet", async () => {
+  const fac = await facilitator({ kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:84532" }] });
+  try {
+    const root = await makeProject({ specBody: specWith("node", chainValidationWith(fac.url)) });
+    const report = await runDoctor({ specPath: path.join(root, ".harness", "spec.yaml"), workspacePath: root });
+    assert.equal(statusOf(report, "x402 facilitator"), "fail");
+    assert.equal(report.passed, false);
+  } finally {
+    await fac.close();
+  }
+});
+
+test("doctor warns when the facilitator settles hedera:testnet without a fee payer", async () => {
+  const fac = await facilitator({ kinds: [{ x402Version: 2, scheme: "exact", network: "hedera:testnet" }] });
+  try {
+    const root = await makeProject({ specBody: specWith("node", chainValidationWith(fac.url)) });
+    const report = await runDoctor({ specPath: path.join(root, ".harness", "spec.yaml"), workspacePath: root });
+    assert.equal(statusOf(report, "x402 facilitator"), "warn");
+  } finally {
+    await fac.close();
+  }
+});
+
+test("doctor fails, rather than throws, when the facilitator is unreachable", async () => {
+  const root = await makeProject({ specBody: specWith("node", chainValidationWith("http://127.0.0.1:9")) });
+  const report = await runDoctor({ specPath: path.join(root, ".harness", "spec.yaml"), workspacePath: root });
+  assert.equal(statusOf(report, "x402 facilitator"), "fail");
+  assert.match(formatDoctorReport(report), /unreachable/);
+});
+
+test("doctor skips the facilitator check when the recipe names none", async () => {
+  const root = await makeProject({ specBody: VALID_SPEC });
+  const report = await runDoctor({ specPath: path.join(root, ".harness", "spec.yaml"), workspacePath: root });
+  assert.equal(statusOf(report, "x402 facilitator"), undefined);
 });

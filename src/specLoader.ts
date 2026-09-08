@@ -586,5 +586,6 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
       envVars: readOptionalStringArray(exposeRecord, "envVars") ?? [],
     },
     deploy,
+    x402FacilitatorUrl: readOptionalString(record, "x402FacilitatorUrl")?.trim() || undefined,
   };
 }

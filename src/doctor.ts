@@ -66,6 +66,7 @@ export async function runDoctor(
     checks.push(await checkPromptOverrides(spec.projectRoot));
     checks.push(...(await checkOptionalDeps(spec, workspacePath)));
     checks.push(...checkChainEnv(spec));
+    checks.push(...(await checkX402Facilitator(spec)));
   }
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
@@ -363,4 +364,48 @@ function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
           fix: `Required by chainValidation. Testnet credentials from https://portal.hedera.com.`,
         };
   });
+}
+
+/**
+ * A recipe that meters its API over x402 is only as live as the facilitator
+ * that settles for it. Finding out the facilitator cannot settle Hedera should
+ * take a second, not a run: ask its `/supported` endpoint and look for the
+ * `exact` scheme on `hedera:testnet` with a fee payer. Skipped when the recipe
+ * names no facilitator.
+ */
+async function checkX402Facilitator(spec: TemplateSpec): Promise<DoctorCheck[]> {
+  const url = spec.chainValidation?.x402FacilitatorUrl;
+  if (!url) return [];
+  const name = "x402 facilitator";
+  const fix =
+    "Set chainValidation.x402FacilitatorUrl to a facilitator that settles Hedera testnet, e.g. https://api.testnet.blocky402.com.";
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, "")}/supported`, {
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) {
+      return [{ name, status: "fail", detail: `${url} answered HTTP ${res.status} on /supported`, fix }];
+    }
+    const body = (await res.json()) as {
+      kinds?: { scheme?: string; network?: string; extra?: { feePayer?: string } }[];
+    };
+    const kind = body.kinds?.find(k => k.scheme === "exact" && k.network === "hedera:testnet");
+    if (!kind) {
+      return [{ name, status: "fail", detail: `${url} does not advertise exact on hedera:testnet`, fix }];
+    }
+    if (!kind.extra?.feePayer) {
+      return [
+        {
+          name,
+          status: "warn",
+          detail: `${url} settles hedera:testnet but names no fee payer`,
+          fix: "Clients will pay network fees themselves; confirm the recipe expects that.",
+        },
+      ];
+    }
+    return [{ name, status: "ok", detail: `${url} settles hedera:testnet (fee payer ${kind.extra.feePayer})` }];
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return [{ name, status: "fail", detail: `${url} unreachable: ${detail}`, fix }];
+  }
 }
