@@ -158,6 +158,50 @@ test("repair scope selects the matching template", async () => {
     2,
   );
   assert.match(broad, /Repair scope: \*\*broad\*\*/);
+
+  const chainAssertion = await prompts.buildRepairPrompt(
+    spec,
+    [{ id: "chain-assertion:reject-unverified", category: "chain-assertion", message: "revert expected, got success" }],
+    2,
+  );
+  assert.match(chainAssertion, /Repair scope: \*\*runtime\*\*/);
+});
+
+test("a chain-assertion-infra finding is stripped from the repair prompt like eval-infra, and never drives repair scope alone", async () => {
+  const root = await makeTestTempDir("prompt-repair-infra-");
+  const spec = {
+    name: "demo",
+    projectRoot: root,
+    prdPaths: [path.join(root, "prd.md")],
+    requiredFiles: [],
+    forbiddenFiles: [],
+    validators: {},
+    generator: { provider: "command", command: "agent" },
+    maxAttempts: 1,
+    logging: { jsonlPath: "x", notesPath: "y" },
+  };
+
+  const infraOnly = await prompts.buildRepairPrompt(
+    spec,
+    [{ id: "chain-assertion:a1", category: "chain-assertion-infra", message: "Mirror Node unreachable" }],
+    2,
+  );
+  // No actionable findings at all -> falls back to broad, and the infra finding itself must
+  // not appear in the rendered findings list (nothing for the agent to "fix").
+  assert.match(infraOnly, /Repair scope: \*\*broad\*\*/);
+  assert.doesNotMatch(infraOnly, /Mirror Node unreachable/);
+
+  const mixed = await prompts.buildRepairPrompt(
+    spec,
+    [
+      { id: "chain-assertion:real", category: "chain-assertion", message: "policy violated" },
+      { id: "chain-assertion:flaky", category: "chain-assertion-infra", message: "Mirror Node unreachable" },
+    ],
+    2,
+  );
+  assert.match(mixed, /Repair scope: \*\*runtime\*\*/);
+  assert.match(mixed, /policy violated/);
+  assert.doesNotMatch(mixed, /Mirror Node unreachable/);
 });
 
 test("the validator prompt includes signer material only when a signer exists", async () => {

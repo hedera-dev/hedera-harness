@@ -213,3 +213,38 @@ ${MINIMAL_BASELINE}${CHAIN_VALIDATION_HEADER}  assertions:
     tokenId: "0.0.7777",
   });
 });
+
+test("balanceDelta.equals rejects non-integer strings at load, before they ever reach BigInt()", async () => {
+  for (const badValue of ["5.5e8", "500,000,000", "5.5", "not-a-number"]) {
+    const { specPath } = await writeRecipe(`schemaVersion: 3
+name: my-feature
+${MINIMAL_BASELINE}${CHAIN_VALIDATION_HEADER}  assertions:
+    - id: bad-equals
+      action: { name: a, command: "true" }
+      expect:
+        outcome: mustSucceed
+        balanceDelta: { account: "0.0.1", asset: hbar, equals: ${JSON.stringify(badValue)} }
+`);
+
+    await assert.rejects(
+      () => loadTemplateSpec(specPath),
+      /expect\.balanceDelta\.equals must be a signed integer string/,
+      `expected ${JSON.stringify(badValue)} to be rejected`,
+    );
+  }
+});
+
+test("balanceDelta.equals accepts negative integers", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: my-feature
+${MINIMAL_BASELINE}${CHAIN_VALIDATION_HEADER}  assertions:
+    - id: negative-equals
+      action: { name: a, command: "true" }
+      expect:
+        outcome: mustSucceed
+        balanceDelta: { account: "0.0.1", asset: hbar, equals: "-500000000" }
+`);
+
+  const { spec } = await loadTemplateSpec(specPath);
+  assert.equal(spec.chainValidation.assertions[0].expect.balanceDelta.equals, "-500000000");
+});

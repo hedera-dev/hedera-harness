@@ -325,7 +325,9 @@ export interface ValidationFinding {
     | "agent"
     | "playwright"
     | "eval"
-    | "eval-infra";
+    | "eval-infra"
+    | "chain-assertion"
+    | "chain-assertion-infra";
   message: string;
   details?: string;
   /**
@@ -337,6 +339,12 @@ export interface ValidationFinding {
   assertion?: string;
   /** Route associated with an eval finding, when known. */
   route?: string;
+  /** Deterministic on-chain evidence for a chain-assertion finding. */
+  evidence?: {
+    transactionId?: string;
+    expected?: string;
+    observed?: string;
+  };
 }
 
 export interface ValidationResult {

@@ -185,17 +185,17 @@ attempts, best-effort sweep back to the operator at run end.
 
 #### `chainValidation.assertions` — deterministic on-chain postconditions
 
-> **Status: recipe schema only.** The loader parses and validates this block;
-> the execution/evaluation engine that runs an assertion and turns a mismatch
-> into a `ValidationFinding` ships in a follow-up change. A recipe with
-> `assertions:` configured today is accepted but nothing consumes it yet.
-
 CHAIN proves a real signed transaction landed. It does not, on its own, prove
 the app enforced a specific rule for that transaction — a deploy command that
 exits `0` is treated as successful regardless of what it actually did
 on-chain. `chainValidation.assertions` closes that gap: each entry executes
 one signed action and evaluates its outcome **in code**, against real chain
-evidence, independent of EVALUATE's LLM judgment.
+evidence from Mirror Node, independent of EVALUATE's LLM judgment.
+
+Runs once per attempt, right after a successful chain deploy and before the
+dev server boots for SMOKE — it needs the app already deployed and the
+signer(s), not the browser. A failing assertion short-circuits the rest of
+the attempt the same way a failed deploy does.
 
 ```yaml
 chainValidation:
@@ -236,6 +236,33 @@ chainValidation:
 - `expect.balanceDelta` needs exactly one of `account` (a literal `0.0.x`) or
   `accountEnv` (an env var read at execution time, e.g. an actor's own
   account) — never both, never neither.
+- `expect.balanceDelta.equals` must be a signed integer string (tinybars for
+  `hbar`, smallest unit for an HTS token) — rejected at load otherwise, so a
+  typo like `"5.5e8"` or `"500,000,000"` never reaches evaluation.
+
+**How the action's outcome is captured.** `action.command` must print the id
+of the transaction it submitted somewhere in stdout/stderr, in the form
+`0.0.x@seconds.nanos` (the same format the Hedera SDK's own
+`transactionId.toString()` produces) — the harness looks for that pattern in
+the command's combined output. The command's own exit code is **not** the
+verdict: it only distinguishes "the action ran to completion" from "it
+didn't" (non-zero exit or a timeout → a `chain-assertion-infra` finding,
+since a script that couldn't even finish is not evidence either way). Once a
+transaction id is found, the harness independently queries Mirror Node for
+that transaction's real consensus result and compares it to `expect` — never
+trusting the script's own claim of success.
+
+**Findings.** A mismatch, an unresolvable evidence query, or a config problem
+(unknown actor, unset `accountEnv`) each produce one `ValidationFinding`:
+
+| category | meaning | fed to repair? |
+|---|---|---|
+| `chain-assertion` | confirmed policy mismatch, or a fixable config/script problem | yes |
+| `chain-assertion-infra` | evidence couldn't be obtained (Mirror Node lag/outage, action didn't complete) | no — treated like `eval-infra`; an attempt where *every* chain-assertion finding is this category aborts instead of spending a repair attempt on something no agent could fix |
+
+A `chain-assertion` finding's `evidence` field carries the transaction id and
+the expected vs. observed values, so the repair prompt (and any consumer of
+`report.json`) sees concrete proof, not just a message.
 
 ## Building in increments
 

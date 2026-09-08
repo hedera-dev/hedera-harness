@@ -15,6 +15,7 @@ import type {
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
+import { runChainAssertions } from "./validation/chainAssertions.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
 import {
@@ -229,6 +230,26 @@ export async function runChainDeploy(
   return findings;
 }
 
+/**
+ * Deterministic on-chain postcondition assertions: run after a successful chain deploy, before
+ * the dev server boots — they need the app already deployed and the signer(s), but not the
+ * browser. See docs/authoring-a-recipe.md "chainValidation.assertions".
+ */
+export async function runChainAssertionsStage(
+  context: AttemptStageContext,
+): Promise<ValidationFinding[]> {
+  const assertions = context.spec.chainValidation?.assertions ?? [];
+  if (!context.chainSigner || assertions.length === 0) return [];
+
+  // Logs per-assertion as each one actually executes (see chainAssertions.ts), not upfront.
+  return runChainAssertions({
+    workspacePath: context.workspacePath,
+    chainValidation: context.spec.chainValidation!,
+    primarySigner: context.chainSigner,
+    actorSigners: context.chainActors ?? {},
+  });
+}
+
 /** EVALUATE — adversarial validator grades the live app against the evaluate checklist. */
 export async function runEvaluateStage(
   context: AttemptStageContext,
@@ -317,6 +338,41 @@ export async function runValidationStages(
       ...validation,
       passed: false,
       findings: [...validation.findings, ...deployFindings],
+    };
+  }
+
+  const chainAssertionFindings = await runChainAssertionsStage(context);
+  if (chainAssertionFindings.length > 0) {
+    // A pure infra batch (no confirmed policy violation, evidence just couldn't be obtained)
+    // must abort like an EVALUATE infra failure does, not spend a repair attempt on an agent
+    // that has nothing it can fix — reuses the same evaluation.infrastructureFailure signal
+    // attemptLoop.ts already checks, since "evaluation" is the closest generic slot for "a
+    // validation stage failed for tooling reasons"; a real policy violation (or a mix) is
+    // always treated as repairable, never silently absorbed as infra.
+    const allInfra = chainAssertionFindings.every(
+      finding => finding.category === "chain-assertion-infra",
+    );
+    if (allInfra) {
+      logStage("SMOKE", "chain assertion infrastructure failure — aborting, not a repair target");
+      return {
+        ...validation,
+        passed: false,
+        findings: [...validation.findings, ...chainAssertionFindings],
+        evaluation: {
+          passed: false,
+          findings: chainAssertionFindings,
+          durationMs: 0,
+          infrastructureFailure: true,
+          infrastructureFailureReason: chainAssertionFindings[0].message,
+        },
+      };
+    }
+
+    logStage("SMOKE", "chain assertion failed");
+    return {
+      ...validation,
+      passed: false,
+      findings: [...validation.findings, ...chainAssertionFindings],
     };
   }
 

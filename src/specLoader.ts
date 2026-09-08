@@ -746,5 +746,14 @@ function readChainAssertionBalanceDelta(
     );
   }
 
-  return { account, accountEnv, asset, equals: readString(record, "equals") };
+  const equals = readString(record, "equals");
+  if (!/^-?\d+$/.test(equals)) {
+    throw new Error(
+      `${path} ("${id}") expect.balanceDelta.equals must be a signed integer string (e.g. ` +
+        `"500000000" or "-100"), got ${JSON.stringify(equals)}. No decimals, commas, or ` +
+        "scientific notation — tinybars/smallest-unit amounts only.",
+    );
+  }
+
+  return { account, accountEnv, asset, equals };
 }
