@@ -201,7 +201,7 @@ export async function runChainDeploy(
 
   const env = buildDeployEnv(
     context.chainSigner,
-    context.spec.chainValidation?.expose.envVars ?? [],
+    context.spec.chainValidation?.expose,
   );
   const findings: ValidationFinding[] = [];
 

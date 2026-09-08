@@ -134,6 +134,11 @@ export interface ChainValidationExposeConfig {
   browserLocalStorageKey?: string;
   /** Env var names that receive the ephemeral private key for deploy commands. */
   envVars?: string[];
+  /**
+   * Explicit signer fields exposed to both deploy commands and the app server.
+   * Values are selectors, never literal secrets written into the recipe.
+   */
+  appEnv?: Record<string, "accountId" | "evmAddress" | "privateKey">;
 }
 
 export interface ChainValidationDeployCommand {
@@ -144,6 +149,13 @@ export interface ChainValidationDeployCommand {
 
 export interface ChainValidationDeployConfig {
   commands: ChainValidationDeployCommand[];
+}
+
+export interface ChainValidationVerifyConfig {
+  /** Successful transaction types the disposable signer must pay for during an attempt. */
+  transactionTypes: string[];
+  /** Maximum time to wait for Mirror Node indexing (default: 30 seconds). */
+  timeoutMs?: number;
 }
 
 /**
@@ -158,6 +170,7 @@ export interface ChainValidationConfig {
   sweepBack: boolean;
   expose: ChainValidationExposeConfig;
   deploy?: ChainValidationDeployConfig;
+  verify?: ChainValidationVerifyConfig;
 }
 
 /** Ephemeral ECDSA test signer provisioned for a harness run. */
@@ -259,6 +272,7 @@ export interface EvaluationResult {
   passed: boolean;
   verdict?: ValidatorVerdict;
   findings: ValidationFinding[];
+  chainVerification?: ChainVerificationResult;
   serverUrl?: string;
   durationMs: number;
   /** True when failure is harness/agent tooling (MCP/browser), not the generated app. */
@@ -276,7 +290,9 @@ export interface ValidationFinding {
     | "agent"
     | "playwright"
     | "eval"
-    | "eval-infra";
+    | "eval-infra"
+    | "chain"
+    | "chain-infra";
   message: string;
   details?: string;
   /**
@@ -288,6 +304,23 @@ export interface ValidationFinding {
   assertion?: string;
   /** Route associated with an eval finding, when known. */
   route?: string;
+}
+
+export interface ChainTransactionProof {
+  transactionType: string;
+  transactionId: string;
+  consensusTimestamp: string;
+  entityId?: string;
+}
+
+export interface ChainVerificationResult {
+  passed: boolean;
+  transactionTypes: string[];
+  proofs: ChainTransactionProof[];
+  findings: ValidationFinding[];
+  durationMs: number;
+  infrastructureFailure?: boolean;
+  infrastructureFailureReason?: string;
 }
 
 export interface ValidationResult {

@@ -1,7 +1,11 @@
 import { access, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { importHieroSdk } from "../optionalDeps.js";
-import type { ChainSigner, ChainValidationConfig } from "../types.js";
+import type {
+  ChainSigner,
+  ChainValidationConfig,
+  ChainValidationExposeConfig,
+} from "../types.js";
 
 type HieroSdk = typeof import("@hiero-ledger/sdk");
 type PrivateKey = ReturnType<HieroSdk["PrivateKey"]["fromString"]>;
@@ -236,19 +240,69 @@ export function chainSignerPath(runDirectory: string): string {
   return path.join(runDirectory, CHAIN_SIGNER_FILENAME);
 }
 
+export const HARNESS_SIGNER_ENV = {
+  accountId: "HARNESS_SIGNER_ACCOUNT_ID",
+  evmAddress: "HARNESS_SIGNER_EVM_ADDRESS",
+  privateKey: "HARNESS_SIGNER_PRIVATE_KEY",
+} as const;
+
 export function buildDeployEnv(
   signer: ChainSigner,
-  exposeEnvVars: string[] = [],
+  expose: ChainValidationExposeConfig = {},
 ): Record<string, string> {
   const env: Record<string, string> = {
-    HARNESS_SIGNER_ACCOUNT_ID: signer.accountId,
-    HARNESS_SIGNER_EVM_ADDRESS: signer.evmAddress,
-    HARNESS_SIGNER_PRIVATE_KEY: signer.privateKeyHex,
+    [HARNESS_SIGNER_ENV.accountId]: signer.accountId,
+    [HARNESS_SIGNER_ENV.evmAddress]: signer.evmAddress,
+    [HARNESS_SIGNER_ENV.privateKey]: signer.privateKeyHex,
+    ...buildAppEnv(signer, expose.appEnv),
   };
-  for (const name of exposeEnvVars) {
+  for (const name of expose.envVars ?? []) {
     env[name] = signer.privateKeyHex;
   }
   return env;
+}
+
+/** Resolve explicitly mapped signer fields for the app server without writing an env file. */
+export function buildAppEnv(
+  signer: ChainSigner,
+  mappings: ChainValidationExposeConfig["appEnv"] = {},
+): Record<string, string> {
+  const values = {
+    accountId: signer.accountId,
+    evmAddress: signer.evmAddress,
+    privateKey: signer.privateKeyHex,
+  };
+  return Object.fromEntries(
+    Object.entries(mappings ?? {}).map(([name, selector]) => [name, values[selector]]),
+  );
+}
+
+/** Clear funded operator creds so child processes cannot see them. */
+export function buildAppServerEnv(
+  signer: ChainSigner | undefined,
+  config: ChainValidationConfig | undefined,
+): Record<string, string> {
+  if (!config) return {};
+  const env: Record<string, string> = {
+    [config.operator.accountIdEnv]: "",
+    [config.operator.privateKeyEnv]: "",
+  };
+  if (signer) {
+    Object.assign(env, buildAppEnv(signer, config.expose.appEnv));
+  }
+  return env;
+}
+
+/** Deploy command env: disposable signer fields, with the funded operator blanked. */
+export function buildDeployCommandEnv(
+  signer: ChainSigner,
+  config: ChainValidationConfig,
+): Record<string, string> {
+  return {
+    [config.operator.accountIdEnv]: "",
+    [config.operator.privateKeyEnv]: "",
+    ...buildDeployEnv(signer, config.expose),
+  };
 }
 
 const HEDERA_ACCOUNT_ID_RE = /^\d+\.\d+\.\d+$/;

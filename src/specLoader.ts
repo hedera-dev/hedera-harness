@@ -566,6 +566,13 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
     record.deploy && typeof record.deploy === "object" && !Array.isArray(record.deploy)
       ? (record.deploy as Record<string, unknown>)
       : undefined;
+  const verifyRecord =
+    record.verify && typeof record.verify === "object" && !Array.isArray(record.verify)
+      ? (record.verify as Record<string, unknown>)
+      : undefined;
+  if (record.verify !== undefined && !verifyRecord) {
+    throw new Error('Expected object "chainValidation.verify" in template spec.');
+  }
 
   let deploy: ChainValidationConfig["deploy"];
   if (deployRecord) {
@@ -588,9 +595,87 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
     };
   }
 
+  let verify: ChainValidationConfig["verify"];
+  if (verifyRecord) {
+    const transactionTypes = readStringArray(verifyRecord, "transactionTypes").map(value =>
+      value.trim().toUpperCase(),
+    );
+    if (
+      transactionTypes.length === 0 ||
+      transactionTypes.some(value => !/^[A-Z][A-Z0-9_]*$/.test(value))
+    ) {
+      throw new Error(
+        '"chainValidation.verify.transactionTypes" must contain valid transaction type names.',
+      );
+    }
+    const timeoutMs = readOptionalNumber(verifyRecord, "timeoutMs");
+    if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+      throw new Error('Expected positive number "chainValidation.verify.timeoutMs".');
+    }
+    if (verifyRecord.mirrorNodeUrl !== undefined) {
+      throw new Error(
+        '"chainValidation.verify.mirrorNodeUrl" is not configurable; CHAIN always verifies against the public testnet Mirror Node.',
+      );
+    }
+    verify = {
+      transactionTypes: [...new Set(transactionTypes)],
+      timeoutMs,
+    };
+  }
+
   const fundingHbar = readOptionalNumber(record, "fundingHbar") ?? 10;
   if (!Number.isFinite(fundingHbar) || fundingHbar <= 0) {
     throw new Error('Expected positive number "chainValidation.fundingHbar".');
+  }
+
+  const envVars = readOptionalStringArray(exposeRecord, "envVars") ?? [];
+  const appEnv = readOptionalStringRecord(exposeRecord, "appEnv");
+  const reservedHarnessEnv = new Set([
+    "HARNESS_SIGNER_ACCOUNT_ID",
+    "HARNESS_SIGNER_EVM_ADDRESS",
+    "HARNESS_SIGNER_PRIVATE_KEY",
+  ]);
+  const publicClientPrefixes = ["NEXT_PUBLIC_", "VITE_", "PUBLIC_"];
+
+  for (const [name, selector] of Object.entries(appEnv ?? {})) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new Error(
+        `chainValidation.expose.appEnv key ${JSON.stringify(name)} must be a valid environment variable name.`,
+      );
+    }
+    if (selector !== "accountId" && selector !== "evmAddress" && selector !== "privateKey") {
+      throw new Error(
+        `chainValidation.expose.appEnv.${name} must be "accountId", "evmAddress", or "privateKey".`,
+      );
+    }
+    if (
+      selector === "privateKey" &&
+      publicClientPrefixes.some(prefix => name.startsWith(prefix))
+    ) {
+      throw new Error(
+        `chainValidation.expose.appEnv.${name} cannot map privateKey: ` +
+          "names starting with NEXT_PUBLIC_, VITE_, or PUBLIC_ are inlined into the browser bundle.",
+      );
+    }
+    if (reservedHarnessEnv.has(name)) {
+      throw new Error(
+        `chainValidation.expose.appEnv.${name} collides with a reserved harness signer variable.`,
+      );
+    }
+  }
+
+  for (const name of envVars) {
+    if (reservedHarnessEnv.has(name)) {
+      throw new Error(
+        `chainValidation.expose.envVars entry ${JSON.stringify(name)} collides with a reserved harness signer variable.`,
+      );
+    }
+    if (appEnv && Object.prototype.hasOwnProperty.call(appEnv, name)) {
+      throw new Error(
+        `chainValidation.expose.envVars entry ${JSON.stringify(name)} also appears in expose.appEnv; ` +
+          "pick one mapping — envVars always writes the private key.",
+      );
+    }
   }
 
   return {
@@ -608,8 +693,10 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
         exposeRecord.browserLocalStorageKey.trim()
           ? exposeRecord.browserLocalStorageKey.trim()
           : "burnerWallet.pk",
-      envVars: readOptionalStringArray(exposeRecord, "envVars") ?? [],
+      envVars,
+      appEnv: appEnv as ChainValidationConfig["expose"]["appEnv"],
     },
     deploy,
+    verify,
   };
 }
