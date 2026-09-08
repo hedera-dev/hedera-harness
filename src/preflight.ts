@@ -79,6 +79,11 @@ export async function* iterSharedPreflight(
     if (!skip.has(verdict.id)) yield verdict;
   }
 
+  if (spec.chainValidation?.enabled && !isValidatorEnabled(spec)) {
+    if (!skip.has("chain-eval-config")) yield missingChainEvaluateConfig(specHasEval(spec));
+    return;
+  }
+
   // `eval` is recipe configuration, not host tooling: it is checked even when
   // the browser probe below is skipped.
   if (isValidatorEnabled(spec)) {
@@ -338,6 +343,27 @@ function missingEvalConfig(): PreflightVerdict {
     ].join("\n"),
     fix: "Add `eval: .harness/eval.json`, or remove `validator.enabled` to turn EVALUATE off.",
     runErrorCode: "missing-eval",
+  };
+}
+
+function missingChainEvaluateConfig(hasEval: boolean): PreflightVerdict {
+  return {
+    id: "chain-eval-config",
+    name: "chain",
+    status: "fail",
+    detail: hasEval
+      ? "`chainValidation` requires `validator.enabled`"
+      : "`chainValidation` requires EVALUATE (`eval` + `validator.enabled`)",
+    runDetail: [
+      "Harness run preflight failed: CHAIN executes and verifies transactions through EVALUATE.",
+      hasEval
+        ? "Enable `validator.enabled`."
+        : "Add `eval: .harness/eval.json` and enable `validator.enabled`.",
+    ].join("\n"),
+    fix: hasEval
+      ? "Set `validator.enabled: true`."
+      : "Add an evaluate checklist and set `validator.enabled: true`.",
+    runErrorCode: "missing-chain-evaluate",
   };
 }
 

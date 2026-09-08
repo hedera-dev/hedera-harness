@@ -173,6 +173,29 @@ test("doctor and run agree that EVALUATE without eval is a failure", async () =>
   );
 });
 
+test("CHAIN fails preflight when EVALUATE is not enabled", async () => {
+  const root = await makeProject({
+    specExtra: `chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+`,
+  });
+  const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
+  const verdicts = await checkSharedPreflight({
+    workspacePath: root,
+    spec: loaded.spec,
+    skipIds: SKIPPABLE_HOST_PREFLIGHT_IDS,
+  });
+
+  const chain = byId(verdicts, "chain-eval-config");
+  assert.equal(chain?.status, "fail");
+  assert.equal(chain?.runErrorCode, "missing-chain-evaluate");
+  assert.match(chain?.detail ?? "", /requires EVALUATE/);
+});
+
 test("a skipped rule is never evaluated", async () => {
   const root = await makeProject({ specExtra: "validator:\n  enabled: true\neval: .harness/eval.json\n" });
   await writeFile(path.join(root, ".harness", "eval.json"), '{"assertions":[]}');
