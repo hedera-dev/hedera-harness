@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { makeTestTempDir } from "./tmpDir.mjs";
+import { createServer as createHttpServer } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -135,4 +136,113 @@ test("doctor reports an unknown agent CLI as a failure", async () => {
   assert.equal(agentCheck.status, "fail");
   assert.match(agentCheck.detail, /not on PATH/);
   assert.equal(report.passed, false);
+});
+
+test("on network: local doctor probes the protocols, not just open ports", async () => {
+  // An HTTP server that is not a Hedera node: it accepts connections and answers JSON, which is
+  // exactly what a TCP-only probe would call healthy.
+  const impostor = createHttpServer((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ hello: "not a chain" }));
+  });
+  await new Promise(resolve => impostor.listen(0, "127.0.0.1", resolve));
+  const impostorPort = impostor.address().port;
+
+  const root = await makeProject({
+    specBody: specWith(
+      "node",
+      `chainValidation:
+  enabled: true
+  network: local
+  local:
+    rpcUrl: http://127.0.0.1:${impostorPort}
+    grpcUrl: 127.0.0.1:${impostorPort}
+    mirrorUrl: http://127.0.0.1:${impostorPort}
+`,
+    ),
+  });
+
+  try {
+    const report = await runDoctor({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+    });
+
+    // The port is open, so the gRPC check passes — it can only be a TCP probe.
+    assert.equal(statusOf(report, "chain grpc"), "ok");
+    // The other two ask the protocol a question and get the wrong answer.
+    assert.equal(statusOf(report, "chain rpc"), "fail");
+    assert.equal(statusOf(report, "chain mirror"), "fail");
+    assert.match(formatDoctorReport(report), /not with a chain id/);
+    assert.match(formatDoctorReport(report), /not like a mirror node/);
+    // The operator env vars are not a local requirement, so they are not reported.
+    assert.equal(statusOf(report, "HEDERA_OPERATOR_ID"), undefined);
+  } finally {
+    await new Promise(resolve => impostor.close(resolve));
+  }
+});
+
+test("a real chain id and node list pass the local checks", async () => {
+  const node = createHttpServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.method === "POST") {
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x12a" }));
+    } else {
+      res.end(JSON.stringify({ nodes: [{ node_account_id: "0.0.3" }] }));
+    }
+  });
+  await new Promise(resolve => node.listen(0, "127.0.0.1", resolve));
+  const port = node.address().port;
+
+  const root = await makeProject({
+    specBody: specWith(
+      "node",
+      `chainValidation:
+  enabled: true
+  network: local
+  local:
+    rpcUrl: http://127.0.0.1:${port}
+    grpcUrl: 127.0.0.1:${port}
+    mirrorUrl: http://127.0.0.1:${port}
+`,
+    ),
+  });
+
+  try {
+    const report = await runDoctor({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+    });
+    assert.equal(statusOf(report, "chain rpc"), "ok");
+    assert.equal(statusOf(report, "chain mirror"), "ok");
+    assert.equal(statusOf(report, "chain grpc"), "ok");
+    assert.match(formatDoctorReport(report), /chain id 298/);
+  } finally {
+    await new Promise(resolve => node.close(resolve));
+  }
+});
+
+test("nothing listening on the local endpoints fails with a fix", async () => {
+  const root = await makeProject({
+    specBody: specWith(
+      "node",
+      `chainValidation:
+  enabled: true
+  network: local
+  local:
+    rpcUrl: http://127.0.0.1:1
+    grpcUrl: 127.0.0.1:1
+    mirrorUrl: http://127.0.0.1:1
+`,
+    ),
+  });
+
+  const report = await runDoctor({
+    specPath: path.join(root, ".harness", "spec.yaml"),
+    workspacePath: root,
+  });
+  assert.equal(statusOf(report, "chain rpc"), "fail");
+  assert.equal(statusOf(report, "chain grpc"), "fail");
+  assert.equal(statusOf(report, "chain mirror"), "fail");
+  assert.match(formatDoctorReport(report), /Start a local Hedera node/);
 });
