@@ -20,6 +20,7 @@ import {
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
 import {
   assertChainValidationOperatorEnv,
+  buildAppServerEnv,
   provisionChainSigner,
 } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
@@ -131,9 +132,15 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
   logPhase(`Evaluation attempt ${attempt} started`, workspacePath);
 
   const serverConfig = await loadDevServerConfig(spec.validators.playwrightPath);
+  const appEnv = buildAppServerEnv(chainSigner, spec.chainValidation);
   let devServer: DevServerSession | null = null;
   try {
-    devServer = await createDevServerSession(workspacePath, serverConfig, "validate-semantic");
+    devServer = await createDevServerSession(
+      workspacePath,
+      serverConfig,
+      "validate-semantic",
+      appEnv,
+    );
     const result = await withValidatorMcp(
       {
         agent: spec.agent,

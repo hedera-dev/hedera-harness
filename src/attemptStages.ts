@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
-import { buildDeployEnv } from "./validation/chainSigner.js";
+import { buildAppServerEnv, buildDeployCommandEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
 import {
@@ -199,10 +199,7 @@ export async function runChainDeploy(
   const commands = context.spec.chainValidation?.deploy?.commands ?? [];
   if (!context.chainSigner || commands.length === 0) return [];
 
-  const env = buildDeployEnv(
-    context.chainSigner,
-    context.spec.chainValidation?.expose,
-  );
+  const env = buildDeployCommandEnv(context.chainSigner, context.spec.chainValidation!);
   const findings: ValidationFinding[] = [];
 
   for (const commandConfig of commands) {
@@ -319,10 +316,16 @@ export async function runValidationStages(
   }
 
   const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
+  const appEnv = buildAppServerEnv(context.chainSigner, context.spec.chainValidation);
   let devServer: DevServerSession | null = null;
   try {
     logStage("SMOKE", "booting dev server");
-    devServer = await createDevServerSession(context.workspacePath, serverConfig, "runtime");
+    devServer = await createDevServerSession(
+      context.workspacePath,
+      serverConfig,
+      "runtime",
+      appEnv,
+    );
 
     const smoke = await runSmokeStage(context, devServer);
     const afterSmoke: ValidationResult = {

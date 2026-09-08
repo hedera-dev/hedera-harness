@@ -153,6 +153,70 @@ server.listen(0, "127.0.0.1", () => {
   assert.equal(session.isAlive(), false);
 });
 
+test("createDevServerSession passes explicit runtime env to the app process", async () => {
+  const dir = await makeOsTempDir("harness-devserver-env-");
+  const serverScript = path.join(dir, "server.mjs");
+
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+const server = createServer((_req, res) => {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({
+    accountId: process.env.APP_OPERATOR_ID,
+    privateKey: process.env.APP_OPERATOR_KEY,
+    fundedOperatorId: process.env.HEDERA_OPERATOR_ID ?? null,
+    fundedOperatorKey: process.env.HEDERA_OPERATOR_KEY ?? null,
+  }));
+});
+server.listen(0, "127.0.0.1", () => {
+  console.log("Local: http://127.0.0.1:" + server.address().port);
+});
+`,
+  );
+
+  const previousId = process.env.HEDERA_OPERATOR_ID;
+  const previousKey = process.env.HEDERA_OPERATOR_KEY;
+  process.env.HEDERA_OPERATOR_ID = "0.0.9999";
+  process.env.HEDERA_OPERATOR_KEY = "funded-operator-secret";
+
+  try {
+    const session = await createDevServerSession(
+      dir,
+      {
+        command: `node ${JSON.stringify(serverScript)}`,
+        configuredUrl: "http://127.0.0.1:0",
+        timeoutMs: 10_000,
+      },
+      "test",
+      {
+        HEDERA_OPERATOR_ID: "",
+        HEDERA_OPERATOR_KEY: "",
+        APP_OPERATOR_ID: "0.0.1234",
+        APP_OPERATOR_KEY: "test-private-key",
+      },
+    );
+
+    try {
+      const response = await fetch(session.url);
+      assert.deepEqual(await response.json(), {
+        accountId: "0.0.1234",
+        privateKey: "test-private-key",
+        fundedOperatorId: "",
+        fundedOperatorKey: "",
+      });
+    } finally {
+      await session.stop();
+    }
+  } finally {
+    if (previousId === undefined) delete process.env.HEDERA_OPERATOR_ID;
+    else process.env.HEDERA_OPERATOR_ID = previousId;
+    if (previousKey === undefined) delete process.env.HEDERA_OPERATOR_KEY;
+    else process.env.HEDERA_OPERATOR_KEY = previousKey;
+  }
+});
+
 test("createDevServerSession is the only lifecycle entry callers need", async () => {
   const mod = await import(pathToFileURL(path.resolve("dist/validation/devServer.js")).href);
   assert.equal(typeof mod.createDevServerSession, "function");
