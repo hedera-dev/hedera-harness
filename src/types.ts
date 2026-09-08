@@ -129,6 +129,19 @@ export interface ChainValidationOperatorConfig {
   privateKeyEnv: string;
 }
 
+/**
+ * Where chain validation runs. `local` is a hiero-local-node-compatible node on
+ * this machine: no portal credentials, no HBAR, no round trip.
+ */
+export type ChainNetwork = "testnet" | "local";
+
+/** Endpoints of the local node. Defaults are hiero-local-node's published ports. */
+export interface ChainLocalConfig {
+  rpcUrl: string;
+  grpcUrl: string;
+  mirrorUrl: string;
+}
+
 export interface ChainValidationExposeConfig {
   /** localStorage key for burner-connector (default: burnerWallet.pk). */
   browserLocalStorageKey?: string;
@@ -148,12 +161,14 @@ export interface ChainValidationDeployConfig {
 
 /**
  * Optional on-chain validation: provision an ephemeral funded ECDSA
- * testnet account, inject it as a burner wallet, and verify txs via mirror node.
+ * account, inject it as a burner wallet, and verify txs via mirror node.
  */
 export interface ChainValidationConfig {
   enabled: boolean;
-  network: "testnet";
+  network: ChainNetwork;
   operator: ChainValidationOperatorConfig;
+  /** Set only when `network` is `local`. */
+  local?: ChainLocalConfig;
   fundingHbar: number;
   sweepBack: boolean;
   expose: ChainValidationExposeConfig;
@@ -165,7 +180,7 @@ export interface ChainSigner {
   accountId: string;
   privateKeyHex: string;
   evmAddress: string;
-  network: "testnet";
+  network: ChainNetwork;
 }
 
 export interface BaselineCommandConfig {
@@ -385,7 +400,7 @@ export type HarnessLogEvent =
       timestamp: string;
       accountId: string;
       evmAddress: string;
-      network: "testnet";
+      network: ChainNetwork;
       reused: boolean;
     }
   | {
