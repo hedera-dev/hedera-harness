@@ -7,7 +7,9 @@ import test from "node:test";
 const {
   toMirrorTransactionId,
   extractTransactionId,
+  extractEvmTransactionHash,
   fetchTransactionResult,
+  fetchContractCallResult,
   fetchHbarBalanceTinybars,
   fetchTokenBalance,
 } = await import(pathToFileURL(path.resolve("dist/validation/chainAssertionEvidence.js")).href);
@@ -27,6 +29,25 @@ test("extractTransactionId finds a transaction id inside free-form script output
 
 test("extractTransactionId returns undefined when no id is present", () => {
   assert.equal(extractTransactionId("no transaction id here"), undefined);
+});
+
+test("extractEvmTransactionHash finds an EVM tx hash inside free-form script output", () => {
+  const stdout = "deploying...\nsubmitted 0x96063c55a83fe019edbebaf0482a27b117c2d22f7c663db48893411544002ff7\ndone";
+  assert.equal(
+    extractEvmTransactionHash(stdout),
+    "0x96063c55a83fe019edbebaf0482a27b117c2d22f7c663db48893411544002ff7",
+  );
+});
+
+test("extractEvmTransactionHash returns undefined for a native Hedera id (no false match)", () => {
+  assert.equal(extractEvmTransactionHash("0.0.1234@1699999999.123456789"), undefined);
+});
+
+test("extractTransactionId returns undefined for an EVM hash (no false match the other way)", () => {
+  assert.equal(
+    extractTransactionId("0x96063c55a83fe019edbebaf0482a27b117c2d22f7c663db48893411544002ff7"),
+    undefined,
+  );
 });
 
 /** Minimal controllable HTTP server standing in for Mirror Node in unit tests. */
@@ -132,6 +153,80 @@ test("fetchTransactionResult reports infra-error when the connection itself fail
     baseUrl: "http://127.0.0.1:1",
   });
   assert.equal(result.status, "infra-error");
+});
+
+test("fetchContractCallResult returns status:found on a clean 200", async () => {
+  await withMockServer(
+    (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ result: "SUCCESS", status: "0x1", timestamp: "1.1", error_message: "0x" }));
+    },
+    async baseUrl => {
+      const result = await fetchContractCallResult("0xabc", { ...FAST_POLL, baseUrl });
+      assert.deepEqual(result, { status: "found", value: { result: "SUCCESS", consensusTimestamp: "1.1" } });
+    },
+  );
+});
+
+test("fetchContractCallResult surfaces a non-empty error_message as evidence", async () => {
+  await withMockServer(
+    (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          result: "CONTRACT_REVERT_EXECUTED",
+          status: "0x0",
+          timestamp: "1.1",
+          error_message: "0x342c92db",
+        }),
+      );
+    },
+    async baseUrl => {
+      const result = await fetchContractCallResult("0xabc", { ...FAST_POLL, baseUrl });
+      assert.equal(result.status, "found");
+      assert.equal(result.value.result, "CONTRACT_REVERT_EXECUTED");
+      assert.equal(result.value.errorMessage, "0x342c92db");
+    },
+  );
+});
+
+test("fetchContractCallResult reports not-found when every poll 404s", async () => {
+  await withMockServer(
+    (req, res) => {
+      res.writeHead(404);
+      res.end();
+    },
+    async baseUrl => {
+      const result = await fetchContractCallResult("0xabc", { ...FAST_POLL, baseUrl });
+      assert.deepEqual(result, { status: "not-found" });
+    },
+  );
+});
+
+// --- Live testnet evidence: real ATS (Asset Tokenization Studio) transactions -------------
+//
+// Read-only Mirror Node lookups against two permanent, already-recorded testnet transactions
+// from building this fixture (see policy-probe/fixtures/ats-bond) — no operator credentials
+// needed, since these are historical facts, not new transactions. Concrete proof that
+// fetchContractCallResult correctly distinguishes a real EVM-relay success from a real revert.
+
+test("a real ATS bond deployment's EVM tx hash resolves to result SUCCESS on the real Mirror Node", async () => {
+  const result = await fetchContractCallResult(
+    "0x96063c55a83fe019edbebaf0482a27b117c2d22f7c663db48893411544002ff7",
+    { maxWaitMs: 15_000, pollIntervalMs: 2_000 },
+  );
+  assert.equal(result.status, "found");
+  assert.equal(result.value.result, "SUCCESS");
+});
+
+test("a real ATS deploy attempt with an invalid ISIN resolves to CONTRACT_REVERT_EXECUTED with a decoded-able error_message", async () => {
+  const result = await fetchContractCallResult(
+    "0xfecdd182fec04ef27e951e8d033b4f0bfef76ff99fd3088ec6dfb4fd2584c22d",
+    { maxWaitMs: 15_000, pollIntervalMs: 2_000 },
+  );
+  assert.equal(result.status, "found");
+  assert.equal(result.value.result, "CONTRACT_REVERT_EXECUTED");
+  assert.ok(result.value.errorMessage?.startsWith("0x"));
 });
 
 test("fetchHbarBalanceTinybars decodes the balance field as a bigint", async () => {

@@ -1,7 +1,9 @@
 import { executeCommand } from "../command.js";
 import { buildDeployEnv } from "./chainSigner.js";
 import {
+  extractEvmTransactionHash,
   extractTransactionId,
+  fetchContractCallResult,
   fetchHbarBalanceTinybars,
   fetchTokenBalance,
   fetchTransactionResult,
@@ -18,12 +20,14 @@ import type {
 /** Injectable for tests — production code always uses the real Mirror Node reader. */
 export interface ChainAssertionEvidenceDeps {
   fetchTransactionResult: typeof fetchTransactionResult;
+  fetchContractCallResult: typeof fetchContractCallResult;
   fetchHbarBalanceTinybars: typeof fetchHbarBalanceTinybars;
   fetchTokenBalance: typeof fetchTokenBalance;
 }
 
 const DEFAULT_DEPS: ChainAssertionEvidenceDeps = {
   fetchTransactionResult,
+  fetchContractCallResult,
   fetchHbarBalanceTinybars,
   fetchTokenBalance,
 };
@@ -130,20 +134,30 @@ async function runOneAssertion(
     };
   }
 
-  const transactionId = extractTransactionId(`${result.stdout}\n${result.stderr}`);
-  if (!transactionId) {
+  const output = `${result.stdout}\n${result.stderr}`;
+  // A native Hedera SDK transaction id ("0.0.x@sec.nanos") and an EVM transaction hash
+  // ("0x" + 64 hex chars) never collide in shape, so trying both and taking whichever matches
+  // is unambiguous — the action's signing stack (native @hiero-ledger/sdk vs. an EVM JSON-RPC
+  // relay like Hashio/ethers/Hardhat) decides which one a script actually has to print.
+  const transactionId = extractTransactionId(output);
+  const evmTransactionHash = transactionId ? undefined : extractEvmTransactionHash(output);
+  if (!transactionId && !evmTransactionHash) {
     return violation(
       assertion,
-      `action "${assertion.action.name}" exited 0 but produced no parseable Hedera transaction ` +
-        'id in its output (expected the form "0.0.x@seconds.nanos" somewhere in stdout/stderr) ' +
-        "— the action script must print the id of the transaction it submitted.",
+      `action "${assertion.action.name}" exited 0 but produced no parseable transaction id or ` +
+        'hash in its output (expected either a native Hedera id, "0.0.x@seconds.nanos", or an ' +
+        'EVM transaction hash, "0x" + 64 hex chars) — the action script must print the id/hash ' +
+        "of the transaction it submitted.",
       truncate(result.stderr || result.stdout),
     );
   }
 
-  const outcome = await deps.fetchTransactionResult(transactionId);
+  const outcome = transactionId
+    ? await deps.fetchTransactionResult(transactionId)
+    : await deps.fetchContractCallResult(evmTransactionHash!);
+  const evidenceId = transactionId ?? evmTransactionHash!;
   if (outcome.status !== "found") {
-    return infra(assertion, `confirming transaction ${transactionId}'s consensus result`, outcome, transactionId);
+    return infra(assertion, `confirming transaction ${evidenceId}'s consensus result`, outcome, evidenceId);
   }
 
   const actualSucceeded = outcome.value.result === "SUCCESS";
@@ -155,7 +169,7 @@ async function runOneAssertion(
       message:
         `Assertion "${assertion.id}" (${assertion.description ?? assertion.action.name}) FAILED: ` +
         `expected ${assertion.expect.outcome}, observed transaction result ${outcome.value.result}.`,
-      evidence: { transactionId, expected: assertion.expect.outcome, observed: outcome.value.result },
+      evidence: { transactionId: evidenceId, expected: assertion.expect.outcome, observed: outcome.value.result },
     };
   }
 
@@ -170,7 +184,7 @@ async function runOneAssertion(
         `Assertion "${assertion.id}" reverted as expected, but the Mirror Node result ` +
         `"${outcome.value.result}" did not contain "${assertion.expect.reasonContains}".`,
       evidence: {
-        transactionId,
+        transactionId: evidenceId,
         expected: assertion.expect.reasonContains,
         observed: outcome.value.result,
       },
@@ -180,7 +194,7 @@ async function runOneAssertion(
   if (balanceDelta && beforeBalance !== undefined && balanceAccountId) {
     const after = await sampleBalance(balanceAccountId, balanceDelta.asset, deps);
     if (after.status !== "found") {
-      return infra(assertion, `sampling the AFTER balance for ${balanceAccountId}`, after, transactionId);
+      return infra(assertion, `sampling the AFTER balance for ${balanceAccountId}`, after, evidenceId);
     }
     const delta = after.value - beforeBalance;
     const expected = BigInt(balanceDelta.equals);
@@ -191,7 +205,7 @@ async function runOneAssertion(
         message:
           `Assertion "${assertion.id}" balance delta mismatch for ${balanceAccountId}: ` +
           `expected ${expected}, observed ${delta}.`,
-        evidence: { transactionId, expected: expected.toString(), observed: delta.toString() },
+        evidence: { transactionId: evidenceId, expected: expected.toString(), observed: delta.toString() },
       };
     }
   }

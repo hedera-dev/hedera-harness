@@ -131,7 +131,7 @@ test("an assertion resolves the declared actor's signer, not the primary one", a
   // No transaction id in "true"'s empty stdout — proves this reaches the actor-resolution path,
   // not just default-to-primary, since a missing actor produces a different, distinct message.
   assert.equal(findings.length, 1);
-  assert.match(findings[0].message, /no parseable Hedera transaction id/);
+  assert.match(findings[0].message, /no parseable transaction id or hash/);
 });
 
 test("no parseable transaction id in the action's output is a config violation", async () => {
@@ -141,7 +141,7 @@ test("no parseable transaction id in the action's output is a config violation",
   );
   assert.equal(findings.length, 1);
   assert.equal(findings[0].category, "chain-assertion");
-  assert.match(findings[0].message, /no parseable Hedera transaction id/);
+  assert.match(findings[0].message, /no parseable transaction id or hash/);
 });
 
 test("a non-zero exit from the action command is chain-assertion-infra, never an app-policy violation", async () => {

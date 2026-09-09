@@ -43,9 +43,21 @@ export function toMirrorTransactionId(transactionId: string): string {
   return trimmed;
 }
 
-/** First plausible Hedera transaction id ("0.0.x@seconds.nanos") found in free-form text. */
+/** First plausible native Hedera transaction id ("0.0.x@seconds.nanos") found in free-form text. */
 export function extractTransactionId(text: string): string | undefined {
   const match = text.match(/\b\d+\.\d+\.\d+@\d+\.\d+\b/);
+  return match?.[0];
+}
+
+/**
+ * First plausible EVM transaction hash ("0x" + 64 hex chars) found in free-form text — what an
+ * ethers.js/JSON-RPC-relay action prints (e.g. `tx.hash`), as opposed to a native Hedera SDK
+ * transaction id. Any Solidity contract call submitted through Hashio or another EVM relay
+ * produces this form, not the native one — most Hedera dApps built with Hardhat/ethers/viem
+ * fall into this category, not just ATS.
+ */
+export function extractEvmTransactionHash(text: string): string | undefined {
+  const match = text.match(/\b0x[0-9a-fA-F]{64}\b/);
   return match?.[0];
 }
 
@@ -57,13 +69,16 @@ interface MirrorTransactionRecord {
 }
 
 /**
- * The consensus result of a transaction ("SUCCESS", "CONTRACT_REVERT_EXECUTED",
- * "INVALID_SIGNATURE", etc.), as recorded by Mirror Node — never inferred from a script's exit
- * code. Retries through normal propagation lag; a transaction that never appears (network
- * issue, or the id was never actually submitted) is reported distinctly from a definite result.
+ * The consensus result of a native Hedera transaction ("SUCCESS", "INVALID_SIGNATURE", etc.),
+ * as recorded by Mirror Node — never inferred from a script's exit code. Retries through normal
+ * propagation lag; a transaction that never appears (network issue, or the id was never actually
+ * submitted) is reported distinctly from a definite result.
  *
  * When a transaction id produced more than one record (e.g. a child transaction), the first
  * (the user transaction itself) is returned — a documented MVP limitation, not silent data loss.
+ *
+ * For a transaction submitted through an EVM JSON-RPC relay (ethers.js, Hardhat, viem — no
+ * native transaction id available to the caller), use `fetchContractCallResult` instead.
  */
 export async function fetchTransactionResult(
   transactionId: string,
@@ -78,6 +93,45 @@ export async function fetchTransactionResult(
     if (!record) return undefined;
     return { result: record.result, consensusTimestamp: record.consensus_timestamp };
   }, options);
+}
+
+interface MirrorContractResultRecord {
+  result: string;
+  status: string;
+  error_message?: string | null;
+  timestamp: string;
+}
+
+/**
+ * The consensus result of a transaction submitted through an EVM JSON-RPC relay, looked up by
+ * its EVM transaction hash — same `result` vocabulary as `fetchTransactionResult`
+ * ("SUCCESS"/"CONTRACT_REVERT_EXECUTED"/etc.), so callers compare it identically regardless of
+ * which path found it. `error_message` is the raw ABI-encoded revert data when present (a
+ * Solidity custom error's selector + args) — exposed as-is in evidence; decoding it against a
+ * contract's error ABI is a possible future enhancement, not done here.
+ */
+export async function fetchContractCallResult(
+  hash: string,
+  options: EvidencePollOptions = {},
+): Promise<EvidenceResult<{ result: string; consensusTimestamp: string; errorMessage?: string }>> {
+  const baseUrl = options.baseUrl ?? MIRROR_NODE_BASE_URL;
+  const path = `${baseUrl}/contracts/results/${hash}`;
+
+  return pollForEvidence(
+    path,
+    response => {
+      const body = response as Partial<MirrorContractResultRecord>;
+      if (!body.result) return undefined;
+      return {
+        result: body.result,
+        consensusTimestamp: body.timestamp ?? "",
+        ...(body.error_message && body.error_message !== "0x"
+          ? { errorMessage: body.error_message }
+          : {}),
+      };
+    },
+    options,
+  );
 }
 
 interface MirrorAccountResponse {
