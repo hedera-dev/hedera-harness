@@ -357,6 +357,10 @@ function formatHardConstraints(spec: TemplateSpec): string {
       : undefined,
     "- Do not add `.env` files, private keys, API keys, or live-network credential requirements.",
     "- Produce `template.json`, `README.md`, and `AGENTS.md` suitable for scaffold-hbar.",
+    "- Hedera Schedule Service: `ScheduleInfo.executed` is `null` until a scheduled transaction " +
+      "runs, and a real `Timestamp` object once it does — never the boolean `true`. Check " +
+      "executed-ness with `info.executed !== null`, never `=== true` (that comparison can never " +
+      "pass, even after the schedule genuinely executed).",
   ]
     .filter((line): line is string => Boolean(line))
     .join("\n");

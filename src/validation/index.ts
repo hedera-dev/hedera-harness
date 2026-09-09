@@ -14,6 +14,7 @@ import {
   writeCachedInstallFingerprint,
 } from "./installFingerprint.js";
 import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "../runtimePaths.js";
+import { scanForHederaScheduleExecutedRisks } from "./hederaScheduleExecuted.js";
 
 export interface DeterministicValidationOptions {
   /** Persist install fingerprint across attempts under this run cache path. */
@@ -98,6 +99,7 @@ export async function runDeterministicValidation(
   findings.push(...(await validateForbiddenFiles(workspacePath, spec.forbiddenFiles)));
   findings.push(...(await validateStaticConfig(workspacePath, spec.validators.staticPath)));
   findings.push(...(await validateSecretScan(workspacePath, spec)));
+  findings.push(...(await scanForHederaScheduleExecutedRisks(workspacePath)));
 
   const commandValidation = await validateCommands(
     workspacePath,

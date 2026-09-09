@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- New ASSERT deterministic check: flags `.executed === true` (or `== true`)
+  in generated code that imports a Hedera SDK. `ScheduleInfo.executed` is
+  `null` until a scheduled transaction runs and a real `Timestamp` object
+  once it does — never a literal boolean — so that comparison can never
+  pass, even after the schedule genuinely executed. Confirmed live against
+  real Hedera testnet: sign a schedule to full completion, and
+  `.executed === true` still reads `false`. Same gotcha called out directly
+  in the generator/repair prompts' Hard Constraints.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
