@@ -243,6 +243,25 @@ async function checkAgentCli(spec: TemplateSpec, cwd: string): Promise<Preflight
   };
 }
 
+/**
+ * yarn and pnpm ship via Corepack, which Node bundles but leaves disabled by
+ * default — a fresh Node install genuinely has neither binary on PATH until
+ * `corepack enable` runs once. The generic "not on PATH" fix left someone in
+ * that state with no path forward (reaching for `npm install -g yarn`, which
+ * is wrong for Yarn Berry / PnP-style yarn@2+ that a `packageManager` field
+ * declares). Confirmed live: a fresh `hedera-harness init` on a machine
+ * without Corepack enabled hits exactly this.
+ */
+const COREPACK_MANAGED_TOOLS = new Set(["yarn", "pnpm"]);
+
+export function corepackHint(binary: string, declared: string | undefined): string {
+  const version = declared?.includes("@") ? declared : `${binary}@stable`;
+  return (
+    `${binary} ships via Corepack, which Node bundles but disables by default. Run: ` +
+    `corepack enable && corepack prepare ${version} --activate`
+  );
+}
+
 async function checkPackageManager(
   spec: TemplateSpec,
   cwd: string,
@@ -261,6 +280,12 @@ async function checkPackageManager(
     };
   }
 
+  const fix = COREPACK_MANAGED_TOOLS.has(binary)
+    ? corepackHint(binary, declared)
+    : declared
+      ? `The recipe declares constraints.packageManager: ${declared}.`
+      : "Detected from the project's lockfile.";
+
   return {
     id: "package-manager",
     name: "package manager",
@@ -269,9 +294,7 @@ async function checkPackageManager(
     runDetail: declared
       ? `Harness run requires package manager ${JSON.stringify(binary)} on PATH (from spec.constraints.packageManager).`
       : `Harness run requires package manager ${JSON.stringify(binary)} on PATH.`,
-    fix: declared
-      ? `The recipe declares constraints.packageManager: ${declared}.`
-      : "Detected from the project's lockfile.",
+    fix,
     runErrorCode: "missing-package-manager",
   };
 }
