@@ -8,6 +8,7 @@ import type {
   ValidationFinding,
   ValidationResult,
 } from "../types.js";
+import { scanForConsensusDeadlineWaits } from "./hederaConsensusTime.js";
 import {
   computeInstallFingerprint,
   readCachedInstallFingerprint,
@@ -98,6 +99,7 @@ export async function runDeterministicValidation(
   findings.push(...(await validateForbiddenFiles(workspacePath, spec.forbiddenFiles)));
   findings.push(...(await validateStaticConfig(workspacePath, spec.validators.staticPath)));
   findings.push(...(await validateSecretScan(workspacePath, spec)));
+  findings.push(...(await scanForConsensusDeadlineWaits(workspacePath)));
 
   const commandValidation = await validateCommands(
     workspacePath,
