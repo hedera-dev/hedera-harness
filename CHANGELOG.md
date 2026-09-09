@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Tier 3.5 understands `x402Settlement` acceptance-contract assertions. When
+  any assertion sets the flag, the validator prompt gains an x402
+  settlement-verification block: the full 402 → X-PAYMENT → settle loop is
+  checked against the mirror-node transaction record, including the critical
+  distinction that the facilitator (feePayer) — not the end-user signer — is
+  the transaction payer. The mirror transactions endpoint also joins the
+  on-chain verification recipe for all signer runs — the only prompt change
+  recipes without the flag will see.
+
 ## 1.2.2
 
 ### Fixed

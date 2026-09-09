@@ -137,6 +137,10 @@ Numbered assertions (`C1`, `C2`, …), each with:
 - `severity` — `critical` | `major` | `minor`
 - `walletRequired` / `verifiableWithoutCredentials`
 - `executableWithTestSigner` when Tier 3.5 should complete a real transaction
+- `x402Settlement` when the assertion exercises a 402 pay-per-call flow —
+  Tier 3.5 then verifies the full loop (402 requirements, X-PAYMENT retry,
+  settlement record on the mirror node, facilitator as transaction payer)
+  instead of trusting the HTTP 200
 
 Prefer few **critical** assertions: the app loads, the core journey is
 possible. This file — not the PRD — is what the validator grades.

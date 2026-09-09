@@ -28,6 +28,33 @@ interface ContractAssertion {
   statement?: string;
   howToVerify?: string;
   walletRequired?: boolean;
+  executableWithTestSigner?: boolean;
+  x402Settlement?: boolean;
+}
+
+/**
+ * True when any contract assertion flags x402Settlement. Defensive by
+ * design: the contract is rendered verbatim into the prompt either way, so
+ * a missing or unparsable flag only withholds the x402 guidance block.
+ */
+export function contractHasX402Settlement(contractJson: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(contractJson);
+    const assertions = Array.isArray(parsed)
+      ? parsed
+      : (parsed as { assertions?: unknown })?.assertions;
+    return (
+      Array.isArray(assertions) &&
+      assertions.some(
+        assertion =>
+          typeof assertion === "object" &&
+          assertion !== null &&
+          (assertion as ContractAssertion).x402Settlement === true,
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 
 const ASSERTION_ID_PATTERN = /\b(C\d+)\b/i;
@@ -240,6 +267,7 @@ export async function buildValidatorPrompt(
     contract: contractJson.trim(),
     outputSchema: JSON.stringify(outputSchema, null, 2),
     walletRule,
+    hasX402: contractHasX402Settlement(contractJson),
     hasSigner: Boolean(chainSigner),
     signerAccountId: chainSigner?.accountId,
     signerEvmAddress: chainSigner?.evmAddress,

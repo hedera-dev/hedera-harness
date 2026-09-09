@@ -40,8 +40,18 @@ After executing an executableWithTestSigner flow:
   - GET /api/v1/tokens/{tokenId}
   - GET /api/v1/contracts/{address}/results
   - GET /api/v1/accounts/{accountIdOrEvm}
+  - GET /api/v1/transactions/{transactionId} (dash form: 0.0.123@456.789 becomes 0.0.123-456-789)
 - Use browser_navigate to the JSON URL or a shell curl from the workspace. Poll up to ~30s for mirror lag.
 - Cite the mirror response (status, relevant fields) in issue evidence when an assertion fails; include it in your reasoning for passes.
+{{#hasX402}}
+### x402 settlement verification
+Assertions flagged x402Settlement=true exercise a 402 pay-per-call flow. Verify the full loop, not just the HTTP 200:
+1. Unpaid request returns HTTP 402 with PaymentRequirements (asset, amount, payTo, feePayer). The app must build a transfer with the facilitator's feePayer as transaction payer, partially sign it (sign-only — never submit from the app), and retry with the X-PAYMENT header.
+2. Take the settlement transaction id from the success UI (or the X-PAYMENT round trip) and fetch its mirror record. It must show result SUCCESS with transfers moving the required amount from payer toward payTo.
+3. The critical x402 distinction: the transaction payer on the mirror record is the facilitator (feePayer), not the end-user signer — the facilitator co-signs and submits. If the record shows the user account as payer, the app submitted directly and the assertion fails.
+4. If the app logs an HCS sales receipt, fetch the topic messages and match payer, amount, and endpoint to the settled payment.
+5. Any HashScan link the UI shows must resolve to the same transaction id as the mirror record.
+{{/hasX402}}
 {{/hasSigner}}
 
 ## Output Requirements

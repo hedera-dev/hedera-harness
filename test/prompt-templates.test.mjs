@@ -188,3 +188,68 @@ test("the validator prompt includes signer material only when a signer exists", 
   assert.match(withSigner, /0\.0\.1234/);
   assert.match(withSigner, /mirrornode\.hedera\.com/);
 });
+
+test("contractHasX402Settlement detects the flag defensively", () => {
+  const flagged = JSON.stringify({
+    assertions: [{ id: "C1", x402Settlement: true }],
+  });
+  const unflagged = JSON.stringify({
+    assertions: [{ id: "C1", executableWithTestSigner: true }],
+  });
+  assert.equal(prompts.contractHasX402Settlement(flagged), true);
+  assert.equal(prompts.contractHasX402Settlement(unflagged), false);
+  assert.equal(prompts.contractHasX402Settlement("{}"), false);
+  assert.equal(prompts.contractHasX402Settlement("not json"), false);
+  assert.equal(
+    prompts.contractHasX402Settlement(JSON.stringify([{ id: "C1", x402Settlement: true }])),
+    true,
+  );
+});
+
+test("the validator prompt gains x402 guidance only with signer + flagged assertion", async () => {
+  const root = await makeTestTempDir("prompt-validator-x402-");
+  const spec = {
+    name: "demo",
+    projectRoot: root,
+    prdPaths: [],
+    requiredFiles: [],
+    forbiddenFiles: [],
+    validators: {},
+    generator: { provider: "command", command: "agent" },
+    maxAttempts: 1,
+    logging: { jsonlPath: "x", notesPath: "y" },
+  };
+  const signer = {
+    accountId: "0.0.1234",
+    privateKeyHex: "0xdeadbeef",
+    evmAddress: "0xabc",
+    network: "testnet",
+  };
+  const flagged = JSON.stringify({
+    assertions: [{ id: "C2", x402Settlement: true, executableWithTestSigner: true }],
+  });
+
+  const full = await prompts.buildValidatorPrompt(spec, flagged, "http://localhost:3000", signer);
+  assert.match(full, /x402 settlement verification/);
+  assert.match(full, /X-PAYMENT/);
+  assert.match(full, /facilitator.*transaction payer/);
+
+  const unflagged = await prompts.buildValidatorPrompt(
+    spec,
+    JSON.stringify({ assertions: [{ id: "C2" }] }),
+    "http://localhost:3000",
+    signer,
+  );
+  assert.doesNotMatch(unflagged, /x402 settlement verification/);
+
+  const noSigner = await prompts.buildValidatorPrompt(spec, flagged, "http://localhost:3000");
+  assert.doesNotMatch(noSigner, /x402 settlement verification/);
+
+  const malformed = await prompts.buildValidatorPrompt(
+    spec,
+    "not json",
+    "http://localhost:3000",
+    signer,
+  );
+  assert.doesNotMatch(malformed, /x402 settlement verification/);
+});
