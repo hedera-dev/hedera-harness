@@ -15,7 +15,9 @@ export interface OutroInput {
  */
 export function formatRunOutro(input: OutroInput): string[] {
   const { report, session, cleanup, specPath } = input;
-  const infraAbort = Boolean(report.evaluation?.infrastructureFailure);
+  const infraAbort = Boolean(
+    report.evaluation?.infrastructureFailure || report.validation.scenario?.infrastructureFailure,
+  );
   const status = report.passed ? "PASSED" : infraAbort ? "ABORTED" : "FAILED";
 
   const lines: string[] = [
@@ -35,6 +37,9 @@ export function formatRunOutro(input: OutroInput): string[] {
       ((report.fixedFindingIds ?? []).length > 0
         ? `, ${report.fixedFindingIds.length} fixed`
         : ""),
+    report.validation.scenario
+      ? `scenario=${report.validation.scenario.passed ? "passed" : "failed"} steps=${report.validation.scenario.steps.length}`
+      : undefined,
     cleanup.removedPaths.length > 0
       ? `cleaned=${cleanup.removedPaths.join(", ")}`
       : "cleaned=(nothing removable left)",
