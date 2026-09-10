@@ -75,7 +75,7 @@ export async function runDoctor(
   });
 
   // Order: node, git, git-repo, recipe, agent, package-manager, recipe files,
-  // prompts, optional deps / SMOKE, EVALUATE browser, chain env.
+  // prompts, optional deps / SMOKE, EVALUATE browser, chain env, scenarios.
   const early = takeShared(shared, ["node", "git", "git-repo"]);
   const mid = takeSharedExcept(shared, ["node", "git", "git-repo", "evaluate-browser"]);
   const evaluate = takeShared(shared, ["evaluate-browser"]);
@@ -87,6 +87,7 @@ export async function runDoctor(
   checks.push(...(await checkOptionalDeps(recipe.spec, workspacePath)));
   checks.push(...evaluate.map(toDoctorCheck));
   checks.push(...checkChainEnv(recipe.spec));
+  checks.push(...checkScenarioEnv(recipe.spec));
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
 }
@@ -271,7 +272,7 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
   if (!isValidatorEnabled(spec) && smokePlaywrightAvailable) {
     checks.push(await checkSmokeBrowser(cwd));
   }
-  if (spec.chainValidation?.enabled) {
+  if (spec.chainValidation?.enabled || spec.scenarios?.enabled) {
     checks.push(await checkHarnessSdk());
   }
   return checks;
@@ -332,7 +333,7 @@ async function checkHarnessSdk(): Promise<DoctorCheck> {
       name: "@hiero-ledger/sdk",
       status: "fail",
       detail: error instanceof Error ? error.message : String(error),
-      fix: "Reinstall hedera-harness — CHAIN uses the SDK bundled with the CLI, not a project peer.",
+      fix: "Reinstall hedera-harness — CHAIN and SCENARIO use the SDK bundled with the CLI, not a project peer.",
     };
   }
 }
@@ -352,4 +353,39 @@ function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {
           fix: `Required by chainValidation. Testnet credentials from https://portal.hedera.com.`,
         };
   });
+}
+
+function checkScenarioEnv(spec: TemplateSpec): DoctorCheck[] {
+  if (!spec.scenarios?.enabled) return [];
+  const checks: DoctorCheck[] = [];
+  const operator = spec.scenarios.operator ?? spec.chainValidation?.operator;
+  if (!operator) {
+    checks.push({
+      name: "scenarios.operator",
+      status: "fail",
+      detail: "missing",
+      fix: "Set scenarios.operator or enable chainValidation with operator env names.",
+    });
+    return checks;
+  }
+  for (const name of [operator.accountIdEnv, operator.privateKeyEnv]) {
+    const value = process.env[name]?.trim();
+    checks.push(
+      value
+        ? { name: `scenarios ${name}`, status: "ok", detail: "set" }
+        : {
+            name: `scenarios ${name}`,
+            status: "fail",
+            detail: "not set",
+            fix: "Required to fund scenario actors on testnet. Credentials from https://portal.hedera.com.",
+          },
+    );
+  }
+  const actorCount = Object.keys(spec.scenarios.plan.actors).length;
+  checks.push({
+    name: "scenarios.plan",
+    status: "ok",
+    detail: `${actorCount} actor(s), ${spec.scenarios.plan.steps.length} step(s), ${spec.scenarios.plan.assertions.length} assert(s)`,
+  });
+  return checks;
 }
