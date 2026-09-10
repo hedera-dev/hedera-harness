@@ -55,6 +55,11 @@ export async function cleanupRuntimeInjections(
           await rm(signerPath, { force: true });
           removedPaths.push(path.posix.join(".harness/runs", entry.name, "chain-signer.json"));
         }
+        const actorsPath = path.join(runsRoot, entry.name, "scenario-actors.json");
+        if (await exists(actorsPath)) {
+          await rm(actorsPath, { force: true });
+          removedPaths.push(path.posix.join(".harness/runs", entry.name, "scenario-actors.json"));
+        }
       }
     } catch {
       // ignore
