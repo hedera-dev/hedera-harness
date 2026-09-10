@@ -233,13 +233,35 @@ function blankBlockComments(content: string): string {
   return content.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, " "));
 }
 
-/** Line comments — enough to keep a commented-out example from firing. */
+/**
+ * Line comments — enough to keep a commented-out example from firing. The line
+ * is walked rather than searched so that a `//` inside a string literal (a URL,
+ * almost always) is left alone while a genuine trailing comment after one is
+ * still cut. Quotes left open at end of line — an apostrophe in JSX text, a
+ * template literal spanning lines — swallow the rest of the line, which keeps
+ * the comment in the scan; that is the conservative direction.
+ */
 function stripLineComment(line: string): string {
-  const marker = line.indexOf("//");
-  if (marker === -1) return line;
-  // Leave URLs and anything inside a string literal alone.
-  if (/['"`]/.test(line.slice(0, marker))) return line;
-  return line.slice(0, marker);
+  let quote: string | undefined;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "/" && line[index + 1] === "/") return line.slice(0, index);
+  }
+
+  return line;
 }
 
 function escapeIdentifier(name: string): string {
