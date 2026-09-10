@@ -8,6 +8,9 @@ import { makeTestTempDir } from "./tmpDir.mjs";
 const { loadTemplateSpec } = await import(pathToFileURL(path.resolve("dist/specLoader.js")).href);
 const defaults = await import(pathToFileURL(path.resolve("dist/specDefaults.js")).href);
 
+/** The loader returns path.join output; the patterns below are written in `/`. */
+const asPosix = value => value.split(path.sep).join("/");
+
 const MINIMAL_BASELINE = `baseline:
   commands:
     - name: install
@@ -38,11 +41,11 @@ ${MINIMAL_BASELINE}`);
   assert.equal(spec.schemaVersion, 3);
   assert.equal(spec.name, "my-feature");
   assert.equal(spec.maxAttempts, defaults.DEFAULT_MAX_ATTEMPTS);
-  assert.match(spec.prdPaths[0], /\.harness\/prd\.md$/);
-  assert.match(spec.validators.staticPath, /\.harness\/validators\/static\.json$/);
-  assert.match(spec.validators.commandsPath, /\.harness\/validators\/yarn\.json$/);
+  assert.match(asPosix(spec.prdPaths[0]), /\.harness\/prd\.md$/);
+  assert.match(asPosix(spec.validators.staticPath), /\.harness\/validators\/static\.json$/);
+  assert.match(asPosix(spec.validators.commandsPath), /\.harness\/validators\/yarn\.json$/);
   // Logging is harness-owned regardless of what the recipe says.
-  assert.match(spec.logging.jsonlPath, /\.harness\/runs\/harness\.log\.jsonl$/);
+  assert.match(asPosix(spec.logging.jsonlPath), /\.harness\/runs\/harness\.log\.jsonl$/);
   assert.deepEqual(warnings.filter(w => w.includes("unknown key")), []);
 });
 
@@ -286,7 +289,7 @@ eval: .harness/eval.json
 ${MINIMAL_BASELINE}`);
   const loadedScalar = await loadTemplateSpec(scalar.specPath);
   assert.equal(loadedScalar.spec.evalPaths?.length, 1);
-  assert.match(loadedScalar.spec.evalPaths[0], /\.harness\/eval\.json$/);
+  assert.match(asPosix(loadedScalar.spec.evalPaths[0]), /\.harness\/eval\.json$/);
 
   const list = await writeRecipe(
     `schemaVersion: 3

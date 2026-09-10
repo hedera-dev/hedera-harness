@@ -7,8 +7,15 @@ on:
 
 jobs:
   build-test-pack:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Windows is in the matrix because it is where the harness breaks in ways
+    # ubuntu cannot see: process-tree teardown, MAX_PATH, and `rm -rf` in a
+    # package script all pass here and fail there.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -35,10 +42,16 @@ jobs:
       - name: npm pack --dry-run
         run: npm pack --dry-run
 
+      # The tarball smoke exercises Corepack and Yarn 3's node-modules linker,
+      # not harness behaviour, so one OS is enough signal for the runner minutes.
+      # `npm run smoke:pack` does work on Windows — that is what the wrapper in
+      # scripts/smoke-pack.mjs is for.
       - name: Enable Corepack (Yarn 3)
+        if: runner.os == 'Linux'
         run: corepack enable
 
       - name: Tarball smoke (Yarn 3 node-modules)
+        if: runner.os == 'Linux'
         run: npm run smoke:pack
 
   runtime-tiers:

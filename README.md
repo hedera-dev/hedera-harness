@@ -170,7 +170,7 @@ Precedence: CLI flag > environment > recipe > harness default.
 
 ## Prerequisites
 
-**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`).
+**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`). Linux, macOS and Windows.
 
 ```bash
 # schema v3 prerelease — npm latest is still 1.2.2

@@ -179,7 +179,12 @@ test("a skipped rule is never evaluated", async () => {
   const loaded = await loadTemplateSpec(path.join(root, ".harness", "spec.yaml"));
 
   // The browser probe launches a real browser, so "skipped" has to mean not run
-  // rather than run-and-discarded. Nothing else in preflight takes this long.
+  // rather than run-and-discarded, and wall clock is the only way to tell those
+  // apart from out here. The budget is loose on Windows because the five rules
+  // ahead of the probe shell out five times and a Windows spawn costs an order
+  // of magnitude more than a fork; the probe pays `npx` resolution plus a
+  // browser launch on top, so the two never come close to meeting.
+  const budgetMs = process.platform === "win32" ? 15_000 : 1_000;
   const startedAt = Date.now();
   const verdicts = await checkSharedPreflight({
     workspacePath: root,
@@ -189,7 +194,7 @@ test("a skipped rule is never evaluated", async () => {
   const elapsed = Date.now() - startedAt;
 
   assert.equal(byId(verdicts, "evaluate-browser"), undefined);
-  assert.ok(elapsed < 1000, `expected no browser probe, took ${elapsed}ms`);
+  assert.ok(elapsed < budgetMs, `expected no browser probe, took ${elapsed}ms`);
 });
 
 test("doctor and session-style assert agree on a missing recipe file", async () => {

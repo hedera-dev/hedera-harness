@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { CommandExecutionResult } from "./types.js";
 
 export interface ExecuteCommandOptions {
@@ -84,14 +84,28 @@ export class BoundedOutput {
 /**
  * Signal a child and everything it spawned.
  *
- * Commands run through a shell, so the direct child is `sh`; signalling only
- * that leaves yarn/next/hardhat running. Children are spawned detached (POSIX)
- * so they lead their own process group and a negative PID reaches the tree.
+ * Commands run through a shell, so the direct child is `sh` or `cmd.exe`;
+ * signalling only that leaves yarn/next/hardhat running. On POSIX children are
+ * spawned detached so they lead their own process group and a negative PID
+ * reaches the tree. Windows has no process group to signal, so the tree is
+ * walked by PID instead.
  */
 export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return;
 
-  if (process.platform !== "win32") {
+  if (process.platform === "win32") {
+    // `child.kill()` reaches cmd.exe and nothing under it, which is how a
+    // timed-out dev server outlives its own teardown. /T walks the PID tree;
+    // /F is not a choice, because a child with no console cannot be asked to
+    // stop politely. Synchronous so a caller waiting on `close` observes a tree
+    // that is already gone.
+    const swept = spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    if (swept.status === 0) return;
+    // Tree already exited, or taskkill is missing — fall back to the direct child.
+  } else {
     try {
       process.kill(-child.pid, signal);
       return;

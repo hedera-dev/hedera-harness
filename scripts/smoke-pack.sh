@@ -3,7 +3,13 @@
 # (node-modules linker) project, then assert the CLI binary runs.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Under Git Bash the tarball path is handed to a Windows-native yarn, which
+# cannot open an MSYS path like /c/... — ask the shell for the native form.
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+  ROOT="$(cd "$(dirname "$0")/.." && pwd -W)"
+else
+  ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
 cd "$ROOT"
 
 if [[ ! -f dist/index.js ]]; then

@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import { waitForDeath } from "./processProbe.mjs";
 import { makeOsTempDir } from "./tmpDir.mjs";
 
 const { executeCommand } = await import(pathToFileURL(path.resolve("dist/command.js")).href);
@@ -10,23 +11,40 @@ const { createDevServerSession } = await import(
   pathToFileURL(path.resolve("dist/validation/devServer.js")).href
 );
 
-/** True while the pid exists. Signal 0 checks liveness without delivering anything. */
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Run a generated node script through the shell, and hand back the command.
+ *
+ * The POSIX fixtures below stay shell one-liners because that is the shape the
+ * harness actually runs. cmd.exe has no `$$`, no `trap`, no `sleep` and no `&`,
+ * so on Windows the same shape comes out of a node script instead: same tree
+ * depth, same "nothing but the timeout can end this" property.
+ */
+async function shellRunningNode(dir, name, source) {
+  const scriptPath = path.join(dir, name);
+  await writeFile(scriptPath, source);
+  return `node ${JSON.stringify(scriptPath)}`;
 }
 
-async function waitForDeath(pid, timeoutMs = 8_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isAlive(pid)) return true;
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  return !isAlive(pid);
+const recordPidThenHang = (pidFile, extra = "") => `
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+${extra}
+setInterval(() => {}, 1_000);
+`;
+
+/** shell -> node -> node, so the pid under test is a grandchild of the shell. */
+async function shellRunningNodeTree(dir, childPidFile) {
+  const grandchild = path.join(dir, "grandchild.mjs");
+  await writeFile(grandchild, recordPidThenHang(childPidFile));
+  return shellRunningNode(
+    dir,
+    "parent.mjs",
+    `
+import { spawn } from "node:child_process";
+spawn(process.execPath, [${JSON.stringify(grandchild)}], { stdio: "ignore" });
+setInterval(() => {}, 1_000);
+`,
+  );
 }
 
 // These drive real child processes, so they are slower than the unit tests.
@@ -36,9 +54,16 @@ test("executeCommand escalates to SIGKILL when the child ignores SIGTERM", async
   const dir = await makeOsTempDir("harness-sigterm-");
   const pidFile = path.join(dir, "shell.pid");
 
+  const command =
+    process.platform === "win32"
+      ? // Nothing on Windows can refuse termination, so the fixture just refuses
+        // to exit; what is under test there is that the sweep reaches it at all.
+        await shellRunningNode(dir, "hang.mjs", recordPidThenHang(pidFile))
+      : // Traps and discards SIGTERM: before the escalation fix this never settled.
+        `echo $$ > "${pidFile}"; trap '' TERM; sleep 30`;
+
   const result = await executeCommand({
-    // Traps and discards SIGTERM: before the escalation fix this never settled.
-    command: `echo $$ > "${pidFile}"; trap '' TERM; sleep 30`,
+    command,
     cwd: dir,
     shell: true,
     timeoutMs: 1_000,
@@ -55,9 +80,14 @@ test("executeCommand timeout kills grandchildren, not just the shell", async () 
   const dir = await makeOsTempDir("harness-tree-");
   const childPidFile = path.join(dir, "child.pid");
 
+  const command =
+    process.platform === "win32"
+      ? await shellRunningNodeTree(dir, childPidFile)
+      : // `sleep` here stands in for yarn/next: signalling only `sh` would orphan it.
+        `sleep 30 & echo $! > "${childPidFile}"; wait`;
+
   const result = await executeCommand({
-    // `sleep` here stands in for yarn/next: signalling only `sh` would orphan it.
-    command: `sleep 30 & echo $! > "${childPidFile}"; wait`,
+    command,
     cwd: dir,
     shell: true,
     timeoutMs: 1_500,
@@ -92,12 +122,21 @@ test("createDevServerSession tears down the server when readiness fails", async 
   // Reports a Local URL so detection succeeds, but never listens — so the
   // readiness probe fails while the process is still running. Before the fix
   // this left the process group alive holding the port.
+  const command =
+    process.platform === "win32"
+      ? await shellRunningNode(
+          dir,
+          "server.mjs",
+          recordPidThenHang(pidFile, 'console.log("Local: http://127.0.0.1:1");'),
+        )
+      : `echo $$ > "${pidFile}"; echo "Local: http://127.0.0.1:1"; sleep 30`;
+
   await assert.rejects(
     () =>
       createDevServerSession(
         dir,
         {
-          command: `echo $$ > "${pidFile}"; echo "Local: http://127.0.0.1:1"; sleep 30`,
+          command,
           configuredUrl: "http://127.0.0.1:1",
           timeoutMs: 1_500,
         },
