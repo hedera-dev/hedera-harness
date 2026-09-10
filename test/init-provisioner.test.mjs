@@ -30,6 +30,7 @@ test("project harness skeleton files are packaged", async () => {
   const files = await provisioner.listProjectHarnessSkeletonFiles();
   assert.ok(files.includes("spec.yaml"));
   assert.ok(files.includes("prd.md"));
+  assert.ok(files.includes("scenarios.yaml"));
   assert.ok(files.includes("validators/static.json"));
   assert.ok(files.includes("validators/yarn.json"));
   assert.ok(files.includes("gitignore-snippet.txt"));
