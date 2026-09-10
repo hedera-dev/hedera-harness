@@ -261,6 +261,15 @@ chainValidation:
   token associations despite a genuine, real, positive balance). Needs no external JSON-RPC
   relay (Hashio or otherwise) — reads via Mirror Node's own read-only contract-call
   simulation (`/contracts/call`), keeping this mechanism's Mirror-Node-only footprint.
+- `asset: {tokenId}` (native HTS) can take up to the full poll budget (`maxWaitMs`, default
+  20s) to resolve a genuinely-zero balance — e.g. an account with no association to that
+  token yet. Mirror Node's `/accounts/{id}` gives no way to distinguish "association not
+  indexed yet" from "confirmed, no association" other than retrying through the whole window;
+  correctness (never reporting a fresh association's real balance as a false zero) is chosen
+  over latency here. This mainly affects the BEFORE sample of a balance-delta assertion, since
+  that typically checks a state nothing has changed yet — the AFTER sample almost always
+  resolves quickly because the action just changed it. `asset: {contract}` (a single
+  contract-call simulation, no propagation-lag ambiguity) is unaffected.
 
 **How the action's outcome is captured.** `action.command` must print the id
 of the transaction it submitted somewhere in stdout/stderr, in the form
