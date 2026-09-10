@@ -136,6 +136,7 @@ hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
 hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
 hedera-harness validate [spec] [--workspace <path>]
 hedera-harness validate-semantic [spec] [--workspace <path>]
+hedera-harness --version
 ```
 
 **`init`** decides what to do from the target:
@@ -170,7 +171,7 @@ Precedence: CLI flag > environment > recipe > harness default.
 
 ## Prerequisites
 
-**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`).
+**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`). Linux, macOS and Windows.
 
 ```bash
 # schema v3 prerelease — npm latest is still 1.2.2

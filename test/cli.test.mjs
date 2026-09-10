@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import test from "node:test";
 import { makeTestTempDir } from "./tmpDir.mjs";
+
+const run = promisify(execFile);
 
 const cli = await import(pathToFileURL(path.resolve("dist/cli.js")).href);
 const prompts = await import(pathToFileURL(path.resolve("dist/promptBuilder.js")).href);
@@ -117,6 +122,16 @@ test("printHelp documents init and project-centric run", () => {
   assert.match(help, /--new/);
   assert.doesNotMatch(help, /hedera-harness extend/);
   assert.match(help, /Does not auto-stash/);
+  assert.match(help, /hedera-harness --version/);
+});
+
+test("--version reports the package version instead of a command error", async () => {
+  // Handled in index.ts ahead of parseCliArgs, so only the real binary can show
+  // that the flag no longer falls through to `Expected command "init", ...`.
+  // execFile rejects on a non-zero exit, which is what that fall-through did.
+  const { stdout } = await run(process.execPath, [path.resolve("dist/index.js"), "--version"]);
+  const pkg = JSON.parse(await readFile(path.resolve("package.json"), "utf8"));
+  assert.equal(stdout.trim(), pkg.version);
 });
 
 test("loadTemplateSpec loads a project-centric recipe without a seed block", async () => {

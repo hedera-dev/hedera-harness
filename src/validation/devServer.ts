@@ -44,8 +44,8 @@ export async function createDevServerSession(
     url = await handle.detectedUrl;
     await waitForServer(url, config.timeoutMs);
   } catch (error) {
-    // The child leads a detached process group; without this it survives the
-    // failed startup and keeps the port held for the rest of the session.
+    // Without this the server survives its own failed startup and keeps the
+    // port held for the rest of the session.
     await stopDevServer(handle);
     throw error;
   }
@@ -127,10 +127,13 @@ function startDevServer(
 
   // detached: true makes this child the leader of a new process group so
   // stopDevServer can signal -pid and tear down yarn/next grandchildren.
+  // Not on Windows: DETACHED_PROCESS there severs the stdout pipe, so the
+  // server's "Local:" line never arrives and URL detection always times out.
+  // killProcessTree walks the PID tree instead, which needs no process group.
   const child = spawn(command, {
     cwd: workspacePath,
     shell: true,
-    detached: true,
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The harness runs on Windows.** `npm run build` and `npm test` never reached
+  a compiler — `clean` and `pretest` shell out to `rm -rf`. Past that: a timed-out
+  command or dev server outlived its own teardown, because Windows has no process
+  group to signal and `child.kill()` reaches `cmd.exe` and stops there; the dev
+  server’s `Local:` line never arrived, because `detached: true` there severs the
+  stdout pipe; and the skills cache clone died on MAX_PATH before it wrote an
+  object. CI now runs `build-test-pack` on `windows-latest` beside
+  `ubuntu-latest`, which is why none of this was visible.
+
+### Added
+
+- **`hedera-harness --version`.** The flag reached `parseCliArgs`, which only
+  knows subcommands, and answered with `Expected command "init", "run", ...`
+  and exit 1.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

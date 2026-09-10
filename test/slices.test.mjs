@@ -78,9 +78,12 @@ async function makeProject(prdNames, { failOn, evals } = {}) {
     path.join(root, ".harness", "validators", "static.json"),
     JSON.stringify({ fileAssertions: { forbidden: ["built/FAIL.txt"] } }),
   );
+  // `exit 0` rather than `true`, in both this file and the baseline below:
+  // these two are the fixture commands a session actually runs, and cmd.exe has
+  // no `true` unless a POSIX toolchain happens to be on PATH.
   await writeFile(
     path.join(root, ".harness", "validators", "yarn.json"),
-    JSON.stringify({ commands: [{ name: "install", command: "true" }] }),
+    JSON.stringify({ commands: [{ name: "install", command: "exit 0" }] }),
   );
   await writeFile(
     path.join(root, ".harness", "spec.yaml"),
@@ -97,7 +100,7 @@ ${evalBlock}generator:
 baseline:
   commands:
     - name: install
-      command: "true"
+      command: "exit 0"
 `,
   );
 
@@ -313,8 +316,10 @@ test("continue resumes the same PRD/eval pair", async () => {
   assert.equal(first.session.sliceIndex, 1);
   assert.equal(first.report.passed, false);
 
-  // Clear the failure trigger and continue on the harness branch.
-  const resumed = await runWith(root, { MOCK_WS: root });
+  // Clear the failure trigger and continue on the harness branch. The skills
+  // fixture has to stay in the environment: without it the resume falls back to
+  // the default repo and clones hedera-skills over the network.
+  const resumed = await runWith(root, { ...env, MOCK_FAIL_ON: "" });
   assert.equal(resumed.report.passed, true);
   assert.equal(resumed.report.slices.length, 1, "continue starts at the stopped slice");
   assert.equal(resumed.report.slices[0].index, 1);
