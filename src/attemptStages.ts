@@ -8,10 +8,12 @@ import type {
   CommandExecutionResult,
   EvaluationResult,
   PlaywrightGateResult,
+  ScenarioActor,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
 } from "./types.js";
+import { executeScenarioPlan } from "./scenario/index.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
@@ -27,15 +29,16 @@ import { withValidatorMcp } from "./validatorMcp.js";
 import { WorkspaceWatcher } from "./workspaceWatcher.js";
 
 /**
- * One attempt runs four stages in order:
+ * One attempt runs five stages in order:
  *
- *   GENERATE -> ASSERT -> SMOKE -> EVALUATE
+ *   GENERATE -> ASSERT -> SCENARIO -> SMOKE -> EVALUATE
  *
  * Each stage may short-circuit the rest of the attempt. That ordering is a cost
  * decision as much as a correctness one: ASSERT is cheap and deterministic, so a
- * failing build never pays for a dev server boot or an adversarial evaluator pass.
+ * failing build never pays for a native Hedera scenario, a dev server boot, or
+ * an adversarial evaluator pass.
  */
-export const STAGE_NAMES = ["GENERATE", "ASSERT", "SMOKE", "EVALUATE"] as const;
+export const STAGE_NAMES = ["GENERATE", "ASSERT", "SCENARIO", "SMOKE", "EVALUATE"] as const;
 export type StageName = (typeof STAGE_NAMES)[number];
 
 export interface AttemptStageContext {
@@ -44,6 +47,7 @@ export interface AttemptStageContext {
   workspacePath: string;
   layout: RunLayout;
   chainSigner?: ChainSigner;
+  scenarioActors?: ScenarioActor[];
   /** Vendored eval checklist path, relative to the workspace. */
   evalRelativePath?: string;
 }
@@ -180,6 +184,73 @@ export async function runAssertStage(context: AttemptStageContext): Promise<Vali
 }
 
 /**
+ * SCENARIO — harness-owned native Hedera steps against testnet, then mirror oracles.
+ * No agent. Failures skip SMOKE and EVALUATE.
+ */
+export async function runScenarioStage(context: AttemptStageContext): Promise<ValidationResult> {
+  const config = context.spec.scenarios;
+  if (!config?.enabled) {
+    return { passed: true, findings: [], commandResults: [] };
+  }
+  if (!context.scenarioActors || context.scenarioActors.length === 0) {
+    return {
+      passed: false,
+      findings: [
+        {
+          id: "scenario:actors-missing",
+          category: "scenario",
+          message: "SCENARIO is enabled but no actors were provisioned.",
+        },
+      ],
+      commandResults: [],
+    };
+  }
+
+  const result = await executeScenarioPlan(config.plan, context.scenarioActors);
+  await writeJsonFile(
+    path.join(context.layout.logsDirectory, `scenario-attempt-${context.attempt}.json`),
+    result,
+  );
+  await appendHarnessLog(context.layout.jsonlLogPath, {
+    type: "scenario_finished",
+    timestamp: new Date().toISOString(),
+    attempt: context.attempt,
+    passed: result.passed,
+    stepCount: result.steps.length,
+    assertionCount: result.assertions.length,
+    durationMs: result.durationMs,
+    infrastructureFailure: result.infrastructureFailure,
+  });
+
+  const findings: ValidationFinding[] = [];
+  for (const step of result.steps) {
+    if (!step.error) continue;
+    findings.push({
+      id: `scenario:step:${step.id}`,
+      category: "scenario",
+      message: `Scenario step ${step.id} (${step.kind}) failed.`,
+      details: step.error,
+    });
+  }
+  for (const [index, assertion] of result.assertions.entries()) {
+    if (assertion.passed) continue;
+    findings.push({
+      id: `scenario:assert:${index + 1}`,
+      category: "scenario",
+      message: `Scenario assertion failed: ${assertion.kind}.`,
+      details: assertion.detail,
+    });
+  }
+
+  return {
+    passed: result.passed && findings.length === 0,
+    findings,
+    commandResults: [],
+    scenario: result,
+  };
+}
+
+/**
  * SMOKE — prove the app actually runs: optional on-chain deploy, then boot the dev
  * server and walk the configured routes.
  */
@@ -298,11 +369,29 @@ export async function runValidationStages(
 
   // Generator exit/timeout findings are recorded but must not fail ASSERT or skip
   // SMOKE/EVALUATE — Cursor often hangs after finishing work; the gates decide pass.
-  const validation = mergeGenerateFinding(deterministic, generateFinding);
+  let validation = mergeGenerateFinding(deterministic, generateFinding);
 
   if (!isReadyForPlaywrightSmoke(validation)) {
+    logStage("SCENARIO", "skipped — deterministic gates are not clean");
     logStage("SMOKE", "skipped — deterministic gates are not clean");
     return { ...validation, passed: false };
+  }
+
+  if (context.spec.scenarios?.enabled) {
+    logStage("SCENARIO");
+    const scenario = await runScenarioStage(context);
+    validation = {
+      ...validation,
+      findings: [...validation.findings, ...scenario.findings],
+      scenario: scenario.scenario,
+      passed: validation.passed && scenario.passed,
+    };
+    if (!scenario.passed) {
+      logStage("SMOKE", "skipped — scenario gate failed");
+      return { ...validation, passed: false };
+    }
+  } else {
+    logStage("SCENARIO", "skipped — not configured");
   }
   if (!hasPlaywright) {
     return validation;
