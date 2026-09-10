@@ -5,9 +5,11 @@ import type {
   BaselineConfig,
   ChainValidationConfig,
   CommandAgentConfig,
+  ScenarioConfig,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
+import { parseScenarioPlan } from "./scenario/plan.js";
 import {
   AGENT_PRESETS,
   DEFAULT_AGENT_PRESET,
@@ -67,6 +69,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     forbiddenFiles: readOptionalStringArray(parsed, "forbiddenFiles") ?? defaultSecretFiles(workspaces),
     secretScan: readSecretScan(parsed, workspaces),
     chainValidation: readChainValidation(parsed),
+    scenarios: await readScenarios(parsed, projectRoot),
     baseline: readBaseline(parsed),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? DEFAULT_MAX_ATTEMPTS,
     logging: {
@@ -76,6 +79,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
   };
 
   assertBaselineHasInstall(spec);
+  assertScenariosHaveOperator(spec);
 
   for (const warning of warnings) {
     console.warn(`[hedera-harness] ${path.basename(absoluteSpecPath)}: ${warning}`);
@@ -612,4 +616,62 @@ function readChainValidation(parsed: Record<string, unknown>): ChainValidationCo
     },
     deploy,
   };
+}
+
+async function readScenarios(
+  parsed: Record<string, unknown>,
+  projectRoot: string,
+): Promise<ScenarioConfig | undefined> {
+  const raw = parsed.scenarios;
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error('Expected object "scenarios" in template spec.');
+  }
+  const record = raw as Record<string, unknown>;
+  if (record.enabled === false) return undefined;
+
+  const network = record.network === undefined ? "testnet" : String(record.network);
+  if (network !== "testnet") {
+    throw new Error(
+      `scenarios.network must be "testnet" (got ${JSON.stringify(network)}). Mainnet is not allowed.`,
+    );
+  }
+
+  const operatorRecord =
+    record.operator && typeof record.operator === "object" && !Array.isArray(record.operator)
+      ? (record.operator as Record<string, unknown>)
+      : undefined;
+
+  const file = typeof record.file === "string" ? record.file.trim() : "";
+  let planSource: unknown = record;
+  let filePath: string | undefined;
+  let origin = "scenarios";
+  if (file) {
+    filePath = resolveProjectPath(projectRoot, file);
+    const body = await readFile(filePath, "utf8");
+    planSource = parseYaml(body) ?? {};
+    origin = filePath;
+  }
+
+  return {
+    enabled: record.enabled !== false,
+    network: "testnet",
+    operator: operatorRecord
+      ? {
+          accountIdEnv: readString(operatorRecord, "accountIdEnv"),
+          privateKeyEnv: readString(operatorRecord, "privateKeyEnv"),
+        }
+      : undefined,
+    filePath,
+    plan: parseScenarioPlan(planSource, origin),
+    sweepBack: record.sweepBack !== false,
+  };
+}
+
+function assertScenariosHaveOperator(spec: TemplateSpec): void {
+  if (!spec.scenarios?.enabled) return;
+  if (spec.scenarios.operator || spec.chainValidation?.operator) return;
+  throw new Error(
+    "scenarios requires operator env names, or enable chainValidation with operator so they can be reused.",
+  );
 }
