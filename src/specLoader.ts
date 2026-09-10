@@ -739,10 +739,21 @@ function readChainAssertionBalanceDelta(
   if (assetRaw === "hbar") {
     asset = "hbar";
   } else if (assetRaw && typeof assetRaw === "object" && !Array.isArray(assetRaw)) {
-    asset = { tokenId: readString(assetRaw as Record<string, unknown>, "tokenId") };
+    const assetRecord = assetRaw as Record<string, unknown>;
+    if ("tokenId" in assetRecord) {
+      asset = { tokenId: readString(assetRecord, "tokenId") };
+    } else if ("contract" in assetRecord) {
+      asset = { contract: readString(assetRecord, "contract") };
+    } else {
+      throw new Error(
+        `${path} ("${id}") expect.balanceDelta.asset object must be { tokenId: "0.0.x" } or ` +
+          `{ contract: "0x..." }.`,
+      );
+    }
   } else {
     throw new Error(
-      `${path} ("${id}") expect.balanceDelta.asset must be "hbar" or { tokenId: "0.0.x" }.`,
+      `${path} ("${id}") expect.balanceDelta.asset must be "hbar", { tokenId: "0.0.x" }, or ` +
+        `{ contract: "0x..." }.`,
     );
   }
 

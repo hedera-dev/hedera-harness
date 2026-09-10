@@ -193,7 +193,41 @@ ${MINIMAL_BASELINE}${CHAIN_VALIDATION_HEADER}  assertions:
 
   await assert.rejects(
     () => loadTemplateSpec(specPath),
-    /asset must be "hbar" or \{ tokenId: "0\.0\.x" \}/,
+    /asset must be "hbar", \{ tokenId: "0\.0\.x" \}, or \{ contract: "0x\.\.\." \}/,
+  );
+});
+
+test("balanceDelta.asset accepts a contract address for an EVM/Solidity token", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: my-feature
+${MINIMAL_BASELINE}${CHAIN_VALIDATION_HEADER}  assertions:
+    - id: contract-balance
+      action: { name: a, command: "true" }
+      expect:
+        outcome: mustSucceed
+        balanceDelta: { account: "0xff1bdea3dca4c5889dde6ea61a3ce2d2ed84960a", asset: { contract: "0x19CD7866076758E3AF6C79aD7Ce725331A5606B8" }, equals: "100" }
+`);
+
+  const { spec } = await loadTemplateSpec(specPath);
+  assert.deepEqual(spec.chainValidation.assertions[0].expect.balanceDelta.asset, {
+    contract: "0x19CD7866076758E3AF6C79aD7Ce725331A5606B8",
+  });
+});
+
+test("balanceDelta.asset object with neither tokenId nor contract is rejected", async () => {
+  const { specPath } = await writeRecipe(`schemaVersion: 3
+name: my-feature
+${MINIMAL_BASELINE}${CHAIN_VALIDATION_HEADER}  assertions:
+    - id: bad-asset-shape
+      action: { name: a, command: "true" }
+      expect:
+        outcome: mustSucceed
+        balanceDelta: { account: "0.0.1", asset: { foo: "bar" }, equals: "0" }
+`);
+
+  await assert.rejects(
+    () => loadTemplateSpec(specPath),
+    /asset object must be \{ tokenId: "0\.0\.x" \} or \{ contract: "0x\.\.\." \}/,
   );
 });
 

@@ -4,6 +4,7 @@ import {
   extractEvmTransactionHash,
   extractTransactionId,
   fetchContractCallResult,
+  fetchContractTokenBalance,
   fetchHbarBalanceTinybars,
   fetchTokenBalance,
   fetchTransactionResult,
@@ -23,6 +24,7 @@ export interface ChainAssertionEvidenceDeps {
   fetchContractCallResult: typeof fetchContractCallResult;
   fetchHbarBalanceTinybars: typeof fetchHbarBalanceTinybars;
   fetchTokenBalance: typeof fetchTokenBalance;
+  fetchContractTokenBalance: typeof fetchContractTokenBalance;
 }
 
 const DEFAULT_DEPS: ChainAssertionEvidenceDeps = {
@@ -30,6 +32,7 @@ const DEFAULT_DEPS: ChainAssertionEvidenceDeps = {
   fetchContractCallResult,
   fetchHbarBalanceTinybars,
   fetchTokenBalance,
+  fetchContractTokenBalance,
 };
 
 export interface RunChainAssertionsInput {
@@ -235,7 +238,10 @@ async function sampleBalance(
   if (asset === "hbar") {
     return deps.fetchHbarBalanceTinybars(accountId);
   }
-  return deps.fetchTokenBalance(accountId, asset.tokenId);
+  if ("tokenId" in asset) {
+    return deps.fetchTokenBalance(accountId, asset.tokenId);
+  }
+  return deps.fetchContractTokenBalance(asset.contract, accountId);
 }
 
 function findingId(assertion: ChainAssertionConfig): string {

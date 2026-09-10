@@ -13,6 +13,7 @@ const {
   fetchContractCallResult,
   fetchHbarBalanceTinybars,
   fetchTokenBalance,
+  fetchContractTokenBalance,
 } = await import(pathToFileURL(path.resolve("dist/validation/chainAssertionEvidence.js")).href);
 
 test("toMirrorTransactionId converts SDK @ form to Mirror Node - form", () => {
@@ -374,6 +375,72 @@ test("fetchTokenBalance finds the matching token entry", async () => {
     },
   );
 });
+
+test("fetchContractTokenBalance POSTs a standard ERC20 balanceOf(holder) call and decodes the result", async () => {
+  let receivedBody;
+  await withMockServer(
+    (req, res) => {
+      let raw = "";
+      req.on("data", chunk => (raw += chunk));
+      req.on("end", () => {
+        receivedBody = JSON.parse(raw);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ result: "0x0000000000000000000000000000000000000000000000000000000000000064" }));
+      });
+    },
+    async baseUrl => {
+      const result = await fetchContractTokenBalance(
+        "0x19CD7866076758E3AF6C79aD7Ce725331A5606B8",
+        "0xff1bdea3dca4c5889dde6ea61a3ce2d2ed84960a",
+        { ...FAST_POLL, baseUrl },
+      );
+      assert.deepEqual(result, { status: "found", value: 100n });
+      assert.equal(receivedBody.to, "0x19CD7866076758E3AF6C79aD7Ce725331A5606B8");
+      assert.equal(
+        receivedBody.data,
+        "0x70a08231000000000000000000000000ff1bdea3dca4c5889dde6ea61a3ce2d2ed84960a",
+      );
+    },
+  );
+});
+
+test("fetchContractTokenBalance reports infra-error, not a false zero balance, on a non-200", async () => {
+  await withMockServer(
+    (req, res) => {
+      res.writeHead(500);
+      res.end();
+    },
+    async baseUrl => {
+      const result = await fetchContractTokenBalance("0xabc", "0xdef", { ...FAST_POLL, baseUrl });
+      assert.equal(result.status, "infra-error");
+    },
+  );
+});
+
+// --- Live: a real ATS bond's real ERC20-style balance, confirmed absent from HTS entirely ---
+
+test(
+  "a real ATS bond holder has ZERO Mirror Node token associations (proving fetchTokenBalance can't see this balance at all)",
+  async () => {
+    const result = await fetchTokenBalance("0.0.10432567", "0.0.999999", { maxWaitMs: 15_000, pollIntervalMs: 2_000 });
+    // No association at all -- reads as 0n, indistinguishable from "holds 0", which is exactly
+    // the gap fetchContractTokenBalance exists to close for this class of token.
+    assert.deepEqual(result, { status: "found", value: 0n });
+  },
+);
+
+test(
+  "fetchContractTokenBalance reads a real, non-zero ATS bond balance via the real Mirror Node contract-call simulation",
+  async () => {
+    const result = await fetchContractTokenBalance(
+      "0x19CD7866076758E3AF6C79aD7Ce725331A5606B8", // the fixed bond, EVIDENCE.md
+      "0x3a53dc3ed8df865a4d4e592c01a66efbcd37973b", // Alice, who genuinely holds a balance
+      { maxWaitMs: 15_000, pollIntervalMs: 2_000 },
+    );
+    assert.equal(result.status, "found");
+    assert.ok(result.value > 0n, "expected Alice's real, on-chain ATS bond balance to be positive");
+  },
+);
 
 // --- Live testnet evidence (real Mirror Node) ---------------------------------------------
 

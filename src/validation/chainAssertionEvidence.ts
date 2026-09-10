@@ -225,6 +225,48 @@ export async function fetchTokenBalance(
   );
 }
 
+const ERC20_BALANCE_OF_SELECTOR = "70a08231";
+
+/**
+ * Current balance of one EVM/Solidity token contract for a holder, via its standard ERC20
+ * `balanceOf(address)` view function — for a token that lives entirely as contract storage
+ * (an ERC20/ERC1400-style token, which is what a Solidity security-token contract like an
+ * Asset Tokenization Studio bond actually is), NOT a native HTS token. Confirmed empirically:
+ * an ATS bond holder has no entry in Mirror Node's account/token-association data at all
+ * (`fetchTokenBalance` would silently read 0 for every such holder, always) — `balanceOf` via
+ * Mirror Node's read-only contract-call simulation (`/contracts/call`) is the only way to read
+ * this kind of balance, and it needs no external JSON-RPC relay (Hashio or otherwise), keeping
+ * this module's Mirror-Node-only dependency footprint.
+ */
+export async function fetchContractTokenBalance(
+  contractAddress: string,
+  holderAddress: string,
+  options: EvidencePollOptions = {},
+): Promise<EvidenceResult<bigint>> {
+  const baseUrl = options.baseUrl ?? MIRROR_NODE_BASE_URL;
+  const path = `${baseUrl}/contracts/call`;
+  const paddedHolder = holderAddress.replace(/^0x/i, "").toLowerCase().padStart(64, "0");
+
+  return pollForEvidence(
+    path,
+    response => {
+      const body = response as { result?: string };
+      if (!body.result) return undefined;
+      return BigInt(body.result);
+    },
+    options,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        data: `0x${ERC20_BALANCE_OF_SELECTOR}${paddedHolder}`,
+        to: contractAddress,
+        estimate: false,
+      }),
+    },
+  );
+}
+
 /**
  * Shared GET-with-retry: 200 decodes via `extract`; `extract` returning undefined is treated
  * like a 404 (not found yet — the shape wasn't there); 404 retries until `maxWaitMs`; any other
@@ -235,6 +277,7 @@ async function pollForEvidence<T>(
   path: string,
   extract: (response: unknown) => T | undefined,
   options: EvidencePollOptions,
+  init?: RequestInit,
 ): Promise<EvidenceResult<T>> {
   const maxWaitMs = options.maxWaitMs ?? 20_000;
   const pollIntervalMs = options.pollIntervalMs ?? 2_000;
@@ -245,7 +288,7 @@ async function pollForEvidence<T>(
   for (;;) {
     let response: Response | undefined;
     try {
-      response = await fetch(path);
+      response = await fetch(path, init);
     } catch (error) {
       // A single transient network blip (DNS hiccup, connection reset) is exactly the kind of
       // thing the retry loop already smooths over for a 404 -- giving up immediately here would

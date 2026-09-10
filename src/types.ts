@@ -155,16 +155,23 @@ export interface ChainValidationActorConfig {
 export type ChainAssertionOutcome = "mustSucceed" | "mustRevert";
 
 /**
- * Deterministic balance-delta check, composable with outcome. `asset` is HBAR or an HTS
- * token id; `equals` is a signed integer as a string (tinybars for HBAR, smallest unit for
- * HTS) to avoid floating-point precision loss.
+ * Deterministic balance-delta check, composable with outcome. `asset` is HBAR, a native HTS
+ * token id, or an EVM/Solidity token contract's own storage-based balance (read via its
+ * standard `balanceOf(address)`, for an ERC20/ERC1400-style token — e.g. an Asset Tokenization
+ * Studio security token — which is *not* a native HTS token and has no Mirror Node
+ * account/token-association entry at all). `equals` is a signed integer as a string (tinybars
+ * for HBAR, smallest unit otherwise) to avoid floating-point precision loss.
  */
 export interface ChainAssertionBalanceDeltaConfig {
-  /** Hedera account id (0.0.x) the balance is sampled on. Exactly one of account/accountEnv. */
+  /**
+   * The holder identifier the balance is sampled on. Exactly one of account/accountEnv.
+   * For `asset: "hbar"` or `{tokenId}`, a Hedera account id (0.0.x). For `asset: {contract}`,
+   * the holder's EVM address (0x...) — what `balanceOf` itself takes as its argument.
+   */
   account?: string;
-  /** Env var holding the account id at execution time (e.g. an actor's own account). */
+  /** Env var holding the account/address at execution time (e.g. an actor's own account). */
   accountEnv?: string;
-  asset: "hbar" | { tokenId: string };
+  asset: "hbar" | { tokenId: string } | { contract: string };
   equals: string;
 }
 

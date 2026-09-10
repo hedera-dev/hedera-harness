@@ -222,7 +222,7 @@ chainValidation:
         outcome: mustSucceed
         balanceDelta:
           accountEnv: ALICE_ACCOUNT_ID   # exactly one of account / accountEnv
-          asset: hbar                    # or { tokenId: "0.0.x" }
+          asset: hbar                    # or { tokenId: "0.0.x" }, or { contract: "0x..." }
           equals: "500000000"            # signed integer as a string — tinybars for hbar
 ```
 
@@ -244,12 +244,23 @@ chainValidation:
   `reasonContains` and rely on `outcome: mustRevert` alone when the contract you're asserting
   against uses custom errors — this is still a real, deterministic pass/fail on whether the
   call reverted at all, just not a policy-specific reason check.
-- `expect.balanceDelta` needs exactly one of `account` (a literal `0.0.x`) or
+- `expect.balanceDelta` needs exactly one of `account` (a literal id/address) or
   `accountEnv` (an env var read at execution time, e.g. an actor's own
-  account) — never both, never neither.
+  account) — never both, never neither. For `asset: hbar` or `{tokenId}` this is a Hedera
+  account id (`0.0.x`); for `asset: {contract}` it's the holder's **EVM address** (`0x...`),
+  since that's what the contract's own `balanceOf` takes.
 - `expect.balanceDelta.equals` must be a signed integer string (tinybars for
-  `hbar`, smallest unit for an HTS token) — rejected at load otherwise, so a
+  `hbar`, smallest unit otherwise) — rejected at load otherwise, so a
   typo like `"5.5e8"` or `"500,000,000"` never reaches evaluation.
+- `asset: { contract: "0x..." }` reads the balance via the contract's own standard ERC20
+  `balanceOf(address)` — for a Solidity token that lives entirely as contract storage (an
+  ERC20/ERC1400-style security token, e.g. an Asset Tokenization Studio bond), **not** a
+  native HTS token. This distinction matters: such a holder has **no** entry anywhere in
+  Mirror Node's account/token-association data, so `{tokenId}` would silently read `0` for
+  every such holder, always — confirmed empirically against a real ATS bond holder (zero
+  token associations despite a genuine, real, positive balance). Needs no external JSON-RPC
+  relay (Hashio or otherwise) — reads via Mirror Node's own read-only contract-call
+  simulation (`/contracts/call`), keeping this mechanism's Mirror-Node-only footprint.
 
 **How the action's outcome is captured.** `action.command` must print the id
 of the transaction it submitted somewhere in stdout/stderr, in the form
