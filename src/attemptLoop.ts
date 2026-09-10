@@ -31,6 +31,7 @@ import type { VendoredContext } from "./contextVendor.js";
 import type { VendoredSkill } from "./skillProvider.js";
 import type {
   ChainSigner,
+  ScenarioActor,
   RunReport,
   TemplateSpec,
   ValidationFinding,
@@ -48,6 +49,7 @@ export interface SessionContext {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  scenarioActors?: ScenarioActor[];
 }
 
 /**
@@ -81,6 +83,7 @@ export interface AttemptLoopInput {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  scenarioActors?: ScenarioActor[];
   /** Which increment of an ordered `prd:` list this loop is delivering. */
   slice?: SliceContext;
   /** Finding ids still open when the previous cycle stopped, for delta reporting. */
@@ -127,6 +130,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     workspacePath,
     vendoredContext,
     chainSigner,
+    scenarioActors,
     commitAttempt,
   } = input;
 
@@ -151,6 +155,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       workspacePath,
       layout,
       chainSigner,
+      scenarioActors,
       evalRelativePath: vendoredContext.evalRelativePath,
     };
 
@@ -200,7 +205,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
 
     await recordAttemptResult({ layout, attempt: attempts, validation, delta });
 
-    if (validation.evaluation?.infrastructureFailure) {
+    if (validation.evaluation?.infrastructureFailure || validation.scenario?.infrastructureFailure) {
       await abortOnInfrastructureFailure({ layout, attempt: attempts, validation });
       await checkpoint({ layout, commitAttempt, workspacePath, attempt: attempts, validation });
       break;
