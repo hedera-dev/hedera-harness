@@ -60,6 +60,71 @@ test("provisionHarnessProject writes .harness recipe and gitignore", async () =>
 
   const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts["harness:run"], "hedera-harness run .harness/spec.yaml");
+  const spec = await readFile(path.join(root, ".harness", "spec.yaml"), "utf8");
+  assert.match(spec, /command: yarn install/);
+  assert.match(spec, /command: yarn next:build/);
+});
+
+test("adopting an npm app does not plant a yarn next:build recipe", async () => {
+  // Nametoll-shaped: npm lockfile, no Yarn, no Next — the advertised in-place
+  // adopt path. The skeleton is Scaffold-HBAR; copying it verbatim forbids npm
+  // and baselines `yarn next:build`, so doctor/run fail before any agent work.
+  const root = await makeTestTempDir("init-npm-adopt-");
+  git(root, ["init", "--template="]);
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify(
+      {
+        name: "nametoll",
+        private: true,
+        scripts: {
+          start: "tsx src/server.ts",
+          test: "vitest run",
+          typecheck: "tsc --noEmit",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  await writeFile(path.join(root, "package-lock.json"), '{"lockfileVersion":3}\n');
+
+  const { runInit } = await import(pathToFileURL(path.resolve("dist/initRunner.js")).href);
+  const adopted = await runInit({ targetDir: root });
+
+  const spec = await readFile(path.join(root, ".harness", "spec.yaml"), "utf8");
+  assert.match(spec, /command: npm install/);
+  assert.match(spec, /command: npm run typecheck/);
+  assert.doesNotMatch(spec, /yarn next:build/);
+  assert.doesNotMatch(spec, /yarn install/);
+
+  const commands = JSON.parse(
+    await readFile(path.join(root, ".harness", "validators", "yarn.json"), "utf8"),
+  );
+  assert.ok(
+    commands.forbiddenCommands.includes("yarn install"),
+    "an npm project must not be told to avoid npm",
+  );
+  assert.ok(!commands.forbiddenCommands.includes("npm install"));
+  assert.ok(!commands.forbiddenCommands.includes("npm run"));
+  assert.equal(
+    commands.commands.find(row => row.name === "install")?.command,
+    "npm install",
+  );
+  assert.equal(
+    commands.commands.find(row => row.name === "build")?.command,
+    "npm run typecheck",
+  );
+  assert.ok(!commands.commands.some(row => String(row.command).includes("yarn")));
+
+  assert.ok(
+    adopted.nextSteps.some(step => /npm run harness:run|hedera-harness run/.test(step)),
+    `next steps should not assume Yarn; got ${adopted.nextSteps.join(" | ")}`,
+  );
+  assert.ok(
+    !adopted.nextSteps.includes("yarn harness:run"),
+    "next steps must not tell an npm app to run yarn",
+  );
 });
 
 test("seedProjectForInit refuses non-empty target", async () => {

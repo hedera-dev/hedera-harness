@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathExists } from "./fsUtils.js";
+import { adaptProvisionedRecipe } from "./recipeAdapt.js";
 
 export const PROJECT_HARNESS_SKELETON_DIR = "skeletons/project-harness";
 
@@ -61,6 +62,12 @@ export async function provisionHarnessProject(
   if (!(await pathExists(keep))) {
     await writeFile(keep, "");
     writtenFiles.push(path.relative(targetDir, keep));
+  }
+
+  // Scaffold-HBAR skeleton is Yarn + Next. An in-place adopt of an npm/pnpm
+  // app must not inherit `yarn next:build` or a validator that forbids npm.
+  if (skippedFiles.every(file => !file.endsWith("spec.yaml"))) {
+    await adaptProvisionedRecipe(targetDir);
   }
 
   return {

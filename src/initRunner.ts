@@ -9,6 +9,8 @@ import {
   seedProjectForInit,
 } from "./initSeeder.js";
 import { resolveHeadSha } from "./harnessGit.js";
+import { harnessRunNextStep } from "./recipeAdapt.js";
+import { resolvePackageInstallTool } from "./optionalDeps.js";
 import type { InitCliOptions, InitResult } from "./types.js";
 
 export interface RunInitOptions extends InitCliOptions {
@@ -78,7 +80,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<InitResult>
     skippedFiles: provisioned.skippedFiles,
     gitignoreUpdated: provisioned.gitignoreUpdated,
     packageJsonUpdated: provisioned.packageJsonUpdated,
-    nextSteps: buildNextSteps({
+    nextSteps: await buildNextSteps({
       targetDir: seeded.targetDir,
       inPlace,
       hadExistingRecipe: provisioned.skippedFiles.some(file => file.endsWith("spec.yaml")),
@@ -96,13 +98,14 @@ async function headShaOrUndefined(cwd: string): Promise<string | undefined> {
   }
 }
 
-function buildNextSteps(input: {
+async function buildNextSteps(input: {
   targetDir: string;
   inPlace: boolean;
   hadExistingRecipe: boolean;
   packageJsonUpdated: boolean;
-}): string[] {
+}): Promise<string[]> {
   const steps: string[] = [];
+  const tool = await resolvePackageInstallTool({ projectRoot: input.targetDir });
 
   if (!input.inPlace) {
     steps.push(`cd ${input.targetDir}`);
@@ -126,6 +129,6 @@ function buildNextSteps(input: {
   }
 
   steps.push("hedera-harness doctor    # check the setup before a long run");
-  steps.push(input.packageJsonUpdated ? "yarn harness:run" : "hedera-harness run");
+  steps.push(harnessRunNextStep(tool, input.packageJsonUpdated));
   return steps;
 }

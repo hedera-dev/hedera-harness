@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- **`init` adopt no longer plants a Yarn + Next recipe on npm/pnpm apps.**
+  In-place adopt copies the Scaffold-HBAR skeleton, then rewrites baseline
+  and `.harness/validators/yarn.json` from the project's lockfile and
+  scripts (`typecheck` / `build` / `test`). Next steps say
+  `npm run harness:run` when the app is npm. Scaffold-HBAR / Yarn apps keep
+  `yarn next:build`.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
