@@ -376,6 +376,30 @@ test("fetchTokenBalance finds the matching token entry", async () => {
   );
 });
 
+test("fetchTokenBalance retries (never finalizes on the first, still-unindexed poll) when a real non-zero balance only appears on a later response", async () => {
+  // Regression test for a real bug: a brand-new token association can be absent from
+  // `balance.tokens[]` for a few polls even though the account endpoint itself already answers
+  // 200 (confirmed live against real testnet -- a fresh TokenCreateTransaction's treasury
+  // balance took a few seconds to appear). The original implementation read the missing entry
+  // as a confirmed `0n` on the very first poll, with no retry at all. This mock reproduces that
+  // exact shape without depending on real testnet or real propagation timing: the entry is
+  // absent on the first two polls, then present with a genuine non-zero balance.
+  let call = 0;
+  await withMockServer(
+    (req, res) => {
+      call += 1;
+      const tokens = call < 3 ? [] : [{ token_id: "0.0.7777", balance: 12345 }];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ balance: { balance: 0, tokens } }));
+    },
+    async baseUrl => {
+      const result = await fetchTokenBalance("0.0.1", "0.0.7777", { ...FAST_POLL, baseUrl });
+      assert.deepEqual(result, { status: "found", value: 12345n });
+      assert.ok(call >= 3, "must have retried past the polls where the entry was still missing");
+    },
+  );
+});
+
 test("fetchContractTokenBalance POSTs a standard ERC20 balanceOf(holder) call and decodes the result", async () => {
   let receivedBody;
   await withMockServer(
@@ -483,5 +507,38 @@ test(
     });
     assert.equal(result.status, "found");
     assert.ok(result.value > 0n);
+  },
+);
+
+test(
+  "fetchTokenBalance reads a real native HTS token's real minted supply — the primitive this whole function exists for, not yet exercised against a real HTS token anywhere else in this suite (only against HBAR and an EVM contract, which is NOT an HTS token)",
+  { skip: !hasOperatorEnv && "HEDERA_OPERATOR_ID/HEDERA_OPERATOR_KEY not set" },
+  async () => {
+    const sdk = await import("@hiero-ledger/sdk");
+    const operatorId = process.env.HEDERA_OPERATOR_ID;
+    const operatorKey = sdk.PrivateKey.fromStringECDSA(process.env.HEDERA_OPERATOR_KEY.replace(/^0x/i, ""));
+    const client = sdk.Client.forTestnet();
+    client.setOperator(sdk.AccountId.fromString(operatorId), operatorKey);
+
+    try {
+      const receipt = await (
+        await new sdk.TokenCreateTransaction()
+          .setTokenName("PolicyProbe Test Token")
+          .setTokenSymbol("PPTEST")
+          .setTreasuryAccountId(operatorId)
+          .setInitialSupply(12345)
+          .setDecimals(0)
+          .execute(client)
+      ).getReceipt(client);
+      const tokenId = receipt.tokenId.toString();
+
+      // The treasury account automatically holds the full initial supply -- no association or
+      // transfer step needed to prove the read path, which is all this test is for.
+      const result = await fetchTokenBalance(operatorId, tokenId, { maxWaitMs: 20_000, pollIntervalMs: 2_000 });
+      assert.equal(result.status, "found");
+      assert.equal(result.value, 12345n);
+    } finally {
+      client.close();
+    }
   },
 );

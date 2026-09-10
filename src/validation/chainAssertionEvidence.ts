@@ -202,7 +202,21 @@ export async function fetchHbarBalanceTinybars(
   );
 }
 
-/** Current balance of one HTS token for an account, in the token's smallest unit. */
+/**
+ * Current balance of one HTS token for an account, in the token's smallest unit.
+ *
+ * A brand-new association (e.g. a token created and its treasury balance checked moments
+ * later) can be absent from `/accounts/{id}`'s `balance.tokens[]` for a short window even
+ * though the account endpoint itself already answers 200 — confirmed empirically: a fresh
+ * `TokenCreateTransaction`'s treasury balance was visible in Mirror Node within ~3s, but
+ * `extract` returning a defined `0n` for a merely-not-yet-indexed entry made the original
+ * implementation treat that as a final answer on the very first poll, with zero retries.
+ * `extract` here instead returns `undefined` (triggering the normal retry loop) while the
+ * entry is absent, and `fallbackOnHealthyTimeout: 0n` supplies the real final answer — "never
+ * received this token" and "received then spent to exactly 0" are still indistinguishable via
+ * this endpoint (HTS has no other representation of that), but a real zero is no longer
+ * confused with "hasn't propagated yet".
+ */
 export async function fetchTokenBalance(
   accountId: string,
   tokenId: string,
@@ -217,11 +231,11 @@ export async function fetchTokenBalance(
       const body = response as MirrorAccountResponse;
       if (body.balance === undefined) return undefined;
       const entry = body.balance.tokens?.find(token => token.token_id === tokenId);
-      // No association / zero balance both read as 0n — HTS has no other representation
-      // of "never received any" vs "received then spent to exactly 0" via this endpoint.
-      return BigInt(entry?.balance ?? 0);
+      return entry === undefined ? undefined : BigInt(entry.balance);
     },
     options,
+    undefined,
+    0n,
   );
 }
 
@@ -272,12 +286,21 @@ export async function fetchContractTokenBalance(
  * like a 404 (not found yet — the shape wasn't there); 404 retries until `maxWaitMs`; any other
  * non-200, a thrown fetch error, or exhausting the retry budget is an infra-error, never
  * silently treated as "not found" or as a policy result.
+ *
+ * `fallbackOnHealthyTimeout`, when supplied, is the caller's real answer for "the endpoint
+ * stayed healthy (every response was 200, `extract` just never found the expected shape) for
+ * the entire retry budget" — e.g. a token balance that is legitimately zero (no association,
+ * or spent down to it) looks identical, via `/accounts/{id}`, to one whose entry merely hasn't
+ * been indexed yet. Without this, that case would misreport `infra-error` for a real, valid
+ * answer. It is never used when a response was ever unhealthy (404/non-200/fetch failure) —
+ * that keeps genuine infra trouble and network-down conditions reported as such.
  */
 async function pollForEvidence<T>(
   path: string,
   extract: (response: unknown) => T | undefined,
   options: EvidencePollOptions,
   init?: RequestInit,
+  fallbackOnHealthyTimeout?: T,
 ): Promise<EvidenceResult<T>> {
   const maxWaitMs = options.maxWaitMs ?? 20_000;
   const pollIntervalMs = options.pollIntervalMs ?? 2_000;
@@ -285,6 +308,7 @@ async function pollForEvidence<T>(
 
   let lastNotFound = false;
   let lastErrorMessage: string | undefined;
+  let everUnhealthy = false;
   for (;;) {
     let response: Response | undefined;
     try {
@@ -295,6 +319,7 @@ async function pollForEvidence<T>(
       // make the verdict depend on which poll happened to land on the blip, not on real chain
       // state. Retry it the same way, and only report infra-error if it never recovers.
       lastNotFound = false;
+      everUnhealthy = true;
       lastErrorMessage = `Mirror Node request failed: ${error instanceof Error ? error.message : String(error)}`;
     }
 
@@ -302,9 +327,11 @@ async function pollForEvidence<T>(
       // handled below via lastErrorMessage
     } else if (response.status === 404) {
       lastNotFound = true;
+      everUnhealthy = true;
       lastErrorMessage = undefined;
     } else if (!response.ok) {
       lastNotFound = false;
+      everUnhealthy = true;
       lastErrorMessage = `Mirror Node returned HTTP ${response.status} for ${path}`;
     } else {
       lastNotFound = false;
@@ -326,6 +353,9 @@ async function pollForEvidence<T>(
     }
 
     if (Date.now() >= deadline) {
+      if (!everUnhealthy && fallbackOnHealthyTimeout !== undefined) {
+        return { status: "found", value: fallbackOnHealthyTimeout };
+      }
       return lastNotFound
         ? { status: "not-found" }
         : {
