@@ -8,6 +8,7 @@ const {
   toMirrorTransactionId,
   extractTransactionId,
   extractEvmTransactionHash,
+  decodeStandardRevertReason,
   fetchTransactionResult,
   fetchContractCallResult,
   fetchHbarBalanceTinybars,
@@ -153,6 +154,112 @@ test("fetchTransactionResult reports infra-error when the connection itself fail
     baseUrl: "http://127.0.0.1:1",
   });
   assert.equal(result.status, "infra-error");
+});
+
+test("decodeStandardRevertReason decodes a real require(condition, \"message\") revert", () => {
+  // ABI encoding of Error("KYC not granted"): selector + offset(32) + length(15) + padded bytes.
+  const hex =
+    "0x08c379a00000000000000000000000000000000000000000000000000000000000000020" +
+    "000000000000000000000000000000000000000000000000000000000000000f" +
+    "4b5943206e6f74206772616e7465640000000000000000000000000000000000";
+  assert.equal(decodeStandardRevertReason(hex), "KYC not granted");
+});
+
+test("decodeStandardRevertReason returns undefined for a custom error (different selector)", () => {
+  // A real custom-error revert from this project's own ATS fixture, e.g. selector 0x796c1f0d.
+  assert.equal(
+    decodeStandardRevertReason("0x796c1f0d000000000000000000000000ff1bdea3dca4c5889dde6ea61a3ce2d2ed84960a"),
+    undefined,
+  );
+});
+
+test("decodeStandardRevertReason returns undefined for malformed/short data", () => {
+  assert.equal(decodeStandardRevertReason("0x08c379a0"), undefined);
+  assert.equal(decodeStandardRevertReason("0x"), undefined);
+});
+
+test("fetchContractCallResult surfaces the decoded revertReason alongside the raw errorMessage", async () => {
+  const errorHex =
+    "0x08c379a00000000000000000000000000000000000000000000000000000000000000020" +
+    "0000000000000000000000000000000000000000000000000000000000000003" +
+    "4b59430000000000000000000000000000000000000000000000000000000000";
+  await withMockServer(
+    (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({ result: "CONTRACT_REVERT_EXECUTED", status: "0x0", timestamp: "1.1", error_message: errorHex }),
+      );
+    },
+    async baseUrl => {
+      const result = await fetchContractCallResult("0xabc", { ...FAST_POLL, baseUrl });
+      assert.equal(result.status, "found");
+      assert.equal(result.value.revertReason, "KYC");
+      assert.equal(result.value.errorMessage, errorHex);
+    },
+  );
+});
+
+test("fetchContractCallResult omits revertReason for a custom error (undecodable without its ABI)", async () => {
+  await withMockServer(
+    (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          result: "CONTRACT_REVERT_EXECUTED",
+          status: "0x0",
+          timestamp: "1.1",
+          error_message: "0x796c1f0d000000000000000000000000ff1bdea3dca4c5889dde6ea61a3ce2d2ed84960a",
+        }),
+      );
+    },
+    async baseUrl => {
+      const result = await fetchContractCallResult("0xabc", { ...FAST_POLL, baseUrl });
+      assert.equal(result.status, "found");
+      assert.equal(result.value.revertReason, undefined);
+      assert.ok(result.value.errorMessage);
+    },
+  );
+});
+
+test("a thrown fetch() retries through the full poll window instead of returning immediately", async () => {
+  // No listener on this port -- fetch() throws on every attempt. Previously this returned
+  // infra-error on the very first throw; it should now retry the same as a 404 would, only
+  // giving up once maxWaitMs is spent -- provable by timing, since there's nothing to recover.
+  const start = Date.now();
+  const result = await fetchTransactionResult("0.0.1@1.1", {
+    pollIntervalMs: 20,
+    maxWaitMs: 100,
+    baseUrl: "http://127.0.0.1:1",
+  });
+  assert.equal(result.status, "infra-error");
+  assert.ok(
+    Date.now() - start >= 90,
+    "expected the retry loop to spend close to the full poll window, not return immediately",
+  );
+});
+
+test("a thrown fetch() recovers if a later poll succeeds, same as a 404 recovering", async () => {
+  let calls = 0;
+  await withMockServer(
+    (req, res) => {
+      calls += 1;
+      if (calls < 3) {
+        // Simulate a connection-level failure (not an HTTP error response) -- destroying the
+        // socket makes the client's fetch() throw, rather than resolve with a status code.
+        res.socket.destroy();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({ transactions: [{ transaction_id: "0.0.1-1-1", result: "SUCCESS", consensus_timestamp: "1.1" }] }),
+      );
+    },
+    async baseUrl => {
+      const result = await fetchTransactionResult("0.0.1@1.1", { ...FAST_POLL, baseUrl });
+      assert.equal(result.status, "found");
+      assert.ok(calls >= 3, "expected at least 3 polls before recovering");
+    },
+  );
 });
 
 test("fetchContractCallResult returns status:found on a clean 200", async () => {

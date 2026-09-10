@@ -69,6 +69,19 @@ interface MirrorTransactionRecord {
 }
 
 /**
+ * Shared shape for both transaction-result lookups, so a caller can treat either path
+ * identically without narrowing a union. `errorMessage`/`revertReason` are always undefined
+ * from `fetchTransactionResult` (the native path has no ABI-encoded revert data to decode) —
+ * present here purely for type uniformity with `fetchContractCallResult`.
+ */
+export interface ChainTransactionEvidence {
+  result: string;
+  consensusTimestamp: string;
+  errorMessage?: string;
+  revertReason?: string;
+}
+
+/**
  * The consensus result of a native Hedera transaction ("SUCCESS", "INVALID_SIGNATURE", etc.),
  * as recorded by Mirror Node — never inferred from a script's exit code. Retries through normal
  * propagation lag; a transaction that never appears (network issue, or the id was never actually
@@ -83,7 +96,7 @@ interface MirrorTransactionRecord {
 export async function fetchTransactionResult(
   transactionId: string,
   options: EvidencePollOptions = {},
-): Promise<EvidenceResult<{ result: string; consensusTimestamp: string }>> {
+): Promise<EvidenceResult<ChainTransactionEvidence>> {
   const baseUrl = options.baseUrl ?? MIRROR_NODE_BASE_URL;
   const path = `${baseUrl}/transactions/${toMirrorTransactionId(transactionId)}`;
 
@@ -102,18 +115,45 @@ interface MirrorContractResultRecord {
   timestamp: string;
 }
 
+const ERROR_STRING_SELECTOR = "08c379a0";
+
+/**
+ * Decodes a standard Solidity `Error(string)` revert — what `require(condition, "message")`
+ * produces — into its human-readable message. Returns undefined for anything else, including a
+ * contract-specific custom error (a different 4-byte selector with arbitrary args): decoding
+ * those needs the contract's own error ABI, which this module deliberately doesn't carry (see
+ * the module comment) — a `reasonContains` check against a custom-error revert falls back to
+ * matching the coarse `result` status instead, same as it always has.
+ */
+export function decodeStandardRevertReason(errorMessageHex: string): string | undefined {
+  const hex = errorMessageHex.replace(/^0x/i, "");
+  if (hex.length < 8 || hex.slice(0, 8).toLowerCase() !== ERROR_STRING_SELECTOR) return undefined;
+  const data = hex.slice(8);
+  if (data.length < 128) return undefined; // need at least the offset + length words
+  const length = parseInt(data.slice(64, 128), 16);
+  if (!Number.isFinite(length) || length < 0) return undefined;
+  const stringHex = data.slice(128, 128 + length * 2);
+  if (stringHex.length !== length * 2) return undefined;
+  try {
+    return Buffer.from(stringHex, "hex").toString("utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The consensus result of a transaction submitted through an EVM JSON-RPC relay, looked up by
  * its EVM transaction hash — same `result` vocabulary as `fetchTransactionResult`
  * ("SUCCESS"/"CONTRACT_REVERT_EXECUTED"/etc.), so callers compare it identically regardless of
- * which path found it. `error_message` is the raw ABI-encoded revert data when present (a
- * Solidity custom error's selector + args) — exposed as-is in evidence; decoding it against a
- * contract's error ABI is a possible future enhancement, not done here.
+ * which path found it. `error_message` is the raw ABI-encoded revert data when present;
+ * `revertReason` is that data decoded into a human string when it's a standard `Error(string)`
+ * revert (undefined for a custom error, where the raw selector+args can't be interpreted
+ * without the contract's own ABI).
  */
 export async function fetchContractCallResult(
   hash: string,
   options: EvidencePollOptions = {},
-): Promise<EvidenceResult<{ result: string; consensusTimestamp: string; errorMessage?: string }>> {
+): Promise<EvidenceResult<ChainTransactionEvidence>> {
   const baseUrl = options.baseUrl ?? MIRROR_NODE_BASE_URL;
   const path = `${baseUrl}/contracts/results/${hash}`;
 
@@ -122,12 +162,14 @@ export async function fetchContractCallResult(
     response => {
       const body = response as Partial<MirrorContractResultRecord>;
       if (!body.result) return undefined;
+      const errorMessage =
+        body.error_message && body.error_message !== "0x" ? body.error_message : undefined;
+      const revertReason = errorMessage ? decodeStandardRevertReason(errorMessage) : undefined;
       return {
         result: body.result,
         consensusTimestamp: body.timestamp ?? "",
-        ...(body.error_message && body.error_message !== "0x"
-          ? { errorMessage: body.error_message }
-          : {}),
+        ...(errorMessage ? { errorMessage } : {}),
+        ...(revertReason !== undefined ? { revertReason } : {}),
       };
     },
     options,
@@ -199,23 +241,31 @@ async function pollForEvidence<T>(
   const deadline = Date.now() + maxWaitMs;
 
   let lastNotFound = false;
+  let lastErrorMessage: string | undefined;
   for (;;) {
-    let response: Response;
+    let response: Response | undefined;
     try {
       response = await fetch(path);
     } catch (error) {
-      return {
-        status: "infra-error",
-        message: `Mirror Node request failed: ${error instanceof Error ? error.message : String(error)}`,
-      };
+      // A single transient network blip (DNS hiccup, connection reset) is exactly the kind of
+      // thing the retry loop already smooths over for a 404 -- giving up immediately here would
+      // make the verdict depend on which poll happened to land on the blip, not on real chain
+      // state. Retry it the same way, and only report infra-error if it never recovers.
+      lastNotFound = false;
+      lastErrorMessage = `Mirror Node request failed: ${error instanceof Error ? error.message : String(error)}`;
     }
 
-    if (response.status === 404) {
+    if (response === undefined) {
+      // handled below via lastErrorMessage
+    } else if (response.status === 404) {
       lastNotFound = true;
+      lastErrorMessage = undefined;
     } else if (!response.ok) {
-      return { status: "infra-error", message: `Mirror Node returned HTTP ${response.status} for ${path}` };
+      lastNotFound = false;
+      lastErrorMessage = `Mirror Node returned HTTP ${response.status} for ${path}`;
     } else {
       lastNotFound = false;
+      lastErrorMessage = undefined;
       let body: unknown;
       try {
         body = await response.json();
@@ -235,7 +285,10 @@ async function pollForEvidence<T>(
     if (Date.now() >= deadline) {
       return lastNotFound
         ? { status: "not-found" }
-        : { status: "infra-error", message: `Mirror Node never returned the expected shape for ${path}` };
+        : {
+            status: "infra-error",
+            message: lastErrorMessage ?? `Mirror Node never returned the expected shape for ${path}`,
+          };
     }
     await sleep(pollIntervalMs);
   }

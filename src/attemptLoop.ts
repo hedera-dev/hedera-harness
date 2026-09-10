@@ -175,6 +175,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       attemptsThisCycle,
       prompt: latestPrompt,
       model: choice,
+      chainSigner,
+      chainActors,
     });
 
     const generatorConfig = withModel(

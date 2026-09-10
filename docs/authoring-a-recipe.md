@@ -232,7 +232,18 @@ chainValidation:
 - `actor`, if set, must name an entry in `chainValidation.actors` — an
   undeclared actor is a load-time error, not a run-time surprise.
 - `expect.reasonContains` only applies to `mustRevert` — rejected at load
-  otherwise.
+  otherwise. **Only meaningfully narrows a revert on the EVM/JSON-RPC-relay path, and only
+  when the contract reverts with a standard `require(condition, "message")`** (Solidity's
+  `Error(string)` encoding, decoded automatically). A contract that reverts with a **custom
+  error** (`error InsufficientKyc(address who);` — the modern, gas-cheaper Solidity pattern,
+  and what production contracts including Asset Tokenization Studio's actually use) cannot be
+  decoded without that contract's own error ABI, which this mechanism deliberately doesn't
+  carry (see `chainAssertionEvidence.ts`'s module comment) — `reasonContains` then falls back
+  to matching Mirror Node's coarse status string (`"CONTRACT_REVERT_EXECUTED"`, identical for
+  every revert reason on that contract), which will rarely match a specific reason. Omit
+  `reasonContains` and rely on `outcome: mustRevert` alone when the contract you're asserting
+  against uses custom errors — this is still a real, deterministic pass/fail on whether the
+  call reverted at all, just not a policy-specific reason check.
 - `expect.balanceDelta` needs exactly one of `account` (a literal `0.0.x`) or
   `accountEnv` (an env var read at execution time, e.g. an actor's own
   account) — never both, never neither.

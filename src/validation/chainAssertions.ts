@@ -1,5 +1,5 @@
 import { executeCommand } from "../command.js";
-import { buildDeployEnv } from "./chainSigner.js";
+import { buildDeployEnv, redactSignerSecrets } from "./chainSigner.js";
 import {
   extractEvmTransactionHash,
   extractTransactionId,
@@ -130,7 +130,7 @@ async function runOneAssertion(
         `(${result.timedOut ? "timed out" : `exit code ${result.exitCode}`}) — could not obtain ` +
         "chain evidence for this attempt. This may be a transient infrastructure problem " +
         "(RPC/relay unreachable) rather than an application defect.",
-      details: truncate(result.stderr || result.stdout),
+      details: truncate(redactSecrets(result.stderr || result.stdout, input)),
     };
   }
 
@@ -148,7 +148,7 @@ async function runOneAssertion(
         'hash in its output (expected either a native Hedera id, "0.0.x@seconds.nanos", or an ' +
         'EVM transaction hash, "0x" + 64 hex chars) — the action script must print the id/hash ' +
         "of the transaction it submitted.",
-      truncate(result.stderr || result.stdout),
+      truncate(redactSecrets(result.stderr || result.stdout, input)),
     );
   }
 
@@ -173,22 +173,28 @@ async function runOneAssertion(
     };
   }
 
-  if (
-    assertion.expect.reasonContains &&
-    !outcome.value.result.includes(assertion.expect.reasonContains)
-  ) {
-    return {
-      id: findingId(assertion),
-      category: "chain-assertion",
-      message:
-        `Assertion "${assertion.id}" reverted as expected, but the Mirror Node result ` +
-        `"${outcome.value.result}" did not contain "${assertion.expect.reasonContains}".`,
-      evidence: {
-        transactionId: evidenceId,
-        expected: assertion.expect.reasonContains,
-        observed: outcome.value.result,
-      },
-    };
+  if (assertion.expect.reasonContains) {
+    // Prefer the decoded human revert reason when the evidence has one (a standard
+    // `Error(string)` revert on the EVM path) — the coarse `result` status
+    // ("CONTRACT_REVERT_EXECUTED") is the same string for every revert reason, so checking
+    // reasonContains against it alone can never actually distinguish *why* a call reverted.
+    // Falls back to `result` for the native-transaction path and for custom-error reverts,
+    // where no human-readable reason is available to decode — same behavior as before.
+    const observedReason: string = outcome.value.revertReason ?? outcome.value.result;
+    if (!observedReason.includes(assertion.expect.reasonContains)) {
+      return {
+        id: findingId(assertion),
+        category: "chain-assertion",
+        message:
+          `Assertion "${assertion.id}" reverted as expected, but the observed reason ` +
+          `"${observedReason}" did not contain "${assertion.expect.reasonContains}".`,
+        evidence: {
+          transactionId: evidenceId,
+          expected: assertion.expect.reasonContains,
+          observed: observedReason,
+        },
+      };
+    }
   }
 
   if (balanceDelta && beforeBalance !== undefined && balanceAccountId) {
@@ -273,4 +279,8 @@ function truncate(value: string, maxLength = 1200): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, maxLength)}...`;
+}
+
+function redactSecrets(text: string, input: RunChainAssertionsInput): string {
+  return redactSignerSecrets(text, [input.primarySigner, ...Object.values(input.actorSigners)]);
 }

@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
-import { buildDeployEnv } from "./validation/chainSigner.js";
+import { buildDeployEnv, redactSignerSecrets } from "./validation/chainSigner.js";
 import { runChainAssertions } from "./validation/chainAssertions.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
@@ -222,7 +222,9 @@ export async function runChainDeploy(
         id: `chain-deploy:${commandConfig.name}`,
         category: "commands",
         message: `Chain deploy command failed: ${commandConfig.name}`,
-        details: truncate(result.stderr || result.stdout),
+        // The deploy command's own env carries the signer's private key (buildDeployEnv) — a
+        // crash that echoes its environment must never leak it into a persisted finding/prompt.
+        details: truncate(redactSignerSecrets(result.stderr || result.stdout, [context.chainSigner])),
       });
     }
   }

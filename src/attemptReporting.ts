@@ -10,7 +10,7 @@ import {
 import { logStage } from "./attemptStages.js";
 import { findingIds, formatFindingDelta, type FindingDelta } from "./findingsLifecycle.js";
 import type { AttemptLoopInput } from "./attemptLoop.js";
-import type { RunReport, TemplateSpec, ValidationResult } from "./types.js";
+import type { ChainSigner, RunReport, TemplateSpec, ValidationResult } from "./types.js";
 
 /**
  * Artifact and console reporting for one attempt.
@@ -34,8 +34,15 @@ export async function announceAttempt(input: {
   attemptsThisCycle: number;
   prompt: string;
   model?: { model: string; reason: string };
+  /** Every signer this run knows about, redacted from the persisted prompt file. A
+   * chain-assertion/chain-deploy finding's `details` is already redacted at the source
+   * (see `chainSigner.ts::redactSignerSecrets`), but this is the one place every attempt
+   * kind's prompt — including whatever a future finding source doesn't yet redact — is
+   * written to disk and sent to the generator LLM, so it redacts again, defense in depth. */
+  chainSigner?: ChainSigner;
+  chainActors?: Record<string, ChainSigner>;
 }): Promise<void> {
-  const { layout, kind, attempt, cycle, attemptsThisCycle, prompt, model } = input;
+  const { layout, kind, attempt, cycle, attemptsThisCycle, prompt, model, chainSigner, chainActors } = input;
   const fileName =
     kind === "generate"
       ? `generator-attempt-${attempt}.txt`
@@ -43,7 +50,8 @@ export async function announceAttempt(input: {
         ? `continue-cycle-${cycle}-attempt-${attempt}.txt`
         : `repair-attempt-${attempt}.txt`;
   const promptPath = path.join(layout.promptsDirectory, fileName);
-  await writePromptFile(promptPath, prompt);
+  const secrets = [chainSigner?.privateKeyHex, ...Object.values(chainActors ?? {}).map(s => s.privateKeyHex)];
+  await writePromptFile(promptPath, prompt, secrets);
 
   if (kind === "continue") {
     await appendHarnessLog(layout.jsonlLogPath, {

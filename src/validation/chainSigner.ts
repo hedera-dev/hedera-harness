@@ -286,6 +286,28 @@ export function buildDeployEnv(
   return env;
 }
 
+/**
+ * Every signer's private key is injected into a spawned command's own environment
+ * (`buildDeployEnv`) — if that process crashes in a way that echoes its environment (an
+ * uncaught exception dump, an errant `console.log(process.env)`, an HTTP client embedding
+ * request context in an error), the key can land in captured stdout/stderr. That text often
+ * becomes a `ValidationFinding.details`, which is persisted to `report.json` and interpolated
+ * into the repair-loop prompt with no redaction of its own downstream — so redact every known
+ * signer key here, at the source, before command output ever becomes a finding, rather than
+ * trying to catch it at each consumer.
+ */
+export function redactSignerSecrets(text: string, signers: Array<ChainSigner | undefined>): string {
+  let redacted = text;
+  for (const signer of signers) {
+    const key = signer?.privateKeyHex;
+    if (!key) continue;
+    const bare = key.replace(/^0x/i, "");
+    redacted = redacted.split(key).join("[REDACTED_SIGNER_KEY]");
+    if (bare) redacted = redacted.split(bare).join("[REDACTED_SIGNER_KEY]");
+  }
+  return redacted;
+}
+
 const HEDERA_ACCOUNT_ID_RE = /^\d+\.\d+\.\d+$/;
 
 function readOperatorEnv(config: ChainValidationConfig): {

@@ -16,6 +16,7 @@ const SIGNER = {
 };
 
 const TX_ID = "0.0.1111@1699999999.123456789";
+const EVM_TX_HASH = `0x${"9".repeat(64)}`;
 
 function baseChainValidation(assertions) {
   return {
@@ -32,6 +33,11 @@ function baseChainValidation(assertions) {
 /** Prints TX_ID to stdout, like a real action script reporting what it submitted. */
 function echoAction(name = "a") {
   return { name, command: `echo "submitted ${TX_ID}"` };
+}
+
+/** Prints an EVM transaction hash instead -- routes through fetchContractCallResult. */
+function echoEvmAction(name = "a") {
+  return { name, command: `echo "submitted ${EVM_TX_HASH}"` };
 }
 
 async function run(assertions, deps, actorSigners = {}) {
@@ -105,6 +111,52 @@ test("reasonContains match PASSes", async () => {
     { fetchTransactionResult: async () => found({ result: "ACCOUNT_FROZEN_FOR_TOKEN", consensusTimestamp: "1.1" }) },
   );
   assert.deepEqual(findings, []);
+});
+
+test("reasonContains on the EVM path matches the decoded revertReason, not the coarse result string", async () => {
+  const findings = await run(
+    [{ id: "a1", action: echoEvmAction(), expect: { outcome: "mustRevert", reasonContains: "KYC" } }],
+    {
+      fetchContractCallResult: async () =>
+        found({ result: "CONTRACT_REVERT_EXECUTED", consensusTimestamp: "1.1", revertReason: "KYC not granted" }),
+    },
+  );
+  assert.deepEqual(findings, []);
+});
+
+test("reasonContains on the EVM path falls back to the coarse result when no revertReason was decoded (custom error)", async () => {
+  const findings = await run(
+    [{ id: "a1", action: echoEvmAction(), expect: { outcome: "mustRevert", reasonContains: "KYC" } }],
+    {
+      // No revertReason field -- a custom error, undecodable without the contract's own ABI.
+      fetchContractCallResult: async () => found({ result: "CONTRACT_REVERT_EXECUTED", consensusTimestamp: "1.1" }),
+    },
+  );
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /observed reason "CONTRACT_REVERT_EXECUTED" did not contain "KYC"/);
+});
+
+test("finding.details never contains a real signer private key, even when the action's output echoes its own environment", async () => {
+  const secretKey = SIGNER.privateKeyHex;
+  const findings = await run(
+    [
+      {
+        id: "a1",
+        // Simulates a crashing script that dumps its own env (a plausible real failure) --
+        // echo prints the literal env var value, matching how a Node crash trace would.
+        action: { name: "a", command: `echo "boom: $HARNESS_SIGNER_PRIVATE_KEY"; exit 1` },
+        expect: { outcome: "mustSucceed" },
+      },
+    ],
+    {},
+  );
+  assert.equal(findings.length, 1);
+  assert.ok(!findings[0].details.includes(secretKey), "raw signer key leaked into finding.details");
+  assert.ok(
+    !findings[0].details.includes(secretKey.replace(/^0x/i, "")),
+    "bare (non-0x) signer key leaked into finding.details",
+  );
+  assert.ok(findings[0].details.includes("[REDACTED_SIGNER_KEY]"));
 });
 
 test("an assertion referencing an unprovisioned actor is a config violation, not a silent pass", async () => {
