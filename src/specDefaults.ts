@@ -24,12 +24,20 @@ export const DEFAULT_MAX_ATTEMPTS = 3;
 export const HARNESS_JSONL_LOG_PATH = ".harness/runs/harness.log.jsonl";
 export const HARNESS_NOTES_LOG_PATH = ".harness/runs/harness-notes.md";
 
-export type AgentPresetName = "cursor" | "claude";
+export type AgentPresetName = "cursor" | "claude" | "codex";
 
-/** `config-flag` writes a harness-owned file; `workspace-file` is for CLIs that only read a fixed path. */
+/**
+ * How the Playwright MCP server reaches a CLI for the EVALUATE stage.
+ *
+ * `config-flag` writes a harness-owned file and points the CLI at it;
+ * `workspace-file` is for CLIs that only read a fixed path inside the project;
+ * `config-args` passes the server inline as repeated config overrides, which
+ * touches neither the project nor the user's own config.
+ */
 export type McpDelivery =
   | { kind: "config-flag"; flag: string }
-  | { kind: "workspace-file"; path: string };
+  | { kind: "workspace-file"; path: string }
+  | { kind: "config-args" };
 
 export interface AgentPreset extends CommandAgentConfig {
   mcp: McpDelivery;
@@ -98,6 +106,40 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
     modelFlag: "--model",
     defaultModel: "opus",
     repairModel: "sonnet",
+  },
+  codex: {
+    provider: "command",
+    command: "codex",
+    args: [
+      "exec",
+      "--json",
+      // The user's own ~/.codex/config.toml would otherwise decide the model and
+      // load their personal MCP servers into a harness run. A probe on 0.147.0
+      // inherited six of them and aborted the turn on one server's failed OAuth,
+      // so the harness supplies everything it needs and ignores the rest.
+      "--ignore-user-config",
+      // Codex denies tool calls it cannot get approval for, and `codex exec` has
+      // nobody to ask: without this every MCP call comes back as "user cancelled
+      // MCP tool call". It implies the workspace-write sandbox and so cannot be
+      // combined with `--sandbox` — the CLI rejects the pair outright.
+      "--approve-for-me",
+      "-C",
+      "{workspace}",
+      "-m",
+      "gpt-5.6-terra",
+      "{prompt}",
+    ],
+    timeoutMs: 3_600_000,
+    // Inline `-c mcp_servers.*` overrides. Unlike Cursor there is no file to
+    // snapshot and restore, and unlike Claude no config to write to disk.
+    mcp: { kind: "config-args" },
+    modelFlag: "-m",
+    // Codex model names are account-tier dependent — `gpt-5-codex` and
+    // `gpt-5.6-sol` are both rejected on a plain ChatGPT account. This is the
+    // built-in default for CLI 0.147.0; override with HARNESS_MODEL when an
+    // account offers something better.
+    defaultModel: "gpt-5.6-terra",
+    repairModel: "gpt-5.6-terra",
   },
 };
 

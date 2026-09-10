@@ -240,6 +240,26 @@ export async function playwrightMcpServer(
   return { command: "npx", args };
 }
 
+/**
+ * The MCP server as inline config overrides, for CLIs that take `-c key=value`
+ * rather than a config file (Codex).
+ *
+ * Values are TOML, and JSON encoding of a string or a string array is valid
+ * TOML for both, so the server survives the round trip unquoted-by-hand.
+ */
+export async function playwrightMcpConfigArgs(
+  projectRoot: string,
+  outputDir?: string,
+): Promise<string[]> {
+  const server = await playwrightMcpServer(projectRoot, outputDir);
+  return [
+    "-c",
+    `mcp_servers.playwright.command=${JSON.stringify(server.command)}`,
+    "-c",
+    `mcp_servers.playwright.args=${JSON.stringify(server.args)}`,
+  ];
+}
+
 /** Standalone MCP config the harness owns, for CLIs that accept a config path. */
 export async function writePlaywrightMcpConfig(
   absolutePath: string,

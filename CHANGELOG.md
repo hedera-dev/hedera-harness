@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Added
+
+- **`agent: codex`.** Third agent preset, driving `codex exec --json`. Runs with
+  `--ignore-user-config` so a user's own `~/.codex/config.toml` cannot pick the
+  model or load their personal MCP servers into a harness run, and with
+  `--approve-for-me` because `codex exec` otherwise answers every MCP browser
+  call with "user cancelled MCP tool call". EVALUATE delivers Playwright through
+  a new `config-args` MCP kind — inline `-c mcp_servers.*` overrides, touching
+  neither the project nor the user's config.
+
+### Fixed
+
+- **Claude tool calls are counted again.** The activity logger only understood
+  Cursor's `tool_call` events, but Claude Code reports tools as `tool_use`
+  content blocks on `assistant` messages and returns `tool_result` blocks on a
+  synthetic `user` message. On the *default* agent every run therefore reported
+  `toolCallsStarted=0`, the 15-second heartbeat never named what the agent was
+  doing, and the per-attempt activity log held two lines. Decoding is now per
+  vocabulary, matched on the event itself, and covered by tests that replay
+  captured streams from all three CLIs.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

@@ -67,8 +67,14 @@ That is a complete, working recipe. `generator`, `secretScan`, `forbiddenFiles`,
 Pick the agent with one line:
 
 ```yaml
-agent: cursor        # or omit for claude (default)
+agent: codex         # cursor | claude | codex — omit for claude (default)
 ```
+
+| Preset | CLI | Notes |
+|---|---|---|
+| `claude` | Claude Code (`claude`) | default; `opus` generates, `sonnet` repairs |
+| `cursor` | Cursor (`agent`) | the harness writes `.cursor/mcp.json` for EVALUATE and restores it |
+| `codex` | Codex (`codex exec`) | runs with `--ignore-user-config`, so your own `~/.codex/config.toml` never decides a harness run |
 
 That governs the whole run — how the generator is invoked, how the validator receives Playwright MCP, and which models are used. Enabling EVALUATE is then `validator: { enabled: true }`, not a second copy of the agent flags.
 
@@ -170,7 +176,13 @@ Precedence: CLI flag > environment > recipe > harness default.
 
 ## Prerequisites
 
-**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Cursor (`agent`) or Claude Code (`claude`).
+**Always:** Node.js ≥ 20, git, and an authenticated agent CLI — Claude Code (`claude`), Cursor (`agent`), or Codex (`codex`).
+
+**Codex.** Model names are account-tier dependent: `gpt-5-codex` and `gpt-5.6-sol` are both refused on a
+plain ChatGPT account, so the preset pins the CLI's own default and `HARNESS_MODEL` overrides it. EVALUATE
+runs under `--approve-for-me`, which is what makes `codex exec` accept MCP browser calls at all — the CLI
+rejects that flag alongside `--sandbox`, so the validator is not additionally sandboxed to read-only the
+way it is on Claude.
 
 ```bash
 # schema v3 prerelease — npm latest is still 1.2.2
