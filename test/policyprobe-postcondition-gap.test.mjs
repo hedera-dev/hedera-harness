@@ -99,3 +99,33 @@ test("PolicyProbe gap: the one finding runChainDeploy CAN produce is a generic c
   assert.equal("expect" in findings[0], false);
   assert.equal("observed" in findings[0], false);
 });
+
+test("a genuinely unspawnable deploy command is a commands finding, not an uncaught crash", async () => {
+  // executeCommand's promise can reject outright (child-process "error" event), not just
+  // resolve with a non-zero exit -- a nonexistent cwd reliably triggers this even with
+  // shell:true (the shell itself can't be spawned into a directory that doesn't exist).
+  const context = {
+    attempt: 1,
+    workspacePath: "/definitely/does/not/exist/policyprobe-test-xyz",
+    chainSigner: {
+      accountId: "0.0.1234",
+      privateKeyHex: `0x${"a".repeat(64)}`,
+      evmAddress: `0x${"1".repeat(40)}`,
+      network: "testnet",
+    },
+    spec: {
+      chainValidation: {
+        enabled: true,
+        network: "testnet",
+        deploy: { commands: [{ name: "unspawnable-step", command: "echo hi" }] },
+        expose: { envVars: [] },
+      },
+    },
+  };
+
+  const findings = await runChainDeploy(context);
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].category, "commands");
+  assert.match(findings[0].message, /could not be started/);
+});

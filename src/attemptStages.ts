@@ -210,13 +210,27 @@ export async function runChainDeploy(
 
   for (const commandConfig of commands) {
     console.log(`[hedera-harness] Chain deploy: ${commandConfig.name} — ${commandConfig.command}`);
-    const result = await executeCommand({
-      command: commandConfig.command,
-      cwd: context.workspacePath,
-      env,
-      timeoutMs: commandConfig.timeoutMs,
-      shell: true,
-    });
+    let result;
+    try {
+      result = await executeCommand({
+        command: commandConfig.command,
+        cwd: context.workspacePath,
+        env,
+        timeoutMs: commandConfig.timeoutMs,
+        shell: true,
+      });
+    } catch (error) {
+      // executeCommand's promise can reject outright (ENOENT/EACCES/an unspawnable command),
+      // not just resolve with a non-zero exit — uncaught, this crashes the attempt instead of
+      // producing a finding. Same failure shape as a non-zero exit, discovered a step earlier.
+      findings.push({
+        id: `chain-deploy:${commandConfig.name}`,
+        category: "commands",
+        message: `Chain deploy command could not be started: ${commandConfig.name}`,
+        details: truncate(error instanceof Error ? error.message : String(error)),
+      });
+      continue;
+    }
     if (result.exitCode !== 0) {
       findings.push({
         id: `chain-deploy:${commandConfig.name}`,

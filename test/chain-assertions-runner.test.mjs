@@ -225,6 +225,24 @@ test("a timed-out action command is chain-assertion-infra, never an app-policy v
   assert.match(findings[0].message, /did not complete \(timed out\)/);
 });
 
+test("a genuinely unspawnable action command is chain-assertion-infra, not an uncaught crash", async () => {
+  // executeCommand's promise can reject outright (child-process "error" event), not just
+  // resolve with a non-zero exit -- a nonexistent cwd reliably triggers this even with
+  // shell:true (the shell itself can't be spawned into a directory that doesn't exist).
+  const workspacePath = "/definitely/does/not/exist/policyprobe-test-xyz";
+  const findings = await runChainAssertions({
+    workspacePath,
+    chainValidation: baseChainValidation([
+      { id: "a1", action: echoAction(), expect: { outcome: "mustSucceed" } },
+    ]),
+    primarySigner: SIGNER,
+    actorSigners: {},
+  });
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].category, "chain-assertion-infra");
+  assert.match(findings[0].message, /could not be started/);
+});
+
 test("infra-error confirming the tx result is chain-assertion-infra, never a pass or a violation", async () => {
   const findings = await run(
     [{ id: "a1", action: echoAction(), expect: { outcome: "mustSucceed" } }],

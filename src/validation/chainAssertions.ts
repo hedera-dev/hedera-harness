@@ -109,13 +109,29 @@ async function runOneAssertion(
   console.log(`[hedera-harness] Chain assertion: ${assertion.id} — ${assertion.action.name}`);
 
   const env = buildDeployEnv(signer, input.chainValidation.expose.envVars ?? []);
-  const result = await executeCommand({
-    command: assertion.action.command,
-    cwd: input.workspacePath,
-    env,
-    timeoutMs: assertion.action.timeoutMs,
-    shell: true,
-  });
+  let result;
+  try {
+    result = await executeCommand({
+      command: assertion.action.command,
+      cwd: input.workspacePath,
+      env,
+      timeoutMs: assertion.action.timeoutMs,
+      shell: true,
+    });
+  } catch (error) {
+    // executeCommand's returned promise can reject outright (a child-process "error" event --
+    // ENOENT/EACCES/an unspawnable command), not just resolve with a non-zero exit. Uncaught,
+    // this would crash the attempt instead of yielding a finding. It's the same "could not
+    // complete" shape as an exit code, just discovered a step earlier: fail closed the same way.
+    return {
+      id: findingId(assertion),
+      category: "chain-assertion-infra",
+      message:
+        `Assertion "${assertion.id}": action "${assertion.action.name}" could not be started ` +
+        `(${error instanceof Error ? error.message : String(error)}) — could not obtain chain ` +
+        "evidence for this attempt.",
+    };
+  }
 
   // The action command itself failing to complete (non-zero exit, or timeout) is NOT evidence
   // of a policy violation — it could be a transient infra problem (RPC/relay unreachable) just
