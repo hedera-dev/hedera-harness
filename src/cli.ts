@@ -41,6 +41,7 @@ Usage:
   hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
+  hedera-harness --version
 
 Examples:
   hedera-harness init my-app

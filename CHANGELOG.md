@@ -13,6 +13,12 @@
   object. CI now runs `build-test-pack` on `windows-latest` beside
   `ubuntu-latest`, which is why none of this was visible.
 
+### Added
+
+- **`hedera-harness --version`.** The flag reached `parseCliArgs`, which only
+  knows subcommands, and answered with `Expected command "init", "run", ...`
+  and exit 1.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
