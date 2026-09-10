@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- **SCENARIO stage.** `scenarios:` funds named actors, runs real HTS / HCS /
+  HBAR steps through `@hiero-ledger/sdk` on testnet, and asserts effects on the
+  public mirror. `hedera-harness validate-scenario` runs that plan alone.
+  See `docs/scenarios.md`.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
