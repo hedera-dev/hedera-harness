@@ -147,6 +147,34 @@ export async function settle(pools, poolId, deadline) {
   assert.deepEqual(scanSource("e2e/documented.ts", source), []);
 });
 
+test("does not flag a commented-out example trailing a string literal", () => {
+  // A quote earlier in the line must not stop the comment being stripped, or
+  // the example inside it is read as the code that gates the call below.
+  const source = `
+export async function settle(pools, poolId, deadline) {
+  const label = "expired"; // while (Date.now() / 1000 < deadline) await sleep(1_000);
+  await pools.settle(poolId);
+}
+`;
+  assert.deepEqual(scanSource("e2e/labelled.ts", source), []);
+});
+
+test("still flags a deadline wait in a file holding a URL literal", () => {
+  // The other half of the same heuristic: stripping must not eat a `//` that
+  // belongs to a string, or the line it sits on stops being scanned.
+  const source = `
+export async function settle(pools, poolId, deadline) {
+  const docs = "https://docs.hedera.com/deadline";
+  while (Date.now() / 1000 < deadline) await sleep(1_000);
+  await pools.settle(poolId);
+}
+`;
+  const findings = scanSource("e2e/urls.ts", source);
+
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].id, /e2e\/urls\.ts:4$/);
+});
+
 test("does not flag a worked example inside a doc comment", () => {
   const source = `
 /**
