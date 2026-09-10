@@ -60,6 +60,7 @@ test("filterCommitableHarnessEntries skips secrets and runtime", () => {
     { code: "??", path: ".harness/runtime/skills/x/SKILL.md" },
     { code: " M", path: ".cursor/mcp.json" },
     { code: "??", path: "secrets/token.txt" },
+    { code: "??", path: "wallet/scenario-actors.json" },
   ]);
   assert.deepEqual(
     commitable.map(entry => entry.path),
@@ -67,7 +68,7 @@ test("filterCommitableHarnessEntries skips secrets and runtime", () => {
   );
   assert.deepEqual(
     skippedSecrets.map(entry => entry.path).sort(),
-    [".env", "secrets/token.txt"].sort(),
+    [".env", "secrets/token.txt", "wallet/scenario-actors.json"].sort(),
   );
 });
 
@@ -109,6 +110,10 @@ test("cleanupRuntimeInjections removes runtime/MCP but keeps runs", async () => 
     path.join(root, ".harness", "runs", "run-1", "chain-signer.json"),
     JSON.stringify({ privateKey: "x" }),
   );
+  await writeFile(
+    path.join(root, ".harness", "runs", "run-1", "scenario-actors.json"),
+    JSON.stringify([{ name: "alice", privateKeyHex: "x" }]),
+  );
 
   await mkdir(path.join(root, ".cursor"), { recursive: true });
   await writeFile(
@@ -134,6 +139,10 @@ test("cleanupRuntimeInjections removes runtime/MCP but keeps runs", async () => 
   assert.equal(await pathExists(path.join(root, ".harness", "runs", "run-1", "session.json")), true);
   assert.equal(
     await pathExists(path.join(root, ".harness", "runs", "run-1", "chain-signer.json")),
+    false,
+  );
+  assert.equal(
+    await pathExists(path.join(root, ".harness", "runs", "run-1", "scenario-actors.json")),
     false,
   );
 
