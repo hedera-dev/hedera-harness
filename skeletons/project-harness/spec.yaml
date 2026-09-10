@@ -91,4 +91,10 @@ baseline:
 #     accountIdEnv: HEDERA_OPERATOR_ID
 #     privateKeyEnv: HEDERA_OPERATOR_KEY
 #
+# SCENARIO funds named actors and runs native HTS/HCS/HBAR steps.
+# The harness executes them — the agent does not grade itself.
+# scenarios:
+#   enabled: true
+#   file: .harness/scenarios.yaml
+#
 # Note: harness logs always live under .harness/runs/ and are not configurable.
