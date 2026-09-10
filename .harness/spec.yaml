@@ -1,0 +1,36 @@
+# Example recipe exercising the HCS validator.
+#
+# Builds a feature that writes receipts to a Hedera Consensus Service topic,
+# then asserts the topic actually holds them and the running hash chain is
+# intact, rather than merely asserting a transaction succeeded.
+baseline:
+  commands:
+    - name: install
+      command: "npm ci"
+
+prd:
+  - .harness/prds/01-hcs-receipts.md
+
+chainValidation:
+  enabled: true
+  network: testnet
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+  fundingHbar: 5
+  sweepBack: true
+  expose:
+    accountIdEnv: HEDERA_ACCOUNT_ID
+    privateKeyEnv: HEDERA_PRIVATE_KEY
+
+  hcs:
+    topicIdEnv: HEDERA_TOPIC_ID
+    expectMessagesMatching: '"type":"receipt"'
+    minMessages: 1
+    verifyRunningHashChain: true
+
+    expectDenseSequence:
+      field: seq
+    timeoutMs: 30000
+
+maxAttempts: 3
