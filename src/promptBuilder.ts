@@ -357,6 +357,14 @@ function formatHardConstraints(spec: TemplateSpec): string {
       : undefined,
     "- Do not add `.env` files, private keys, API keys, or live-network credential requirements.",
     "- Produce `template.json`, `README.md`, and `AGENTS.md` suitable for scaffold-hbar.",
+    "- Hedera consensus time: a contract's `block.timestamp` is the consensus timestamp the " +
+      "network assigns, not this machine's clock, and the JSON-RPC relay has no " +
+      "`evm_increaseTime` / `evm_setNextBlockTimestamp` to move it. Never decide that a deadline " +
+      "has passed by sleeping until `Date.now()` clears it — the clocks differ, and the call you " +
+      "make next reverts when the network still reads the deadline as open, unwinding every step " +
+      "queued behind it. Ask the network instead: poll the contract or the mirror node for the " +
+      "state the deadline was supposed to produce, bound the poll with an attempt limit, and act " +
+      "on what the read returns.",
   ]
     .filter((line): line is string => Boolean(line))
     .join("\n");

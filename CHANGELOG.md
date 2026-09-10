@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- New ASSERT check: flags waiting for a contract deadline on the local clock —
+  a `Date.now()`-derived sleep or busy-wait followed by a contract call, with
+  no read of network state in between. On Hedera a deadline is resolved
+  against the consensus timestamp the network assigns, and the relay exposes
+  no `evm_increaseTime` / `evm_setNextBlockTimestamp` to move it, so a real
+  sleep on the local clock is the natural thing to reach for and it is wrong.
+  The clocks differ by fractions of a second, so the pattern passes almost
+  always and fails rarely; when it fails the next transaction reverts and
+  unwinds the steps queued behind it. The same gotcha is now called out
+  directly in the generator/repair prompts' Hard Constraints.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

@@ -272,6 +272,7 @@ export interface ValidationFinding {
     | "files"
     | "static"
     | "secret"
+    | "hedera-consensus-time"
     | "commands"
     | "agent"
     | "playwright"
