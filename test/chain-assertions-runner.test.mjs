@@ -18,6 +18,10 @@ const SIGNER = {
 const TX_ID = "0.0.1111@1699999999.123456789";
 const EVM_TX_HASH = `0x${"9".repeat(64)}`;
 
+function nodeCommand(source) {
+  return `"${process.execPath}" -e "${source}"`;
+}
+
 function baseChainValidation(assertions) {
   return {
     enabled: true,
@@ -86,7 +90,7 @@ test("mustSucceed FAILs with expected/observed evidence when the tx actually rev
   });
 });
 
-test("mustRevert FAILs when the tx unexpectedly succeeded — the killer-demo scenario", async () => {
+test("mustRevert FAILs when the tx unexpectedly succeeded", async () => {
   const findings = await run(
     [{ id: "reject-unverified-transfer", action: echoAction(), expect: { outcome: "mustRevert" } }],
     { fetchTransactionResult: async () => found({ result: "SUCCESS", consensusTimestamp: "1.1" }) },
@@ -144,7 +148,10 @@ test("finding.details never contains a real signer private key, even when the ac
         id: "a1",
         // Simulates a crashing script that dumps its own env (a plausible real failure) --
         // echo prints the literal env var value, matching how a Node crash trace would.
-        action: { name: "a", command: `echo "boom: $HARNESS_SIGNER_PRIVATE_KEY"; exit 1` },
+        action: {
+          name: "a",
+          command: nodeCommand("process.stderr.write('boom: '+process.env.HARNESS_SIGNER_PRIVATE_KEY);process.exit(1)"),
+        },
         expect: { outcome: "mustSucceed" },
       },
     ],
@@ -172,15 +179,14 @@ test("an assertion referencing an unprovisioned actor is a config violation, not
 
 test("an assertion resolves the declared actor's signer, not the primary one", async () => {
   const attackerSigner = { ...SIGNER, accountId: "0.0.9999" };
-  let usedAccountId;
   const findings = await run(
-    [{ id: "a1", actor: "attacker", action: { name: "a", command: "true" }, expect: { outcome: "mustSucceed" } }],
+    [{ id: "a1", actor: "attacker", action: { name: "a", command: nodeCommand("") }, expect: { outcome: "mustSucceed" } }],
     {
       fetchTransactionResult: async () => found({ result: "SUCCESS", consensusTimestamp: "1.1" }),
     },
     { attacker: attackerSigner },
   );
-  // No transaction id in "true"'s empty stdout — proves this reaches the actor-resolution path,
+  // No transaction id in the command's empty stdout proves this reaches the actor-resolution path,
   // not just default-to-primary, since a missing actor produces a different, distinct message.
   assert.equal(findings.length, 1);
   assert.match(findings[0].message, /no parseable transaction id or hash/);
@@ -200,7 +206,7 @@ test("a non-zero exit from the action command is chain-assertion-infra, never an
   // Even though it prints a well-formed transaction id, a non-zero exit means the action did
   // not run to completion, so that id must not be trusted as real evidence.
   const findings = await run(
-    [{ id: "a1", action: { name: "a", command: `echo "submitted ${TX_ID}"; exit 1` }, expect: { outcome: "mustSucceed" } }],
+    [{ id: "a1", action: { name: "a", command: nodeCommand(`console.log('submitted ${TX_ID}');process.exit(1)`) }, expect: { outcome: "mustSucceed" } }],
     {},
   );
   assert.equal(findings.length, 1);
@@ -214,7 +220,7 @@ test("a timed-out action command is chain-assertion-infra, never an app-policy v
     [
       {
         id: "a1",
-        action: { name: "a", command: "sleep 2", timeoutMs: 100 },
+        action: { name: "a", command: nodeCommand("setTimeout(()=>{},2000)"), timeoutMs: 100 },
         expect: { outcome: "mustSucceed" },
       },
     ],
@@ -229,7 +235,7 @@ test("a genuinely unspawnable action command is chain-assertion-infra, not an un
   // executeCommand's promise can reject outright (child-process "error" event), not just
   // resolve with a non-zero exit -- a nonexistent cwd reliably triggers this even with
   // shell:true (the shell itself can't be spawned into a directory that doesn't exist).
-  const workspacePath = "/definitely/does/not/exist/policyprobe-test-xyz";
+  const workspacePath = path.resolve(".tmp-test/does-not-exist/assertion-runner");
   const findings = await runChainAssertions({
     workspacePath,
     chainValidation: baseChainValidation([
@@ -310,7 +316,7 @@ test("balanceDelta FAILs with expected/observed when the sampled delta is wrong"
 });
 
 test("balanceDelta.accountEnv resolves from the environment at execution time", async () => {
-  process.env.POLICYPROBE_TEST_ALICE_ACCOUNT = "0.0.777";
+  process.env.HARNESS_TEST_ALICE_ACCOUNT = "0.0.777";
   try {
     let call = 0;
     const balances = [0n, 100n];
@@ -321,7 +327,7 @@ test("balanceDelta.accountEnv resolves from the environment at execution time", 
           action: echoAction(),
           expect: {
             outcome: "mustSucceed",
-            balanceDelta: { accountEnv: "POLICYPROBE_TEST_ALICE_ACCOUNT", asset: "hbar", equals: "100" },
+            balanceDelta: { accountEnv: "HARNESS_TEST_ALICE_ACCOUNT", asset: "hbar", equals: "100" },
           },
         },
       ],
@@ -332,7 +338,7 @@ test("balanceDelta.accountEnv resolves from the environment at execution time", 
     );
     assert.deepEqual(findings, []);
   } finally {
-    delete process.env.POLICYPROBE_TEST_ALICE_ACCOUNT;
+    delete process.env.HARNESS_TEST_ALICE_ACCOUNT;
   }
 });
 
@@ -344,14 +350,14 @@ test("balanceDelta.accountEnv unset in the environment is a config violation, be
         action: { name: "a", command: "false" }, // would exit 1 if reached — proves it never runs
         expect: {
           outcome: "mustSucceed",
-          balanceDelta: { accountEnv: "POLICYPROBE_TEST_UNSET_VAR", asset: "hbar", equals: "0" },
+          balanceDelta: { accountEnv: "HARNESS_TEST_UNSET_VAR", asset: "hbar", equals: "0" },
         },
       },
     ],
     {},
   );
   assert.equal(findings.length, 1);
-  assert.match(findings[0].message, /accountEnv "POLICYPROBE_TEST_UNSET_VAR" is not set/);
+  assert.match(findings[0].message, /accountEnv "HARNESS_TEST_UNSET_VAR" is not set/);
 });
 
 test("infra-error sampling the BEFORE balance aborts before the action ever runs", async () => {

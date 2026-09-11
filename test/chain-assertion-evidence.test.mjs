@@ -523,8 +523,8 @@ test(
     try {
       const receipt = await (
         await new sdk.TokenCreateTransaction()
-          .setTokenName("PolicyProbe Test Token")
-          .setTokenSymbol("PPTEST")
+          .setTokenName("Harness Assertion Test Token")
+          .setTokenSymbol("HATTEST")
           .setTreasuryAccountId(operatorId)
           .setInitialSupply(12345)
           .setDecimals(0)

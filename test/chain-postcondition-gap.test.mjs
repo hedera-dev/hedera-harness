@@ -20,11 +20,9 @@ const { runChainDeploy } = await import(
  * stage when the one below stops catching your failures"), nothing downstream ever checks
  * on-chain behavior either, so the attempt is reported PASSED.
  *
- * This is the exact, source-verified shape of the gap described in
- * policy-probe/docs/HARNESS_ARCHITECTURE.md and policy-probe/docs/PROJECT_CHARTER.md.
  */
-test("PolicyProbe gap: a chain-deploy command that exits 0 produces no findings even when it silently violates the declared policy", async () => {
-  const workspacePath = await makeTestTempDir("policyprobe-gap-");
+test("a chain-deploy command that exits 0 produces no findings for an undeclared policy", async () => {
+  const workspacePath = await makeTestTempDir("chain-postcondition-gap-");
 
   const fakeChainSigner = {
     accountId: "0.0.1234",
@@ -49,7 +47,7 @@ test("PolicyProbe gap: a chain-deploy command that exits 0 produces no findings 
               // succeed at the shell level, so the deploy command exits 0 regardless of
               // whether the policy held.
               name: "deploy-and-attempt-forbidden-transfer",
-              command: "exit 0",
+              command: `"${process.execPath}" -e ""`,
             },
           ],
         },
@@ -67,8 +65,8 @@ test("PolicyProbe gap: a chain-deploy command that exits 0 produces no findings 
   );
 });
 
-test("PolicyProbe gap: the one finding runChainDeploy CAN produce is a generic command failure, not a policy-outcome verdict", async () => {
-  const workspacePath = await makeTestTempDir("policyprobe-gap-");
+test("runChainDeploy reports command failure without a policy-outcome verdict", async () => {
+  const workspacePath = await makeTestTempDir("chain-postcondition-gap-");
 
   const context = {
     attempt: 1,
@@ -83,7 +81,7 @@ test("PolicyProbe gap: the one finding runChainDeploy CAN produce is a generic c
       chainValidation: {
         enabled: true,
         network: "testnet",
-        deploy: { commands: [{ name: "broken-shell-step", command: "exit 1" }] },
+        deploy: { commands: [{ name: "broken-shell-step", command: `"${process.execPath}" -e "process.exit(1)"` }] },
         expose: { envVars: [] },
       },
     },
@@ -106,7 +104,7 @@ test("a genuinely unspawnable deploy command is a commands finding, not an uncau
   // shell:true (the shell itself can't be spawned into a directory that doesn't exist).
   const context = {
     attempt: 1,
-    workspacePath: "/definitely/does/not/exist/policyprobe-test-xyz",
+    workspacePath: path.resolve(".tmp-test/does-not-exist/deploy-gap"),
     chainSigner: {
       accountId: "0.0.1234",
       privateKeyHex: `0x${"a".repeat(64)}`,
