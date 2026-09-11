@@ -21,7 +21,7 @@ Slash: \`/harness-init\` \`/harness-run\` \`/harness-status\` \`/harness-wallet\
 
 The orchestrator asks **what to build** first (custom idea first). A starter chip is a seed, not a skip. Interview until they confirm **Así está**. The init \`.harness/prd.md\` (“edit me”) is not a PRD. Then Automatic vs Step by step.
 
-\`harness_wallet_gate\` must be \`gate=ok\` before PRD/GENERATE (even if INIT was skipped). GENERATE walks \`.harness/tasks.md\` one unit at a time. Final automated E2E is Playwright MCP (install/enable or skip). Prefer Hedera Docs MCP (\`SearchHedera\` / \`hedera-docs\`); if those tools are missing, search \`docs.hedera.com\`. Never read \`.harness/wallet/\` private keys.
+\`harness_wallet_gate\` must be \`gate=ok\` before PRD/GENERATE (even if INIT was skipped). GENERATE walks \`.harness/tasks.md\` one unit at a time. Final automated E2E is Playwright MCP (install/enable or skip). **Hedera docs: \`SearchHedera\` (\`hedera-docs\`) first** — \`websearch\` is forbidden for Hedera while that tool is in the session. Fallback to \`docs.hedera.com\` only if MCP is missing or the call failed. Never read \`.harness/wallet/\` private keys.
 ${AGENTS_END}
 `;
 

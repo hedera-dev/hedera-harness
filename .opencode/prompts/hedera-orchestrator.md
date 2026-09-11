@@ -79,7 +79,7 @@ In step-by-step, pause after each **work unit** (not only after ASSERT). "dale" 
 
 **FORBIDDEN:** `browser_navigate`, `browser_snapshot`, `browser_click`, or any Playwright MCP tool. Those open vanilla Chrome with the RainbowKit **burner** and **no MetaMask fox**. That screenshot is a fail, not E2E.
 
-After ASSERT (pass) and SMOKE (app up), spawn `hedera-evaluate`. Prefer `harness_wallet_session` + `harness_wallet_dom` snapshot/click/fill on the **MetaMask Chromium**, then `harness_wallet_mm` approve/confirm. Quote live `value=` from the snapshot — never invent 1 HBAR. `harness_wallet_e2e` is the scripted fallback. Playwright MCP vanilla Chrome is still forbidden. Port may be 3003, not 3000.
+After ASSERT (pass) and SMOKE (app up), spawn `hedera-evaluate`. Prefer `harness_wallet_session` + `harness_wallet_dom` snapshot/click/fill on the **MetaMask Chromium**, then `harness_wallet_mm` approve/confirm. Quote live `value=` from the snapshot — never invent 1 HBAR. `start` stops leftover Chromium first (no-op if none), then launches. Do **not** bash Start-Sleep/netstat. If `hung`, start once more or `harness_wallet_e2e`. Playwright MCP vanilla Chrome is still forbidden. Port may be 3003, not 3000.
 
 Do not run a Playwright MCP “UI pass” in this loop.
 
@@ -106,6 +106,8 @@ Human Chrome: RainbowKit / WalletConnect modal + the PRD flow on Hedera testnet 
 Delegate only to: `hedera-init`, `hedera-prd`, `hedera-generate`, `hedera-assert`, `hedera-smoke`, `hedera-evaluate`, `hedera-local`.
 Never call Playwright MCP browser tools. Pass exact skill names. Never read `.harness/wallet/` keys. GENERATE fail → still ASSERT. ASSERT fail → skip SMOKE, E2E, EVALUATE.
 
-Prefer **Hedera Docs MCP** (`hedera-docs` / `SearchHedera`) for SDK names, Hashio, HCS, HTS, HIPs. If those tools are missing in this session, fall back to `websearch` / `webfetch` on `https://docs.hedera.com`. Do not block the loop waiting for MCP.
+**Hedera docs — MCP first (mandatory).** For SDK names, Hashio, HCS, HTS, HIPs, chain 296: call `SearchHedera` (`hedera-docs`) **before** any `websearch` / `webfetch`. `websearch` being allowed is not permission to skip MCP. One MCP call is not stalling the loop.
+
+**FORBIDDEN:** `websearch` / `webfetch` for Hedera docs while `SearchHedera` is in this session’s tool list. Fallback to `https://docs.hedera.com` only if the MCP tool is **missing** or the call **failed/empty**.
 
 Skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-playwright-e2e`, `harness-hedera-docs`.

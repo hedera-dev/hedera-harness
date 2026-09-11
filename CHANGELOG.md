@@ -9,7 +9,7 @@
 - **Playwright MCP E2E** (`hedera-harness mcp status|enable|install`, plugin `harness_playwright_mcp`): final automated layer after SMOKE. `ready` → evaluate with MCP; `disabled` → enable the existing entry (including `~/.config/opencode` if that is where it lives); `missing` → question install vs skip. Install writes **project** `opencode.json` only. Skip does not fail the run. New OpenCode session required after enable/install. Connect+Send stays human Chrome.
 - **Stage bash allowlist:** OpenCode subagents (`hedera-assert`, `hedera-generate`, `hedera-smoke`, …) now `allow` obligated `yarn`/`npm`/`node dist/index.js` commands (plus `head`/`tail`/`echo` wrappers) so Automatic mode is not blocked by permission prompts. `yarn next:dev` stays denied on INIT/GENERATE/ASSERT/EVALUATE.
 - **Contract scope:** PRD/tasks `Contracts: none` (default, payments/HCS/x402) vs `solidity`. TUI ASSERT skips root `yarn lint` and Hardhat unless the increment needs Solidity. Seed `packages/hardhat` is left untouched, not deleted.
-- **Hedera Docs MCP:** overlay `opencode.json` ships remote `hedera-docs` (`https://docs.hedera.com/mcp`, `SearchHedera`). Project-scoped, not `~/.config/opencode`. If the tools are missing in a session, agents fall back to web search of `docs.hedera.com`.
+- **Hedera Docs MCP:** overlay `opencode.json` ships remote `hedera-docs` (`https://docs.hedera.com/mcp`, `SearchHedera`). Project-scoped, not `~/.config/opencode`. Agents **must** call `SearchHedera` before any Hedera `websearch`. Web on `docs.hedera.com` only if MCP is missing or the call failed — “prefer” / “don’t stall” was letting GENERATE skip it.
 
 ### Fixed
 
@@ -23,6 +23,8 @@
 - **MetaMask E2E ignored the requested amount.** `harness_wallet_e2e` had no `amount`/`to` args and always filled `0.01` (or left the payments input default `0.1` if React ignored `fill`). The tool now accepts `amount=` / `to=`, writes the live input via native setter, prints `amount_filled=`, and will not Send if the field still shows the default.
 - **MetaMask session DOM.** `harness_wallet_session` keeps the extension Chromium alive. `harness_wallet_dom` snapshot/click/fill that dapp tab (aria refs + live input values) so EVALUATE works on any form, not only `pay-amount`. `harness_wallet_mm` still owns Connect/Sign. Playwright MCP stays vanilla-Chrome and stays denied.
 - **Idea consent before PRD.** First `question` puts **“Te cuento mi idea”** first (starters are examples below it). A starter chip (e.g. payments) is a **seed**, not a brief — interview is mandatory on that path too. They must pick **Así está** before Automatic vs Step by step or `hedera-prd`. “dale” / pace / clicking a starter is not consent.
+- **Wallet session handshake hang.** `start` no longer reuses a `launching` HTTP server (cancelled start + locked `.harness/wallet/chrome-profile` + leftover Chromium on :17374). Handshake after Chromium is visible times out at 60s, then the session kills the profile and returns `session=hung` instead of polling forever. Agents must not `Start-Sleep` / `netstat` through `launching`.
+- **Wallet session start stops leftovers first.** Unless a healthy `session=up` is already live, `start` always tears down residual session pid + chrome-profile Chromium (no-op if none) and then launches. Waiting on a hung leftover was two extra failed attempts before a clean start.
 
 ## 1.2.2
 

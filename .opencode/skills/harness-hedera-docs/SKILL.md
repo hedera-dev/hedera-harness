@@ -1,22 +1,29 @@
 ---
 name: harness-hedera-docs
-description: Prefer official Hedera Docs MCP (SearchHedera). If it is missing, fall back to web search of docs.hedera.com.
+description: MUST call Hedera Docs MCP (SearchHedera) before any web search for Hedera APIs. Web fallback only after MCP is missing or the call failed.
 ---
 
 # Hedera Docs MCP
 
-The overlay ships a **project** remote MCP (`hedera-docs` → `https://docs.hedera.com/mcp`). OpenCode loads it at session start. Tool name is typically `SearchHedera`.
+The overlay ships a **project** remote MCP (`hedera-docs` → `https://docs.hedera.com/mcp`). OpenCode loads it at session start. The tool is `SearchHedera` (or another name under server `hedera-docs`).
 
-## When to use it
+## Mandatory
 
-SDK imports (`@hiero-ledger` vs `@hashgraph`), Hashio, HCS, HTS, HIP numbers, RainbowKit/Hedera chain 296, WalletConnect. Prefer live docs over training data.
+For anything Hedera — SDK imports (`@hiero-ledger` vs `@hashgraph`), Hashio, HCS, HTS, HIP numbers, RainbowKit/Hedera chain 296, WalletConnect, JSON-RPC — **call `SearchHedera` first**. Live docs beat training data.
 
-## Fallback
+`websearch` / `webfetch` being **allowed** is not permission to skip MCP. Speed is not a reason to skip. “I already know this” is not a reason to skip.
 
-If `hedera-docs` / `SearchHedera` tools are **not in this session** (MCP failed to connect, disabled, offline):
+**FORBIDDEN:** `websearch` / `webfetch` for Hedera docs while `SearchHedera` or any `hedera-docs` tool is in this session’s tool list.
 
-1. `websearch` / `webfetch` on `https://docs.hedera.com` (and the page the user named).
-2. Do **not** block GENERATE or PRD waiting for MCP.
-3. Do not invent package names. If both MCP and search fail, say so.
+One MCP call is not stalling GENERATE or PRD.
+
+## Fallback (only after MCP)
+
+Use `websearch` / `webfetch` on `https://docs.hedera.com` **only if**:
+
+1. No `hedera-docs` / `SearchHedera` tool exists in this session, **or**
+2. You already called it and it **failed or returned empty**.
+
+Then say you fell back. Do not invent package names. If both MCP and search fail, say so.
 
 Do not write `~/.config/opencode` to add this server. It already lives in the project's `opencode.json`.

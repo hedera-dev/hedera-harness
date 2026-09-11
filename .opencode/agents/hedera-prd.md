@@ -105,4 +105,6 @@ Use `Contracts: solidity` instead when the increment needs Solidity/Hardhat. Tha
 - 3–7 checkboxes if there are several behaviors. Never “models then UI then tests”.
 - Keep existing routes named in the preserve section out of the list (they already work).
 
+**Hedera docs:** if the brief needs SDK/HIP/HCS/HTS names, call `SearchHedera` (`hedera-docs`) **before** `websearch`. Web fallback only if MCP is missing or the call failed.
+
 Load skills: `harness-pipeline`, `harness-hedera-docs`.

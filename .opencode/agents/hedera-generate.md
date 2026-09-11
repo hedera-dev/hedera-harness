@@ -56,7 +56,7 @@ Implement the requested extension — do **not** rebuild the app from scratch.
 Prefer targeted edits and additive changes over rewrites.
 Do not read or copy from harness run directories, seed clones, or repositories outside this workspace.
 
-For Hedera SDK names, Hashio, HCS, HTS, and HIPs: use `hedera-docs` / `SearchHedera` when those tools exist in this session. If they do not, `websearch` / `webfetch` `https://docs.hedera.com`. Do not block this unit waiting for MCP.
+**Hedera docs — call `SearchHedera` (`hedera-docs`) first** for SDK names, Hashio, HCS, HTS, HIPs, chain 296. `websearch` being allowed does not skip that. One MCP call is not stalling this unit. Fallback to `websearch` / `webfetch` `https://docs.hedera.com` **only** if `SearchHedera` is missing from the tool list or the call failed/empty.
 
 If `prd:` is an ordered list, deliver **only** the current brief. Earlier increments are already done — do not redo them.
 
@@ -74,6 +74,7 @@ Keep the burner connector **out of the auto-connect path**. `burner-connector` s
 - Copying from harness run directories or repos outside this workspace
 - Demanding HashPack-native HIP-820 for a normal payments / EVM dApp
 - When `hardhat=skip`: editing `packages/hardhat`, `packages/foundry`, or adding `.sol` files
+- `websearch` / `webfetch` for Hedera docs while `SearchHedera` is in this session’s tool list
 
 ## Logging
 
