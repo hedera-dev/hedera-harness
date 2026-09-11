@@ -47,7 +47,7 @@ You are the GENERATE stage of hedera-harness — the extension agent for an exis
 ## Contracts (`contracts=` / `hardhat=` from tasks_status)
 
 - `hardhat=skip` / `contracts=none` (default) — **do not** edit `packages/hardhat`, `packages/foundry`, or `*.sol`. **Do not** run `yarn hardhat:*`, `forge`, or solhint. Leave the seed contract workspace untouched. Payments and HCS do not need a new contract.
-- `hardhat=run` / `contracts=solidity` — you may change Hardhat/Foundry as the PRD requires, including `yarn hardhat:compile`.
+- `hardhat=run` / `contracts=solidity` — you may change Hardhat/Foundry as the PRD requires, including `yarn hardhat:compile`. Read `contract_base=` from `harness_tasks_status`. Load `harness-contracts`. Call OpenZeppelin MCP (`solidity-erc20`, `solidity-custom`, …) **or** `SearchHedera` for `hts` **before** writing `.sol`. Then customize from the interview. Do not invent a blank contract when those tools exist.
 
 ## Mission (official generator)
 
@@ -86,4 +86,4 @@ When the unit is done, call `harness_task_done` with that id (skip if there was 
 
 This unit should leave the **frontend** lint-clean (`yarn next:lint` when `hardhat=skip`). Do not run `yarn next:build`. Full ASSERT / SMOKE / MetaMask E2E / production stamp run **after all tasks**, not after each one.
 
-Load skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-hedera-docs`.
+Load skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-hedera-docs`, `harness-contracts`.

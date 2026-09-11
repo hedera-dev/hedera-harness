@@ -533,7 +533,7 @@ export const HederaHarnessPlugin = async () => {
       }),
       harness_tasks_status: tool({
         description:
-          "Read .harness/tasks.md work units (T1, T2…) and contract scope. contracts=none|solidity, hardhat=skip|run, assert=next-only|next+hardhat. Default none (payments/HCS) — skip Hardhat. If file is missing, spawn one hedera-generate for the whole PRD.",
+          "Read .harness/tasks.md work units (T1, T2…) and contract scope. contracts=none|solidity, contract_base=none|token|nft|escrow|payroll|vesting|governor|hts|custom, hardhat=skip|run. Default none (payments/HCS) — skip Hardhat. solidity → GENERATE uses OpenZeppelin MCP + harness-contracts; EVALUATE uses MetaMask on the contract UI. If file is missing, spawn one hedera-generate for the whole PRD.",
         args: {
           workspace: tool.schema.string().optional(),
         },

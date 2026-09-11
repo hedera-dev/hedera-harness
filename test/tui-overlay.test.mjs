@@ -66,7 +66,10 @@ test("tui install copies overlay and tui uninstall removes it", async () => {
   assert.equal(config.mcp?.["hedera-docs"]?.type, "remote");
   assert.equal(config.mcp?.["hedera-docs"]?.url, overlay.HEDERA_DOCS_MCP_URL);
   assert.equal(config.mcp?.["hedera-docs"]?.enabled, true);
+  assert.equal(config.mcp?.["openzeppelin-solidity"]?.type, "remote");
+  assert.equal(config.mcp?.["openzeppelin-solidity"]?.url, overlay.OPENZEPPELIN_MCP_URL);
   assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-hedera-docs", "SKILL.md")));
+  assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-contracts", "SKILL.md")));
 
   const pointer = JSON.parse(await readFile(path.join(root, ".opencode", "hedera-harness.json"), "utf8"));
   assert.equal(pointer.schemaVersion, 1);
@@ -119,6 +122,7 @@ test("tui install merges existing opencode.json and --keep-default leaves Gentle
   assert.equal(leftover.agent["hedera-orchestrator"], undefined);
   assert.ok(leftover.agent.build);
   assert.equal(leftover.mcp["hedera-docs"], undefined);
+  assert.equal(leftover.mcp["openzeppelin-solidity"], undefined);
   assert.equal(leftover.mcp.keep.command[0], "echo");
   const agentsAfter = await readFile(path.join(root, "AGENTS.md"), "utf8");
   assert.match(agentsAfter, /# mine/);
@@ -185,5 +189,5 @@ test("stage agents allow obligated yarn commands without a permission prompt", a
   assert.match(assertMd, /"yarn next:dev\*": deny/);
   assert.match(assertMd, /"tail \*": allow/);
   const smokeMd = await readFile(path.join(agentsDir, "hedera-smoke.md"), "utf8");
-  assert.doesNotMatch(smokeMd, /"yarn next:dev\*": deny/);
+  assert.match(smokeMd, /"yarn next:dev\*": deny/);
 });

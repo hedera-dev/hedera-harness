@@ -98,6 +98,24 @@ test("markTaskDone of the last task reports all_done", async () => {
   assert.match(tasks.formatTasksStatus(after), /all_done=true/);
 });
 
+test("inspectTasks reports contract_base from an explicit header", async () => {
+  const root = await makeTestTempDir("tasks-base-header-");
+  await mkdir(path.join(root, ".harness"), { recursive: true });
+  await writeFile(
+    path.join(root, ".harness", "tasks.md"),
+    `# Tasks
+Contracts: solidity
+ContractBase: escrow
+
+- [ ] T1: Deposit into escrow
+`,
+  );
+  const status = tasks.inspectTasks(root);
+  assert.equal(status.contracts, "solidity");
+  assert.equal(status.contractBase, "escrow");
+  assert.match(tasks.formatTasksStatus(status), /contract_base=escrow/);
+});
+
 test("inspectTasks honors Contracts header over a payments PRD", async () => {
   const root = await makeTestTempDir("tasks-solidity-header-");
   await mkdir(path.join(root, ".harness"), { recursive: true });
@@ -113,7 +131,9 @@ Contracts: solidity
   );
   const status = tasks.inspectTasks(root);
   assert.equal(status.contracts, "solidity");
+  assert.equal(status.contractBase, "hts");
   assert.match(tasks.formatTasksStatus(status), /hardhat=run/);
+  assert.match(tasks.formatTasksStatus(status), /contract_base=hts/);
   assert.match(tasks.formatTasksStatus(status), /assert=next\+hardhat/);
 });
 

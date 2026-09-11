@@ -36,3 +36,21 @@ test("hardhatGate follows contract scope", () => {
   assert.equal(scope.hardhatGate("none"), "skip");
   assert.equal(scope.hardhatGate("solidity"), "run");
 });
+
+test("parseContractBaseLine and ozMcpToolForBase", () => {
+  assert.equal(scope.parseContractBaseLine("Contracts: solidity\nContractBase: escrow\n"), "escrow");
+  assert.equal(scope.parseContractBaseLine("Contracts: none\n"), undefined);
+  assert.equal(scope.ozMcpToolForBase("token"), "solidity-erc20");
+  assert.equal(scope.ozMcpToolForBase("nft"), "solidity-erc721");
+  assert.equal(scope.ozMcpToolForBase("governor"), "solidity-governor");
+  assert.equal(scope.ozMcpToolForBase("escrow"), "solidity-custom");
+  assert.equal(scope.ozMcpToolForBase("payroll"), "solidity-custom");
+  assert.equal(scope.ozMcpToolForBase("hts"), undefined);
+  assert.equal(scope.ozMcpToolForBase("none"), undefined);
+});
+
+test("inferContractBase is none unless solidity is in play", () => {
+  assert.equal(scope.inferContractBase("Send HBAR with RainbowKit.\n"), "none");
+  assert.equal(scope.inferContractBase("Contracts: solidity\nAn escrow contract holds the funds.\n"), "escrow");
+  assert.equal(scope.inferContractBase("Call the HTS precompile at 0x167.\n"), "hts");
+});

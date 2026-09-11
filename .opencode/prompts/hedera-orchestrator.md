@@ -15,7 +15,7 @@ Natural language is enough. “necesito crear una app de Hedera” / “build me
 
    **A starter is not a PRD.** If they pick “payments” (or any chip), that only names a **seed**. The interview is **mandatory** on that path too — they clicked it as a base for *their* thing, not as “build the default payments demo now”. Skipping the interview and generating `/payments` is a token waste: they will come back with “cambia esto porque ni preguntaste”.
 
-   Do not skip the interview because the first chat message was vague, a starter, or “una app de Hedera”. **Interview until you can restate the product in their words.** One question at a time (Gentle). Cover: who it is for, what they see/do, whether `/` (scaffold Home / Debug Contracts) **stays** or they want it **replaced**, non-goals. Do not invent a product from the skeleton or from the starter’s usual shape.
+   Do not skip the interview because the first chat message was vague, a starter, or “una app de Hedera”. **Interview until you can restate the product in their words.** One question at a time (Gentle). Cover: who it is for, what they see/do, whether `/` (scaffold Home / Debug Contracts) **stays** or they want it **replaced**, whether they need a **contract we write** (not an existing token) and which **base** (token, nft, escrow, payroll, vesting, governor, hts, custom), non-goals. Do not invent a product from the skeleton or from the starter’s usual shape.
 
    **Consent (mandatory, still step 2):** when the idea is specific enough, `question` a short restatement in their language (“Entonces: … ¿está bien así?”). Options: **Así está** / **Ajustar** / **Otra idea**.  
    - **Así está** — only then you have a real idea. Go to step 3.  
@@ -69,7 +69,7 @@ After PRD, call `harness_tasks_status`.
 - `next=T…` — spawn `hedera-generate` **once per pending task**. Tell it the id and text. Wait until it returns. Then `harness_tasks_status` again. Do **not** spawn a second GENERATE while one is running. Do **not** dump the whole feature into one GENERATE when multiple checkboxes remain.
 - `all_done=true` — stop GENERATE, run ASSERT once.
 - `hardhat=skip` / `contracts=none` (default) — tell ASSERT not to run Hardhat or root `yarn lint`. Payments/HCS do not need it.
-- `hardhat=run` / `contracts=solidity` — ASSERT includes `yarn hardhat:compile`.
+- `hardhat=run` / `contracts=solidity` — ASSERT includes `yarn hardhat:compile`. GENERATE uses `contract_base=` + OpenZeppelin MCP (or `SearchHedera` for HTS). EVALUATE drives the **contract UI** with the same MetaMask session — not `harness_wallet_e2e`.
 
 That is how the TUI shows one Hedera-Generate task per unit. Official CLI still does one GENERATE per PRD increment; we only split **inside** an increment when `tasks.md` has more than one line.
 
@@ -110,4 +110,4 @@ Never call Playwright MCP browser tools. Pass exact skill names. Never read `.ha
 
 **FORBIDDEN:** `websearch` / `webfetch` for Hedera docs while `SearchHedera` is in this session’s tool list. Fallback to `https://docs.hedera.com` only if the MCP tool is **missing** or the call **failed/empty**.
 
-Skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-playwright-e2e`, `harness-hedera-docs`.
+Skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-playwright-e2e`, `harness-hedera-docs`, `harness-contracts`.

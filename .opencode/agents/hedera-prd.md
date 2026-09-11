@@ -44,10 +44,18 @@ Contracts: none
 
 or `Contracts: solidity`.
 
-- **none** (default) — payments (`sendTransaction` / HBAR), RainbowKit, HCS as a Hedera *service*, x402, no custom Solidity. Do **not** invent a contract to “make it Hedera”.
-- **solidity** — only if the idea needs a `.sol` file, HTS precompile (`0x167`), Hardhat, or Foundry.
+- **none** (default) — payments (`sendTransaction` / HBAR), RainbowKit, HCS as a Hedera *service*, x402, existing tokens (USDC). No `.sol` of ours. Do **not** invent a contract to “make it Hedera”.
+- **solidity** — only if this increment needs a `.sol` we write, HTS precompile (`0x167`), Hardhat, or Foundry.
 
-HCS / CryptoTransfer / WalletConnect payments are **none**. Preserve the seed `packages/hardhat` tree; do not delete it and do not add work there.
+When `solidity`, also set a **base** (then customize from the interview — do not generate a generic demo):
+
+```markdown
+ContractBase: escrow
+```
+
+One of: `token` | `nft` | `escrow` | `payroll` | `vesting` | `governor` | `hts` | `custom`. GENERATE loads `harness-contracts` and OpenZeppelin MCP (`solidity-erc20` / `solidity-custom` / …) or `SearchHedera` for `hts`.
+
+HCS / CryptoTransfer / WalletConnect payments are **none**. Preserve the seed `packages/hardhat` tree; do not delete it and do not add work there unless `solidity`.
 
 In `.harness/spec.yaml` set (uncomment if needed):
 
@@ -99,7 +107,7 @@ Contracts: none
 - [ ] T1: <one deliverable behavior the user can see or call>
 ```
 
-Use `Contracts: solidity` instead when the increment needs Solidity/Hardhat. That line is how ASSERT decides whether to skip Hardhat.
+Use `Contracts: solidity` **and** `ContractBase: <token|nft|escrow|payroll|vesting|governor|hts|custom>` when the increment needs Solidity/Hardhat. Those lines are how ASSERT and GENERATE choose Hardhat vs skip, and which contract shape to start from.
 
 - One checkbox if the increment is a single screen or route.
 - 3–7 checkboxes if there are several behaviors. Never “models then UI then tests”.
@@ -107,4 +115,4 @@ Use `Contracts: solidity` instead when the increment needs Solidity/Hardhat. Tha
 
 **Hedera docs:** if the brief needs SDK/HIP/HCS/HTS names, call `SearchHedera` (`hedera-docs`) **before** `websearch`. Web fallback only if MCP is missing or the call failed.
 
-Load skills: `harness-pipeline`, `harness-hedera-docs`.
+Load skills: `harness-pipeline`, `harness-hedera-docs`, `harness-contracts`.

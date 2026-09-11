@@ -9,6 +9,13 @@
       "oauth": false,
       "timeout": 15000
     },
+    "openzeppelin-solidity": {
+      "type": "remote",
+      "url": "https://mcp.openzeppelin.com/contracts/solidity/mcp",
+      "enabled": true,
+      "oauth": false,
+      "timeout": 20000
+    },
     "playwright": {
       "type": "local",
       "command": ["npx", "-y", "@playwright/mcp@latest"],

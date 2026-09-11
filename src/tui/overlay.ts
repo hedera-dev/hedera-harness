@@ -8,6 +8,8 @@ import type { TuiCliOptions } from "../types.js";
 
 export const HEDERA_DOCS_MCP_NAME = "hedera-docs";
 export const HEDERA_DOCS_MCP_URL = "https://docs.hedera.com/mcp";
+export const OPENZEPPELIN_MCP_NAME = "openzeppelin-solidity";
+export const OPENZEPPELIN_MCP_URL = "https://mcp.openzeppelin.com/contracts/solidity/mcp";
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const POINTER_NAME = "hedera-harness.json";
 const AGENTS_START = "<!-- hedera-harness-tui:start -->";
@@ -387,7 +389,10 @@ async function stripOpencodeJson(
   const agent = { ...((current.agent ?? {}) as Record<string, unknown>) };
   const hadHedera = Object.prototype.hasOwnProperty.call(agent, "hedera-orchestrator");
   const hadDefault = current.default_agent === "hedera-orchestrator";
-  const strippedMcp = stripHederaDocsMcp(current);
+  const strippedHedera = stripNamedMcp(current, HEDERA_DOCS_MCP_NAME);
+  const strippedOz = stripNamedMcp(current, OPENZEPPELIN_MCP_NAME);
+  const strippedPlaywright = stripNamedMcp(current, "playwright");
+  const strippedMcp = strippedHedera || strippedOz || strippedPlaywright;
   delete agent["hedera-orchestrator"];
   if (Object.keys(agent).length === 0) {
     delete current.agent;
@@ -404,8 +409,7 @@ async function stripOpencodeJson(
   if (!hadHedera && !hadDefault && !strippedMcp) {
     return "kept";
   }
-  const leftoverKeys = Object.keys(current).filter(key => key !== "$schema");
-  if (pointer?.createdOpencodeJson && leftoverKeys.length === 0) {
+  if (pointer?.createdOpencodeJson) {
     await rm(destConfig, { force: true });
     return "deleted";
   }
@@ -507,17 +511,17 @@ function mergeMcpRecords(
   return merged;
 }
 
-function stripHederaDocsMcp(config: Record<string, unknown>): boolean {
+function stripNamedMcp(config: Record<string, unknown>, name: string): boolean {
   const mcp = asJsonRecord(config.mcp);
   if (!mcp) return false;
   let changed = false;
-  if (Object.prototype.hasOwnProperty.call(mcp, HEDERA_DOCS_MCP_NAME)) {
-    delete mcp[HEDERA_DOCS_MCP_NAME];
+  if (Object.prototype.hasOwnProperty.call(mcp, name)) {
+    delete mcp[name];
     changed = true;
   }
   const servers = asJsonRecord(mcp.servers);
-  if (servers && Object.prototype.hasOwnProperty.call(servers, HEDERA_DOCS_MCP_NAME)) {
-    delete servers[HEDERA_DOCS_MCP_NAME];
+  if (servers && Object.prototype.hasOwnProperty.call(servers, name)) {
+    delete servers[name];
     changed = true;
     if (Object.keys(servers).length === 0) delete mcp.servers;
     else mcp.servers = servers;
