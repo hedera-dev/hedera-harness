@@ -229,6 +229,35 @@ hedera-harness validate-semantic   # run EVALUATE only, against a workspace you 
 
 `doctor` reports everything at once rather than stopping at the first problem.
 
+### Misspelled keys
+
+Every block defaults what it can, so a key the harness does not recognise is not
+a load error — that one key falls back and the rest of the block loads normally.
+Silently, until the run behaves in a way the recipe does not explain:
+
+```yaml
+chainValidation:
+  enable: false      # not `enabled` — CHAIN stays on
+  fundingHBAR: 50    # not `fundingHbar` — the ephemeral account gets 10
+  expose:
+    envVar:          # not `envVars` — the app is started without them
+      - NEXT_PUBLIC_TIP_JAR
+```
+
+`doctor` names them before the run starts:
+
+```
+  ! recipe — .harness/spec.yaml loads with 3 warning(s)
+      ignoring unknown key "chainValidation.enable" — did you mean "enabled"?
+      ignoring unknown key "chainValidation.fundingHBAR" — did you mean "fundingHbar"?
+      ignoring unknown key "chainValidation.expose.envVar" — did you mean "envVars"?
+```
+
+They stay warnings: a key with no close match is more likely to come from a
+newer recipe than to be a typo, and that case says so instead of guessing.
+`generator.env` and `templateMetadata` hold caller-defined names, so nothing
+inside them is reported.
+
 Recipes must declare `schemaVersion: 3`. Older keys such as `contract:` or
 `extend:` are rejected at load (`use eval:` / `use baseline:`). Regenerating
 with `hedera-harness init` and reapplying edits is the supported path when a

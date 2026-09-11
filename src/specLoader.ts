@@ -18,7 +18,6 @@ import {
   DEFAULT_STATIC_VALIDATOR_PATH,
   HARNESS_JSONL_LOG_PATH,
   HARNESS_NOTES_LOG_PATH,
-  KNOWN_SPEC_KEYS,
   MIN_SUPPORTED_SCHEMA_VERSION,
   REMOVED_SPEC_KEYS,
   SPEC_SCHEMA_VERSION,
@@ -27,6 +26,7 @@ import {
   isAgentPresetName,
   type AgentPresetName,
 } from "./specDefaults.js";
+import { collectUnknownSpecKeys, formatUnknownSpecKeys } from "./specKeys.js";
 
 export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplateSpec> {
   const absoluteSpecPath = path.resolve(specPath);
@@ -153,17 +153,15 @@ function rejectRemovedKeys(parsed: Record<string, unknown>, specPath: string): v
 /**
  * Unknown keys were silently ignored, so a recipe written for a newer harness could
  * lose an entire block — a renamed `baseline` would simply not run — with no error.
+ *
+ * The same hole runs one level down, where it is worse: the block loads, so
+ * nothing looks wrong, and only the misspelled key falls back to its default.
+ * `chainValidation.enable: false` leaves CHAIN switched on. Nested keys are
+ * reported with their dotted path and, when one is close, the key that was
+ * probably meant.
  */
 function warnUnknownKeys(parsed: Record<string, unknown>, warnings: string[]): void {
-  const unknown = Object.keys(parsed).filter(
-    key => !KNOWN_SPEC_KEYS.has(key) && !(key in REMOVED_SPEC_KEYS),
-  );
-  if (unknown.length > 0) {
-    warnings.push(
-      `ignoring unknown key(s): ${unknown.join(", ")}. ` +
-        "If these come from a newer recipe, upgrade the harness.",
-    );
-  }
+  warnings.push(...formatUnknownSpecKeys(collectUnknownSpecKeys(parsed)));
 }
 
 /**
