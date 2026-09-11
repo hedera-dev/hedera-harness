@@ -121,6 +121,45 @@ test("recipe warnings surface as warnings, not failures", async () => {
   assert.match(formatDoctorReport(report), /warning\(s\)/);
 });
 
+test("doctor names every misspelled recipe key, one indented line each", async () => {
+  const root = await makeProject({
+    specBody: specWith(
+      "node",
+      `validators:
+  static: .harness/validators/static.json
+  comands: .harness/validators/yarn.json
+chainValidation:
+  enable: false
+  network: testnet
+  fundingHBAR: 50
+  operator:
+    accountIdEnv: HEDERA_OPERATOR_ID
+    privateKeyEnv: HEDERA_OPERATOR_KEY
+`,
+    ),
+  });
+
+  const report = await runDoctor({
+    specPath: path.join(root, ".harness", "spec.yaml"),
+    workspacePath: root,
+  });
+
+  const recipe = report.checks.find(check => check.name === "recipe");
+  assert.equal(recipe.status, "warn");
+  assert.match(recipe.detail, /loads with 3 warning\(s\)/);
+  assert.match(recipe.fix, /"validators.comands" — did you mean "commands"\?/);
+  assert.match(recipe.fix, /"chainValidation.enable" — did you mean "enabled"\?/);
+  assert.match(recipe.fix, /"chainValidation.fundingHBAR" — did you mean "fundingHbar"\?/);
+
+  // Continuation lines are indented once, by formatDoctorReport. Pre-indenting
+  // in the check doubled it as soon as a recipe reported more than one warning.
+  const indents = formatDoctorReport(report)
+    .split("\n")
+    .filter(line => line.includes("ignoring unknown key"))
+    .map(line => line.length - line.trimStart().length);
+  assert.deepEqual(indents, [6, 6, 6]);
+});
+
 test("doctor reports an unknown agent CLI as a failure", async () => {
   const root = await makeProject({
     specBody: specWith("definitely-not-a-real-binary-xyz"),

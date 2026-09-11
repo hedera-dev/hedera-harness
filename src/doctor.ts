@@ -159,7 +159,9 @@ async function loadRecipe(
           loaded.warnings.length > 0
             ? `${loaded.specPath} loads with ${loaded.warnings.length} warning(s)`
             : `${loaded.specPath} (schema v${loaded.spec.schemaVersion})`,
-        fix: loaded.warnings.length > 0 ? loaded.warnings.join("\n      ") : undefined,
+        // Joined plain: formatDoctorReport indents continuation lines itself, and
+        // pre-indenting here doubled it as soon as a recipe reported more than one.
+        fix: loaded.warnings.length > 0 ? loaded.warnings.join("\n") : undefined,
       },
     };
   } catch (error) {
