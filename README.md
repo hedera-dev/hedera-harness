@@ -165,6 +165,7 @@ Operational knobs live in the environment, not the recipe. Editing a recipe to s
 | `HARNESS_MAX_ATTEMPTS` | repair attempts per run |
 | `HARNESS_AGENT_TIMEOUT_S` | wall-clock budget per agent invocation |
 | `HARNESS_AGENT_IDLE_TIMEOUT_MS` | kill an agent that stops producing output (default 90000) |
+| `HARNESS_AGENT_TOOL_IDLE_TIMEOUT_MS` | silence allowed while one of the agent's own commands is still running (default 600000) |
 | `HARNESS_MODEL` / `HARNESS_FIX_MODEL` | override the preset's models |
 | `HARNESS_NO_MODEL_SWITCH` | disable dropping to a cheaper model on repairs |
 
@@ -182,7 +183,8 @@ Precedence: CLI flag > environment > recipe > harness default.
 plain ChatGPT account, so the preset pins the CLI's own default and `HARNESS_MODEL` overrides it. EVALUATE
 runs under `--approve-for-me`, which is what makes `codex exec` accept MCP browser calls at all — the CLI
 rejects that flag alongside `--sandbox`, so the validator is not additionally sandboxed to read-only the
-way it is on Claude.
+way it is on Claude. That sandbox keeps writes inside the project; the preset re-enables its network access,
+which is off by default, so the agent can add a dependency and reach Hedera testnet.
 
 ```bash
 # schema v3 prerelease — npm latest is still 1.2.2
