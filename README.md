@@ -140,7 +140,9 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 
 **`init`** decides what to do from the target. An in-place adopt of an existing
 `package.json` rewrites the starter recipe to that project's package manager
-and scripts, so an npm/Express app is not told to run `yarn next:build`.
+and scripts, so an npm/Express app is not told to run `yarn next:build`,
+forbidden-npm validators, or Scaffold-HBAR static checks. Only newly written
+`.harness/` files are adapted; a file that was already there is left alone.
 
 | Target | Behaviour |
 |---|---|

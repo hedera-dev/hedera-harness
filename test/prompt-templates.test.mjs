@@ -115,7 +115,16 @@ test("the generator prompt renders with the PRD and honours the skills section",
   assert.match(withoutSkills, /Add a tip jar panel/);
   assert.match(withoutSkills, /scaffold-hbar and Hedera best practices/);
   assert.match(withoutSkills, /Forbidden commands: npm install/);
+  assert.match(withoutSkills, /Use Yarn workspace commands only/);
   assert.match(withoutSkills, /packages\/nextjs\/app\/page\.tsx/);
+
+  const npmPrompt = await prompts.buildSessionPrompt(
+    { ...spec, constraints: { packageManager: "npm", forbiddenCommands: ["yarn install"] } },
+    1,
+    [],
+  );
+  assert.match(npmPrompt, /Use npm workspace commands only/);
+  assert.doesNotMatch(npmPrompt, /Use Yarn workspace commands only/);
 
   const withSkills = await prompts.buildSessionPrompt(spec, 1, [
     { name: "quality-gates", relativePath: ".harness/runtime/skills/quality-gates/SKILL.md", description: "Gate rules." },

@@ -64,11 +64,9 @@ export async function provisionHarnessProject(
     writtenFiles.push(path.relative(targetDir, keep));
   }
 
-  // Scaffold-HBAR skeleton is Yarn + Next. An in-place adopt of an npm/pnpm
-  // app must not inherit `yarn next:build` or a validator that forbids npm.
-  if (skippedFiles.every(file => !file.endsWith("spec.yaml"))) {
-    await adaptProvisionedRecipe(targetDir);
-  }
+  // Scaffold-HBAR skeleton is Yarn + Next. Rewrite only files this call wrote
+  // so a partial existing `.harness/` is never clobbered.
+  await adaptProvisionedRecipe(targetDir, writtenFiles);
 
   return {
     harnessDir,

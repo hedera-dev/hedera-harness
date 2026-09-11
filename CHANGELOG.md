@@ -5,11 +5,16 @@
 ### Fixed
 
 - **`init` adopt no longer plants a Yarn + Next recipe on npm/pnpm apps.**
-  In-place adopt copies the Scaffold-HBAR skeleton, then rewrites baseline
-  and `.harness/validators/yarn.json` from the project's lockfile and
-  scripts (`typecheck` / `build` / `test`). Next steps say
-  `npm run harness:run` when the app is npm. Scaffold-HBAR / Yarn apps keep
-  `yarn next:build`.
+  In-place adopt copies the Scaffold-HBAR skeleton, then rewrites only the
+  recipe files it just wrote: baseline commands, `constraints.packageManager`,
+  command validator, and Scaffold-HBAR-only static assertions
+  (`yarn@3.2.3`, `packages/nextjs`, README `yarn install`). Scripts are
+  taken from the project (`next:build` / `build` / `typecheck` / `test`);
+  a missing script is omitted rather than inventing `npm run build`.
+  Next steps say `npm run harness:run` when the app is npm. Scaffold-HBAR /
+  Yarn apps keep `yarn next:build`. Existing `.harness/` files stay
+  untouched. Install fingerprinting hashes `package-lock.json` and
+  `pnpm-lock.yaml` as well as `yarn.lock`.
 
 ## 2.0.0-rc.4 — 2026-09-03
 

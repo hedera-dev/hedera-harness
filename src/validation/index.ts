@@ -291,7 +291,7 @@ async function validateCommands(
       const currentFingerprint = await computeInstallFingerprint(workspacePath);
       const cachedFingerprint = await readCachedInstallFingerprint(installCachePath);
       if (cachedFingerprint && cachedFingerprint === currentFingerprint) {
-        console.log("[hedera-harness] Skipping yarn install (dependency fingerprint unchanged).");
+        console.log("[hedera-harness] Skipping install (dependency fingerprint unchanged).");
         commandResults.push({
           command: commandConfig.command,
           args: [],

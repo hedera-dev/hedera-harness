@@ -344,11 +344,18 @@ async function loadEvalAssertions(
   return map;
 }
 
+function workspaceCommandLabel(packageManager: string | undefined): string {
+  const value = packageManager?.trim().toLowerCase() ?? "";
+  if (value.startsWith("pnpm")) return "pnpm";
+  if (value.startsWith("npm")) return "npm";
+  return "Yarn";
+}
+
 function formatHardConstraints(spec: TemplateSpec): string {
   return [
     "## Hard Constraints",
     "- Keep all changes inside the current workspace.",
-    "- Use Yarn workspace commands only.",
+    `- Use ${workspaceCommandLabel(spec.constraints?.packageManager)} workspace commands only.`,
     spec.constraints?.forbiddenWorkspaces?.length
       ? `- Forbidden workspaces: ${spec.constraints.forbiddenWorkspaces.join(", ")}`
       : undefined,

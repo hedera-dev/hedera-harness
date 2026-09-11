@@ -10,7 +10,7 @@ import { defaultForbiddenCommands } from "./specDefaults.js";
 export interface AdaptedRecipeCommands {
   tool: PackageInstallTool;
   install: string;
-  build: string;
+  build?: string;
   lint?: string;
 }
 
@@ -18,6 +18,14 @@ export function scriptRunner(tool: PackageInstallTool, script: string): string {
   if (tool === "yarn") return `yarn ${script}`;
   if (tool === "pnpm") return `pnpm ${script}`;
   return `npm run ${script}`;
+}
+
+export function recipeFileWasWritten(
+  writtenFiles: string[] | undefined,
+  relativePosix: string,
+): boolean {
+  if (!writtenFiles) return true;
+  return writtenFiles.some(file => file.replaceAll("\\", "/") === relativePosix);
 }
 
 export function pickAdaptedRecipeCommands(
@@ -31,7 +39,7 @@ export function pickAdaptedRecipeCommands(
   const install =
     tool === "yarn" ? "yarn install" : tool === "pnpm" ? "pnpm install" : "npm install";
 
-  let build: string;
+  let build: string | undefined;
   if (names["next:build"]) {
     build = scriptRunner(tool, "next:build");
   } else if (names.build) {
@@ -42,14 +50,12 @@ export function pickAdaptedRecipeCommands(
     build = scriptRunner(tool, "test");
   } else if (tool === "yarn") {
     build = "yarn next:build";
-  } else {
-    build = scriptRunner(tool, "build");
   }
 
   return {
     tool,
     install,
-    build,
+    ...(build ? { build } : {}),
     ...(names.lint ? { lint: scriptRunner(tool, "lint") } : {}),
   };
 }
@@ -64,19 +70,49 @@ export function harnessRunNextStep(
   return "npm run harness:run";
 }
 
-export async function adaptProvisionedRecipe(targetDir: string): Promise<AdaptedRecipeCommands> {
+export async function isScaffoldHbarProject(targetDir: string): Promise<boolean> {
+  return pathExists(path.join(targetDir, "packages", "nextjs", "package.json"));
+}
+
+export function buildAdoptedStaticValidator(): {
+  name: string;
+  description: string;
+  jsonAssertions: unknown[];
+  fileAssertions: { required: string[]; forbidden: string[] };
+  textAssertions: unknown[];
+} {
+  return {
+    name: "my-feature-static",
+    description:
+      "Static invariants for the project-centric harness recipe. Adjust required files and text assertions to match your PRD.",
+    jsonAssertions: [],
+    fileAssertions: {
+      required: ["package.json", ".harness/spec.yaml", ".harness/prd.md"],
+      forbidden: [".env"],
+    },
+    textAssertions: [],
+  };
+}
+
+export async function adaptProvisionedRecipe(
+  targetDir: string,
+  writtenFiles?: string[],
+): Promise<AdaptedRecipeCommands> {
   const tool = await resolvePackageInstallTool({ projectRoot: targetDir });
   const scripts = await readPackageScripts(targetDir);
   const adapted = pickAdaptedRecipeCommands(tool, scripts);
 
   const specPath = path.join(targetDir, ".harness", "spec.yaml");
-  if (await pathExists(specPath)) {
+  if (recipeFileWasWritten(writtenFiles, ".harness/spec.yaml") && (await pathExists(specPath))) {
     const spec = await readFile(specPath, "utf8");
     await writeFile(specPath, rewriteSkeletonBaseline(spec, adapted), "utf8");
   }
 
   const commandsPath = path.join(targetDir, ".harness", "validators", "yarn.json");
-  if (await pathExists(commandsPath)) {
+  if (
+    recipeFileWasWritten(writtenFiles, ".harness/validators/yarn.json") &&
+    (await pathExists(commandsPath))
+  ) {
     await writeFile(
       commandsPath,
       `${JSON.stringify(buildCommandValidator(adapted), null, 2)}\n`,
@@ -84,8 +120,21 @@ export async function adaptProvisionedRecipe(targetDir: string): Promise<Adapted
     );
   }
 
+  const staticPath = path.join(targetDir, ".harness", "validators", "static.json");
+  if (
+    recipeFileWasWritten(writtenFiles, ".harness/validators/static.json") &&
+    (await pathExists(staticPath)) &&
+    !(await isScaffoldHbarProject(targetDir))
+  ) {
+    await writeFile(staticPath, `${JSON.stringify(buildAdoptedStaticValidator(), null, 2)}\n`, "utf8");
+  }
+
   const prdPath = path.join(targetDir, ".harness", "prd.md");
-  if (adapted.tool !== "yarn" && (await pathExists(prdPath))) {
+  if (
+    adapted.tool !== "yarn" &&
+    recipeFileWasWritten(writtenFiles, ".harness/prd.md") &&
+    (await pathExists(prdPath))
+  ) {
     const prd = await readFile(prdPath, "utf8");
     await writeFile(prdPath, rewriteAdoptedPrd(prd, adapted), "utf8");
   }
@@ -97,9 +146,32 @@ export function rewriteSkeletonBaseline(
   spec: string,
   adapted: AdaptedRecipeCommands,
 ): string {
-  return spec
-    .replace(/^(\s+command: )yarn install$/m, `$1${adapted.install}`)
-    .replace(/^(\s+command: )yarn next:build$/m, `$1${adapted.build}`);
+  let next = spec.replace(/^(\s+command: )yarn install$/m, `$1${adapted.install}`);
+
+  if (adapted.build) {
+    next = next.replace(/^(\s+command: )yarn next:build$/m, `$1${adapted.build}`);
+  } else {
+    next = next.replace(/^[ \t]*- name: build\n[ \t]*command: yarn next:build\n/m, "");
+  }
+
+  if (!hasActivePackageManagerConstraint(next)) {
+    next = insertPackageManagerConstraint(next, adapted.tool);
+  }
+
+  return next;
+}
+
+function hasActivePackageManagerConstraint(spec: string): boolean {
+  return /^(?!#)\s*packageManager:\s*\S+/m.test(spec);
+}
+
+function insertPackageManagerConstraint(spec: string, tool: PackageInstallTool): string {
+  const block = `constraints:\n  packageManager: ${tool}\n`;
+  const divider = spec.indexOf("# ─");
+  if (divider !== -1) {
+    return `${spec.slice(0, divider).replace(/\s*$/, "\n\n")}${block}\n${spec.slice(divider)}`;
+  }
+  return `${spec.replace(/\s*$/, "\n\n")}${block}`;
 }
 
 function buildCommandValidator(adapted: AdaptedRecipeCommands): {
@@ -126,12 +198,16 @@ function buildCommandValidator(adapted: AdaptedRecipeCommands): {
           },
         ]
       : []),
-    {
-      name: "build",
-      command: adapted.build,
-      timeoutMs: 300000,
-      purpose: "Production build or typecheck.",
-    },
+    ...(adapted.build
+      ? [
+          {
+            name: "build",
+            command: adapted.build,
+            timeoutMs: 300000,
+            purpose: "Production build or typecheck.",
+          },
+        ]
+      : []),
   ];
 
   return {
@@ -145,6 +221,9 @@ function buildCommandValidator(adapted: AdaptedRecipeCommands): {
 
 function rewriteAdoptedPrd(prd: string, adapted: AdaptedRecipeCommands): string {
   const manager = adapted.tool;
+  const buildLine = adapted.build
+    ? `2. \`${adapted.build}\` still passes (baseline + target validators)`
+    : "2. Baseline install still passes (baseline + target validators)";
   return prd
     .replace("Scaffold-HBAR project", "project")
     .replace("Scaffold-HBAR app with `hedera-harness run`", "existing app with `hedera-harness run`")
@@ -154,7 +233,7 @@ function rewriteAdoptedPrd(prd: string, adapted: AdaptedRecipeCommands): string 
     )
     .replace(
       "2. `yarn lint` and `yarn next:build` still pass (baseline + target validators)",
-      `2. \`${adapted.build}\` still passes (baseline + target validators)`,
+      buildLine,
     );
 }
 
