@@ -2,6 +2,7 @@ import type { ValidatorIssue, ValidatorVerdict } from "./types.js";
 
 export function parseValidatorVerdict(agentStdout: string): ValidatorVerdict | null {
   const candidates: string[] = [];
+  const agentMessages: string[] = [];
 
   for (const line of agentStdout.split("\n")) {
     const trimmed = line.trim();
@@ -12,11 +13,15 @@ export function parseValidatorVerdict(agentStdout: string): ValidatorVerdict | n
       if (event.type === "result" && typeof event.result === "string") {
         candidates.push(event.result);
       }
+      const message = codexAgentMessage(event);
+      if (message !== null) agentMessages.push(message);
     } catch {
       // not stream-json
     }
   }
 
+  // The verdict is the agent's last word; earlier messages are narration.
+  candidates.push(...agentMessages.reverse());
   candidates.push(agentStdout);
 
   for (const candidate of candidates) {
@@ -25,6 +30,19 @@ export function parseValidatorVerdict(agentStdout: string): ValidatorVerdict | n
   }
 
   return null;
+}
+
+/**
+ * Codex (`codex exec --json`) has no `result` event. Its reply is the text of
+ * an `agent_message` item, JSON-escaped inside the event line, so neither the
+ * result branch nor the raw-stdout fallback can ever see the verdict.
+ */
+function codexAgentMessage(event: Record<string, unknown>): string | null {
+  if (event.type !== "item.completed") return null;
+  const item = event.item;
+  if (!item || typeof item !== "object") return null;
+  const { type, text } = item as { type?: unknown; text?: unknown };
+  return type === "agent_message" && typeof text === "string" ? text : null;
 }
 
 function extractFencedJsonBlocks(text: string): string[] {
