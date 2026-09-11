@@ -257,6 +257,16 @@ export async function playwrightMcpConfigArgs(
     `mcp_servers.playwright.command=${JSON.stringify(server.command)}`,
     "-c",
     `mcp_servers.playwright.args=${JSON.stringify(server.args)}`,
+    // A server that cannot start fails the session before any model turn is
+    // paid for ("required MCP servers failed to initialize"), which the
+    // harness already treats as infrastructure. Without it Codex starts the
+    // turn anyway and the validator reports the browser tools unavailable.
+    "-c",
+    "mcp_servers.playwright.required=true",
+    // Required means Codex waits; give it the minute the harness's own probe
+    // allows for a cold `npx @playwright/mcp`.
+    "-c",
+    "mcp_servers.playwright.startup_timeout_sec=60",
   ];
 }
 

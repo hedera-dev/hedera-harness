@@ -64,6 +64,8 @@ test("codex is invoked non-interactively and never inherits the user's own confi
   assert.ok(args.includes("--ignore-user-config"));
   // Without this, every MCP call in `codex exec` comes back "user cancelled".
   assert.ok(args.includes("--approve-for-me"));
+  // The built-in ChatGPT apps feature would start a second MCP server.
+  assert.equal(args[args.indexOf("--disable") + 1], "apps");
   // workspace-write blocks the network unless it is re-enabled.
   assert.ok(args.includes("sandbox_workspace_write.network_access=true"));
   // The CLI rejects `--sandbox` together with `--approve-for-me`.
@@ -75,7 +77,11 @@ test("codex MCP overrides carry the playwright server inline as TOML values", as
   const root = await makeTestTempDir("mcp-config-args-");
   const args = await playwrightMcpConfigArgs(root);
 
-  assert.equal(args.filter(arg => arg === "-c").length, 2, "one override per key");
+  assert.equal(args.filter(arg => arg === "-c").length, 4, "one override per key");
+  // A required server fails the session up front instead of a paid turn that
+  // reports "browser tools are unavailable"; startup gets the probe's budget.
+  assert.ok(args.includes("mcp_servers.playwright.required=true"));
+  assert.ok(args.includes("mcp_servers.playwright.startup_timeout_sec=60"));
   const command = args.find(arg => arg.startsWith("mcp_servers.playwright.command="));
   const serverArgs = args.find(arg => arg.startsWith("mcp_servers.playwright.args="));
   assert.ok(command && serverArgs, "both keys must be present");

@@ -129,6 +129,12 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
       // all; this keeps writes confined to the workspace but restores parity.
       "-c",
       "sandbox_workspace_write.network_access=true",
+      // Codex's built-in ChatGPT `apps` feature starts its own MCP server
+      // ("plugin-runtime") beside anything the harness supplies, even with
+      // --ignore-user-config. The validator should see one authoritative MCP
+      // server; this is the Codex counterpart of Claude's --strict-mcp-config.
+      "--disable",
+      "apps",
       "-C",
       "{workspace}",
       // No `-m` here: the loader appends `modelFlag defaultModel` to every
