@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Misspelled recipe keys are reported instead of silently defaulting.**
+  Unknown-key detection only covered the top level, so a typo inside a block —
+  `chainValidation.enable`, `fundingHBAR`, `expose.envVar`,
+  `baseline.commands[].timeoutMS` — loaded as the block's default with no
+  warning: CHAIN ran when the recipe turned it off, and the ephemeral account
+  was funded with the default rather than the requested amount. Keys are now
+  reported with their dotted path and the nearest registered key, and `doctor`
+  shows them before a run. Still warnings, not failures; keys with no near
+  match keep the "upgrade the harness" hint.
+- `doctor` indented the second and later lines of a check's fix twice. Only
+  visible once a recipe could report more than one warning.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
