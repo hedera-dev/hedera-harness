@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- **CHAIN proves scheduled transactions executed and succeeded.** A deploy
+  command prints `HARNESS_SCHEDULE_ID=0.0.x` for each schedule it creates; the
+  harness waits for `executed_timestamp` on `GET /api/v1/schedules/{id}`, then
+  reads the scheduled transaction at that consensus timestamp
+  (`GET /api/v1/transactions?timestamp=…`, the `scheduled: true` entry) and
+  fails the attempt unless its `result` is `SUCCESS`, naming the actual result
+  (`CONTRACT_REVERT_EXECUTED`, …). `executed_timestamp` is set for a reverted
+  execution too, so it was never evidence on its own. Wait budget:
+  `HARNESS_SCHEDULE_TIMEOUT_S` (default 120). The validator prompt states the
+  same two-step rule for schedules the evaluator creates through the app.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

@@ -40,7 +40,9 @@ After executing an executableWithTestSigner flow:
   - GET /api/v1/tokens/{tokenId}
   - GET /api/v1/contracts/{address}/results
   - GET /api/v1/accounts/{accountIdOrEvm}
+  - GET /api/v1/schedules/{scheduleId}, then GET /api/v1/transactions?timestamp={executed_timestamp}
 - Use browser_navigate to the JSON URL or a shell curl from the workspace. Poll up to ~30s for mirror lag.
+- A schedule with executed_timestamp set has run, not necessarily succeeded. The scheduled transaction is the scheduled=true entry at that timestamp; require result SUCCESS and quote the result when it is anything else (e.g. CONTRACT_REVERT_EXECUTED).
 - Cite the mirror response (status, relevant fields) in issue evidence when an assertion fails; include it in your reasoning for passes.
 {{/hasSigner}}
 

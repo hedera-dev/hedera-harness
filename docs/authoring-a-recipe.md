@@ -183,6 +183,36 @@ chainValidation:
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.
 
+#### Scheduled transactions
+
+A schedule that executed and reverted looks the same as one that succeeded on
+`GET /api/v1/schedules/{id}`: `executed_timestamp` is set either way. The
+harness therefore never trusts that field alone. Have the deploy command print
+each schedule it creates, one per line:
+
+```
+HARNESS_SCHEDULE_ID=0.0.10457462
+```
+
+CHAIN then waits (`HARNESS_SCHEDULE_TIMEOUT_S`, default 120) for the schedule to
+execute, reads the scheduled transaction itself —
+`GET /api/v1/transactions?timestamp={executed_timestamp}`, the entry with
+`scheduled: true` — and fails the attempt unless its `result` is `SUCCESS`,
+naming the actual result (for example `CONTRACT_REVERT_EXECUTED`). The lookup
+goes through the timestamp on purpose: a scheduled call that schedules its
+successor reuses the transaction id, and `GET /api/v1/transactions/{id}` only
+returns the first child.
+
+Two things to know when a contract does the scheduling:
+
+- HSS fires a schedule at its expiry second, but `block.timestamp` inside the
+  call is the start of the block it lands in, which can be about 2 s earlier.
+  Testnet block 40378969 spans `1789121680.007` to `1789121682.025`; a schedule
+  due at `1789121682` executed in it and its `block.timestamp >= due` check
+  failed. Schedule a few seconds after the second you gate on.
+- `deleted: true` does not mean the schedule never ran. A scheduled call may
+  delete its own schedule after executing; only `executed_timestamp` decides.
+
 ## Building in increments
 
 For anything larger than a single change, list PRDs in order:

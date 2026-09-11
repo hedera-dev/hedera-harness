@@ -15,6 +15,8 @@ import type {
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
+import { parseScheduleIds, verifyScheduledTransactions } from "./validation/scheduleExecution.js";
+import { envScheduleTimeoutMs } from "./env.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
 import {
@@ -192,7 +194,13 @@ export async function runSmokeStage(
   return { findings: gate.findings, playwrightGate: gate.result };
 }
 
-/** Optional on-chain deploy hook (Solidity templates), before the app starts. */
+/**
+ * Optional on-chain deploy hook (Solidity templates), before the app starts.
+ *
+ * A deploy command that prints `HARNESS_SCHEDULE_ID=0.0.x` hands that schedule to
+ * the harness, which then requires it to execute and its scheduled transaction to
+ * succeed on the mirror node — `executed_timestamp` alone is set for reverts too.
+ */
 export async function runChainDeploy(
   context: AttemptStageContext,
 ): Promise<ValidationFinding[]> {
@@ -221,6 +229,17 @@ export async function runChainDeploy(
         message: `Chain deploy command failed: ${commandConfig.name}`,
         details: truncate(result.stderr || result.stdout),
       });
+      continue;
+    }
+
+    const scheduleIds = parseScheduleIds(result.stdout);
+    if (scheduleIds.length > 0) {
+      console.log(
+        `[hedera-harness] Chain verify: waiting for scheduled transaction(s) ${scheduleIds.join(", ")}`,
+      );
+      findings.push(
+        ...(await verifyScheduledTransactions(scheduleIds, { timeoutMs: envScheduleTimeoutMs() })),
+      );
     }
   }
 

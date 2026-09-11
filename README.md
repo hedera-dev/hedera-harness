@@ -107,7 +107,7 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 | **ASSERT** | on by default | files present, static assertions, no secrets, build passes | seconds |
 | **SMOKE** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
 | **EVALUATE** | `eval` + `validator.enabled` | an adversarial agent drives the live app against the evaluate checklist | an agent session |
-| **CHAIN** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
+| **CHAIN** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node; a scheduled transaction must execute **and** succeed | testnet HBAR |
 
 Start at the bottom. Add a stage when the one below stops catching your failures.
 
@@ -159,6 +159,7 @@ Operational knobs live in the environment, not the recipe. Editing a recipe to s
 | `HARNESS_MAX_ATTEMPTS` | repair attempts per run |
 | `HARNESS_AGENT_TIMEOUT_S` | wall-clock budget per agent invocation |
 | `HARNESS_AGENT_IDLE_TIMEOUT_MS` | kill an agent that stops producing output (default 90000) |
+| `HARNESS_SCHEDULE_TIMEOUT_S` | how long CHAIN waits for a scheduled transaction to execute and be indexed (default 120) |
 | `HARNESS_MODEL` / `HARNESS_FIX_MODEL` | override the preset's models |
 | `HARNESS_NO_MODEL_SWITCH` | disable dropping to a cheaper model on repairs |
 
