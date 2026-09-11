@@ -3,7 +3,12 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathExists } from "../fsUtils.js";
 
-const FINGERPRINT_FILES = ["yarn.lock", "package.json"] as const;
+const FINGERPRINT_FILES = [
+  "yarn.lock",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "package.json",
+] as const;
 
 export async function computeInstallFingerprint(workspacePath: string): Promise<string> {
   const relativePaths: string[] = [];

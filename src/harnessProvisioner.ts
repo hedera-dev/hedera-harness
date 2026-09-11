@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathExists } from "./fsUtils.js";
+import { adaptProvisionedRecipe } from "./recipeAdapt.js";
 
 export const PROJECT_HARNESS_SKELETON_DIR = "skeletons/project-harness";
 
@@ -62,6 +63,10 @@ export async function provisionHarnessProject(
     await writeFile(keep, "");
     writtenFiles.push(path.relative(targetDir, keep));
   }
+
+  // Scaffold-HBAR skeleton is Yarn + Next. Rewrite only files this call wrote
+  // so a partial existing `.harness/` is never clobbered.
+  await adaptProvisionedRecipe(targetDir, writtenFiles);
 
   return {
     harnessDir,
