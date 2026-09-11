@@ -15,7 +15,15 @@
   so the preset re-enables it. EVALUATE reads the verdict from Codex's final
   `agent_message`: Codex emits no `result` event and JSON-escapes its reply
   inside the event line, so the parser previously returned nothing and every
-  Codex EVALUATE would have aborted as `validator-output-unparseable`.
+  Codex EVALUATE would have aborted as `validator-output-unparseable`. The
+  preset disables Codex's built-in `apps` feature, whose own MCP server would
+  otherwise sit beside the harness's, and marks the Playwright server
+  `required` with a 60-second startup budget, so a server that cannot start
+  fails the session before a model turn is paid for.
+  **Known limitation:** codex-cli 0.147.0 surfaces MCP tools through its own
+  tool discovery, and the validator saw the browser tools in 10 of 22 real
+  sessions. It reports the gap instead of guessing, and the harness now aborts
+  on it rather than repairing (see Fixed).
 
 ### Fixed
 
@@ -27,6 +35,13 @@
   doing, and the per-attempt activity log held two lines. Decoding is now per
   vocabulary, matched on the event itself, and covered by tests that replay
   captured streams from all three CLIs.
+- **"Browser tools are unavailable" is infrastructure, in any tense.** The
+  EVALUATE classifier matched "Playwright MCP was unavailable" but not a
+  validator writing "Playwright MCP browser tools are unavailable", so a
+  validator with no browser handed its three "could not verify" findings to
+  the generator as app defects and burned repair attempts. The captured
+  verdict is the regression fixture, beside a guard that an app reporting
+  "the price is unavailable" is still an app defect.
 - **Long-running commands no longer kill the agent.** No agent CLI streams
   anything while a command it launched is running, so a `yarn install` or
   `next build` longer than `HARNESS_AGENT_IDLE_TIMEOUT_MS` read as a stuck

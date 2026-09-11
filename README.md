@@ -184,7 +184,13 @@ plain ChatGPT account, so the preset pins the CLI's own default and `HARNESS_MOD
 runs under `--approve-for-me`, which is what makes `codex exec` accept MCP browser calls at all — the CLI
 rejects that flag alongside `--sandbox`, so the validator is not additionally sandboxed to read-only the
 way it is on Claude. That sandbox keeps writes inside the project; the preset re-enables its network access,
-which is off by default, so the agent can add a dependency and reach Hedera testnet.
+which is off by default, so the agent can add a dependency and reach Hedera testnet. It also disables
+Codex's built-in ChatGPT `apps` feature, which would start a second MCP server beside the harness's own.
+
+**Known limitation, Codex EVALUATE.** codex-cli 0.147.0 exposes MCP tools through its own tool discovery,
+and in our runs the validator saw the Playwright tools in 10 of 22 sessions. When it does not, it says so
+rather than guessing, and the harness classifies that as an infrastructure failure and aborts instead of
+repairing a working app. Codex generates reliably; if EVALUATE matters for a run, prefer `agent: claude`.
 
 ```bash
 # schema v3 prerelease — npm latest is still 1.2.2
