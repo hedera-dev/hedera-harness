@@ -41,7 +41,7 @@ Flow (identical for both modes after the signer is selected):
 1. Initial request returns **HTTP 402 Payment Required** with `PaymentRequirements` (asset, amount, payTo, feePayer)
 2. App builds a `TransferTransaction` with the facilitator's `feePayer` as the transaction payer
 3. App **partially signs** the frozen transfer (does **not** submit it)
-4. App retries the request with the `X-PAYMENT` header
+4. App retries the request with the `PAYMENT-SIGNATURE` header (x402 **v2**; `X-PAYMENT` is the v1 name and is not read by v2 resource servers)
 5. Resource server forwards to Blocky402 (`/verify` → `/settle`); facilitator co-signs and submits
 6. On success, server returns premium data (HTTP 200)
 7. UI shows success feedback including a HashScan link to the settlement transaction
@@ -101,7 +101,7 @@ Implement a small **signer port** so UI and payment code never assume a private 
 
 ```
 HederaSigner
-  - partialSignTransfer(requirements) → base64 X-PAYMENT payload   // x402
+  - partialSignTransfer(requirements) → base64 PAYMENT-SIGNATURE payload  // x402
   - execute(transaction) → transactionId                            // HCS admin/receipts
 ```
 
@@ -110,6 +110,11 @@ Concrete adapters:
 1. **`BurnerKeySigner`**
    - Reads `localStorage["burnerWallet.pk"]` (or sessionStorage if the scaffold burner is configured that way)
    - Uses `PrivateKey.fromStringECDSA` + `@x402/hedera` `createClientHederaSigner` / `ExactHederaScheme` for payments
+   - Import Hedera SDK primitives (`PrivateKey`, `Client`, `AccountId`,
+     `TransferTransaction`, …) **from `@x402/hedera`**, which re-exports them.
+     Importing `@hiero-ledger/sdk` directly alongside `@x402/hedera` can produce
+     two copies of the SDK on disk, and its internal brand checks then fail at
+     runtime with `t.startsWith is not a function`
    - Uses SDK `setOperator` + `execute` for HCS
    - This path is what the harness Test Signer exercises end-to-end
 
@@ -133,7 +138,15 @@ Connecting a wallet must not be confused with being able to pay: the UI should i
 - Use `@x402/hedera` (or equivalent) for the `exact` scheme on the burner path; WalletConnect path may build the same transfer and sign via the wallet
 - Facilitator: Blocky402 testnet (`https://api.testnet.blocky402.com`)
 - Asset: HBAR (`0.0.0`), amount in tinybars (demo-friendly amount)
-- Client-side always: freeze transfer with facilitator `feePayer` as payer → **partial sign** → `X-PAYMENT` → retry
+- Client-side always: freeze transfer with facilitator `feePayer` as payer → **partial sign** → `PAYMENT-SIGNATURE` → retry
+
+> **Header name — x402 v2 vs v1.** `@x402/core` emits `PAYMENT-SIGNATURE` for
+> `x402Version: 2` and `X-PAYMENT` only for `x402Version: 1`. The v2 resource
+> server reads `payment-signature` / `PAYMENT-SIGNATURE` with **no `X-PAYMENT`
+> fallback**, so a server that reads `X-PAYMENT` silently sees no payment and
+> the request looks unpaid. The matching response headers are
+> `PAYMENT-REQUIRED` (on the 402) and `PAYMENT-RESPONSE` (settlement receipt);
+> `X-PAYMENT-RESPONSE` is likewise v1-only.
 
 ### Consensus Service (HCS) — receipts
 
