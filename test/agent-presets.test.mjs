@@ -64,6 +64,8 @@ test("codex is invoked non-interactively and never inherits the user's own confi
   assert.ok(args.includes("--ignore-user-config"));
   // Without this, every MCP call in `codex exec` comes back "user cancelled".
   assert.ok(args.includes("--approve-for-me"));
+  // workspace-write blocks the network unless it is re-enabled.
+  assert.ok(args.includes("sandbox_workspace_write.network_access=true"));
   // The CLI rejects `--sandbox` together with `--approve-for-me`.
   assert.ok(!args.includes("--sandbox") && !args.includes("-s"));
   assert.ok(args.includes("{workspace}") && args.includes("{prompt}"));

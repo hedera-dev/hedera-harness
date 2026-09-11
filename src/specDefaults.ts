@@ -123,6 +123,12 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
       // MCP tool call". It implies the workspace-write sandbox and so cannot be
       // combined with `--sandbox` — the CLI rejects the pair outright.
       "--approve-for-me",
+      // That workspace-write sandbox also cuts the network: a probe got
+      // "Could not resolve host: registry.npmjs.org", so the agent could not add
+      // a dependency or reach Hedera testnet. Claude's preset has no sandbox at
+      // all; this keeps writes confined to the workspace but restores parity.
+      "-c",
+      "sandbox_workspace_write.network_access=true",
       "-C",
       "{workspace}",
       "-m",
