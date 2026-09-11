@@ -71,7 +71,13 @@ export interface DappwrightWallet {
  * dappwright `launch()` / `bootstrap()` always wipe os.tmpdir()/dappwright/session.
  * We download the unpacked extension ourselves and persist Chromium under `.harness/wallet/`.
  */
-export async function launchPreparedWalletBrowser(workspaceDir: string): Promise<PreparedWallet> {
+/** Chromium can be visible while dappwright getWallet/unlock never returns (locked profile). */
+export const METAMASK_HANDSHAKE_TIMEOUT_MS = 60_000;
+
+export async function launchPreparedWalletBrowser(
+  workspaceDir: string,
+  hooks?: { onChromiumReady?: () => void | Promise<void> },
+): Promise<PreparedWallet> {
   const vault = readVaultFile(workspaceDir);
   if (!vault) {
     throw new Error("No MetaMask test vault. Run wallet provision first — never paste a key in chat.");
@@ -93,38 +99,61 @@ export async function launchPreparedWalletBrowser(workspaceDir: string): Promise
   releaseChromeProfile(userDataDir);
 
   const context = await launchPersistentWalletContext(playwright, userDataDir, extensionPath);
+  await hooks?.onChromiumReady?.();
 
-  const wallet = await getWallet("metamask", context);
-  if (firstRun) {
-    if (await isUnlockScreen(wallet)) {
-      await wallet.unlock(vault.password);
-    } else {
-      await wallet.setup({
-        seed: DISPOSABLE_ONBOARDING_SEED,
-        password: vault.password,
-        showTestNets: true,
-      });
-    }
-    await importPortalKey(wallet, vault.privateKey);
-    await ensureHederaTestnet(wallet);
-    await switchImportedAccount(wallet);
-    writeMetaMaskImportedMarker(workspaceDir);
-  } else {
-    const unlocked = await unlockIfNeeded(wallet, vault.password);
-    if (!unlocked) {
-      throw new Error(
-        "MetaMask unlock failed (password field not filled). Re-run wallet provision if the vault password does not match.",
-      );
-    }
-    await ensureHederaTestnet(wallet);
-    await switchImportedAccount(wallet);
+  let wallet: DappwrightWallet;
+  try {
+    wallet = await withTimeout(
+      (async () => {
+        const next = (await getWallet("metamask", context)) as DappwrightWallet & {
+          unlock: (password?: string) => Promise<void>;
+          setup: (options: { seed: string; password: string; showTestNets: boolean }) => Promise<void>;
+          importPK: (pk: string) => Promise<void>;
+          hasNetwork: (name: string) => Promise<boolean>;
+          addNetwork: (options: typeof HEDERA_TESTNET) => Promise<void>;
+          switchNetwork: (name: string) => Promise<void>;
+          switchAccount: (name: string) => Promise<void>;
+          page: UnlockableWallet["page"];
+        };
+        if (firstRun) {
+          if (await isUnlockScreen(next)) {
+            await next.unlock(vault.password);
+          } else {
+            await next.setup({
+              seed: DISPOSABLE_ONBOARDING_SEED,
+              password: vault.password,
+              showTestNets: true,
+            });
+          }
+          await importPortalKey(next, vault.privateKey);
+          await ensureHederaTestnet(next);
+          await switchImportedAccount(next);
+          writeMetaMaskImportedMarker(workspaceDir);
+        } else {
+          const unlocked = await unlockIfNeeded(next, vault.password);
+          if (!unlocked) {
+            throw new Error(
+              "MetaMask unlock failed (password field not filled). Re-run wallet provision if the vault password does not match.",
+            );
+          }
+          await ensureHederaTestnet(next);
+          await switchImportedAccount(next);
+        }
+        await closeExtraMetaMaskPages(context, next.page);
+        return next;
+      })(),
+      METAMASK_HANDSHAKE_TIMEOUT_MS,
+      "MetaMask handshake hung after Chromium launched (profile lock / leftover chrome).",
+    );
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    releaseChromeProfile(userDataDir);
+    throw error;
   }
-
-  await closeExtraMetaMaskPages(context, wallet.page);
 
   return {
     context: context as PreparedWallet["context"],
-    wallet: wallet as DappwrightWallet,
+    wallet,
     firstRun,
     metamaskVersion: version,
     profile: userDataDir,
@@ -317,8 +346,20 @@ async function launchPersistentWalletContext(
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise.finally(() => {
+      if (timer) clearTimeout(timer);
+    }),
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
+
 /** Kill leftover Chromium whose command line still holds this profile (Windows “sesión existente”). */
-function releaseChromeProfile(userDataDir: string): void {
+export function releaseChromeProfile(userDataDir: string): void {
   const needle = normalizePath(userDataDir);
   if (!needle) return;
   for (const row of listProfileProcesses(needle)) {

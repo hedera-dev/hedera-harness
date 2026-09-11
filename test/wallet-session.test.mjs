@@ -39,6 +39,31 @@ test("wallet session status is down without a live process", async () => {
   assert.doesNotMatch(text, /0x[a-fA-F0-9]{64}/);
 });
 
+test("session helpers never reuse a launching handshake", () => {
+  assert.equal(session.sessionShouldReuse("up"), true);
+  assert.equal(session.sessionShouldReuse("launching"), false);
+  assert.equal(session.sessionShouldReuse("browser"), false);
+  // launching leftovers are stopped immediately, not waited on
+  assert.equal(session.sessionShouldReuse("hung"), false);
+
+  const launching = {
+    pid: 8352,
+    port: 17374,
+    url: "http://127.0.0.1:3000",
+    workspace: "/tmp",
+    phase: "launching",
+    startedAt: 1,
+    phaseAt: 1,
+  };
+  assert.equal(session.sessionPhaseIsHung(launching, 1 + 10_000), false);
+  assert.equal(session.sessionPhaseIsHung({ ...launching, phase: "browser", phaseAt: 1 }, 1 + 60_000), true);
+
+  const hung = session.formatHungSessionReport(launching);
+  assert.match(hung, /session=hung/);
+  assert.match(hung, /do_not_sleep=true/);
+  assert.doesNotMatch(hung, /0x[a-fA-F0-9]{64}/);
+});
+
 test("formatSessionReport and state file never look like a vault", async () => {
   const root = await makeTestTempDir("wallet-session-state-");
   const dir = path.join(root, ".harness");
@@ -50,6 +75,11 @@ test("formatSessionReport and state file never look like a vault", async () => {
   const state = session.readSessionState(root);
   assert.equal(state?.port, 17374);
   assert.equal(state?.phase, "up");
+  await writeFile(
+    session.sessionStatePath(root),
+    `${JSON.stringify({ pid: 1, port: 17374, url: "http://127.0.0.1:3000", workspace: root, phase: "browser", startedAt: 10, phaseAt: 20 }, null, 2)}\n`,
+  );
+  assert.equal(session.readSessionState(root)?.phase, "browser");
   const printed = session.formatSessionReport(["session=up", "value=0.1"]);
   assert.match(printed, /value=0\.1/);
   assert.doesNotMatch(printed, /privateKey/i);

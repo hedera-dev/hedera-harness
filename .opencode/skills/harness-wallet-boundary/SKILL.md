@@ -19,6 +19,8 @@ If blocked, `http://127.0.0.1:17373/` must be **listening** (`server=up`) **unti
 
 `wallet browser` / `harness_wallet_session` / `harness_wallet_e2e` uses [dappwright](https://github.com/TenKeyLabs/dappwright) to load MetaMask into persistent Chromium (`.harness/wallet/chrome-profile/`), import the vault key, and add Hedera Testnet. Session tools snapshot/click/fill the **dapp tab** in that window; `harness_wallet_mm` approve/confirm the extension. Playwright MCP vanilla Chrome is not a MetaMask signature. Later sessions unlock; they do not re-paste.
 
+`harness_wallet_session` `start` **always stops leftovers first** (session pid + chrome-profile Chromium; no-op if nothing is running), then launches. It only skips that cleanup when a healthy `session=up` is already there. Do not bash `Start-Sleep` / `netstat`. If start returns `session=hung`, start once more or use `harness_wallet_e2e`.
+
 ## Default path (scaffold-hbar)
 
 RainbowKit + wagmi + WalletConnect / injected. MetaMask and HashPack in that modal are EVM. Official hedera-harness EVALUATE may use Burner Wallet + `burnerWallet.pk` when a test signer is provisioned (`NEXT_PUBLIC_ENABLE_BURNER=true`). TUI MetaMask E2E needs Connect Wallet visible — do not leave the burner auto-connected.

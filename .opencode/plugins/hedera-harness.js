@@ -456,7 +456,7 @@ export const HederaHarnessPlugin = async () => {
       }),
       harness_wallet_session: tool({
         description:
-          "Keep the MetaMask Chromium (dappwright profile) alive. action=start|stop|status. start unlocks the vault extension and opens the live dapp. This is NOT Playwright MCP vanilla Chrome. After start, use harness_wallet_dom to see/click/fill that page and harness_wallet_mm to approve/sign.",
+          "Keep the MetaMask Chromium (dappwright profile) alive. action=start|stop|status. start always stops leftover launching/chrome-profile processes first (no-op if none), then launches — except a healthy session=up, which it reuses. BLOCKS until session=up or session=hung. Do NOT bash Start-Sleep/netstat. Do NOT cancel start mid-launch. If hung, call start once more or harness_wallet_e2e. After up: harness_wallet_dom + harness_wallet_mm. NOT Playwright MCP vanilla Chrome.",
         args: {
           action: tool.schema.string().optional().describe("start | stop | status (default start)"),
           url: tool.schema.string().optional().describe("Live app URL, default http://127.0.0.1:3000"),

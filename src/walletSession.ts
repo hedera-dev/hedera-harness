@@ -7,12 +7,19 @@ import { resolveAppWorkspace } from "./appWorkspace.js";
 import { inspectNextAssetHealth, nextAssetHealthHint } from "./nextAssetHealth.js";
 import type { WalletSessionAction } from "./types.js";
 import { detectLiveAppUrl, waitForDappReady } from "./walletE2e.js";
-import { closeExtraMetaMaskPages, launchPreparedWalletBrowser, type DappwrightWallet } from "./walletMetaMask.js";
-import { inspectWalletReady } from "./walletVault.js";
+import {
+  closeExtraMetaMaskPages,
+  launchPreparedWalletBrowser,
+  METAMASK_HANDSHAKE_TIMEOUT_MS,
+  releaseChromeProfile,
+  type DappwrightWallet,
+} from "./walletMetaMask.js";
+import { chromeProfilePath, inspectWalletReady } from "./walletVault.js";
 
 const STATE_REL = [".harness", "wallet-session.json"] as const;
-const DEFAULT_SESSION_PORT = 17374;
-const START_TIMEOUT_MS = 180_000;
+export const DEFAULT_SESSION_PORT = 17374;
+export const START_TIMEOUT_MS = 180_000;
+export const BROWSER_HANDSHAKE_HUNG_MS = METAMASK_HANDSHAKE_TIMEOUT_MS;
 const ARIA_MAX = 20_000;
 const HARNESS_ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), "index.js");
 
@@ -29,12 +36,16 @@ export interface WalletSessionParams {
   key?: string;
 }
 
+export type WalletSessionPhase = "launching" | "browser" | "up";
+
 export interface WalletSessionState {
   pid: number;
   port: number;
   url: string;
   workspace: string;
-  phase: "launching" | "up";
+  phase: WalletSessionPhase;
+  startedAt?: number;
+  phaseAt?: number;
 }
 
 type DappPage = {
@@ -72,6 +83,7 @@ interface SessionRuntime {
 }
 
 let runtime: SessionRuntime | undefined;
+let serveWorkspace = "";
 
 export function sessionStatePath(workspaceDir: string): string {
   return path.join(path.resolve(workspaceDir), ...STATE_REL);
@@ -83,12 +95,16 @@ export function readSessionState(workspaceDir: string): WalletSessionState | und
   try {
     const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<WalletSessionState>;
     if (typeof raw.pid !== "number" || typeof raw.port !== "number") return undefined;
+    const phase: WalletSessionPhase =
+      raw.phase === "up" ? "up" : raw.phase === "browser" ? "browser" : "launching";
     return {
       pid: raw.pid,
       port: raw.port,
       url: String(raw.url || ""),
       workspace: String(raw.workspace || workspaceDir),
-      phase: raw.phase === "up" ? "up" : "launching",
+      phase,
+      startedAt: typeof raw.startedAt === "number" ? raw.startedAt : undefined,
+      phaseAt: typeof raw.phaseAt === "number" ? raw.phaseAt : undefined,
     };
   } catch {
     return undefined;
@@ -97,6 +113,30 @@ export function readSessionState(workspaceDir: string): WalletSessionState | und
 
 export function formatSessionReport(lines: string[]): string {
   return lines.filter(Boolean).join("\n");
+}
+
+export function sessionShouldReuse(livePhase: string | undefined): boolean {
+  return livePhase === "up";
+}
+
+export function sessionPhaseIsHung(state: WalletSessionState, now = Date.now()): boolean {
+  if (state.phase === "up") return false;
+  const at = state.phaseAt ?? state.startedAt ?? 0;
+  if (!at) return false;
+  const limit = state.phase === "browser" ? BROWSER_HANDSHAKE_HUNG_MS : START_TIMEOUT_MS;
+  return now - at >= limit;
+}
+
+export function formatHungSessionReport(state: Pick<WalletSessionState, "pid" | "port" | "phase">): string {
+  return formatSessionReport([
+    "session=hung",
+    `pid=${state.pid}`,
+    `port=${state.port}`,
+    `phase=${state.phase}`,
+    "reason=Chromium was up but dappwright never finished (locked chrome-profile or leftover chrome on :17374).",
+    "repair=session torn down; call start again or harness_wallet_e2e",
+    "do_not_sleep=true",
+  ]);
 }
 
 export async function runWalletSession(
@@ -124,17 +164,25 @@ async function startSession(workspace: string, params: WalletSessionParams): Pro
 
   const existing = readSessionState(workspace);
   if (existing && isPidAlive(existing.pid) && (await sessionHttpOk(existing.port))) {
-    const status = await callSession(workspace, "status", params);
-    const want = params.url?.trim();
-    if (want && existing.phase === "up") {
-      await callSession(workspace, "goto", { url: want });
-      return `${status}\nreused=true\ngoto=${want}`;
+    const live = await httpJson(existing.port, "GET", "/status").catch(() => ({ phase: existing.phase }));
+    const livePhase = String(live.phase || existing.phase);
+    if (sessionShouldReuse(livePhase)) {
+      const status = await callSession(workspace, "status", params);
+      const want = params.url?.trim();
+      if (want) {
+        await callSession(workspace, "goto", { url: want });
+        return `${status}\nreused=true\ncleaned=false\ngoto=${want}`;
+      }
+      return `${status}\nreused=true\ncleaned=false`;
     }
-    return `${status}\nreused=true`;
   }
-  if (existing) stopSessionProcess(existing);
 
+  // Stop first (no-op if nothing is up). Leftover launching/browser/chrome-profile
+  // processes are why Windows hangs for two attempts — do not wait on them.
+  teardownSession(workspace, existing);
+  await delay(800);
   const appUrl = await detectLiveAppUrl(params.url);
+  const listenPort = params.port && params.port > 0 ? params.port : DEFAULT_SESSION_PORT;
   const child = spawn(
     nodeBin(),
     [
@@ -147,7 +195,7 @@ async function startSession(workspace: string, params: WalletSessionParams): Pro
       "--url",
       appUrl,
       "--port",
-      String(params.port && params.port > 0 ? params.port : DEFAULT_SESSION_PORT),
+      String(listenPort),
     ],
     {
       detached: true,
@@ -160,55 +208,102 @@ async function startSession(workspace: string, params: WalletSessionParams): Pro
   child.unref();
   if (!pid) return formatSessionReport(["session=down", "reason=failed to spawn session process"]);
 
-  const deadline = Date.now() + START_TIMEOUT_MS;
+  const waited = await waitUntilUp(workspace, pid, Date.now() + START_TIMEOUT_MS);
+  const state = readSessionState(workspace) ?? {
+    pid,
+    port: listenPort,
+    url: appUrl,
+    workspace,
+    phase: "launching" as const,
+  };
+  if (waited === "up") return formatUpReport(state, { reused: false, cleaned: true });
+  teardownSession(workspace, state);
+  return formatHungSessionReport(state);
+}
+
+function formatUpReport(
+  state: WalletSessionState,
+  flags: { reused: boolean; cleaned: boolean },
+): string {
+  return formatSessionReport([
+    "session=up",
+    `pid=${state.pid}`,
+    `port=${state.port}`,
+    `url=${state.url}`,
+    "wallet=metamask-extension",
+    `reused=${flags.reused}`,
+    `cleaned=${flags.cleaned}`,
+    "dom=use harness_wallet_dom snapshot — not Playwright MCP vanilla Chrome",
+    "mm=use harness_wallet_mm approve|confirm",
+  ]);
+}
+
+async function waitUntilUp(
+  workspace: string,
+  pid: number,
+  deadline: number,
+): Promise<"up" | "dead" | "timeout" | "hung"> {
   while (Date.now() < deadline) {
     const state = readSessionState(workspace);
+    if (state && sessionPhaseIsHung(state)) return "hung";
     if (state && (await sessionHttpOk(state.port))) {
-      const body = await httpJson(state.port, "GET", "/status");
-      if (String(body.phase || "") === "up") {
-        return formatSessionReport([
-          "session=up",
-          `pid=${state.pid}`,
-          `port=${state.port}`,
-          `url=${String(body.url || state.url)}`,
-          "wallet=metamask-extension",
-          "dom=use harness_wallet_dom snapshot — not Playwright MCP vanilla Chrome",
-          "mm=use harness_wallet_mm approve|confirm",
-        ]);
-      }
+      const body = await httpJson(state.port, "GET", "/status").catch(() => ({ phase: state.phase }));
+      if (String(body.phase || "") === "up") return "up";
     }
+    const httpAlive = state ? await sessionHttpOk(state.port) : false;
+    if (!isPidAlive(pid) && !httpAlive) return "dead";
     await delay(800);
   }
-  return formatSessionReport([
-    "session=launching-timeout",
-    `pid=${pid}`,
-    "reason=Chromium+MetaMask did not become ready. Re-run start; first launch downloads the extension.",
-  ]);
+  return "timeout";
+}
+
+function teardownSession(workspace: string, state?: WalletSessionState): void {
+  if (state) {
+    void httpJson(state.port, "POST", "/stop").catch(() => undefined);
+    stopSessionProcess(state);
+  }
+  releaseChromeProfile(chromeProfilePath(workspace));
+  clearSessionState(workspace);
 }
 
 function stopSession(workspace: string): string {
   const state = readSessionState(workspace);
-  if (!state) {
-    clearSessionState(workspace);
-    return formatSessionReport(["session=down", "action=stop"]);
-  }
-  void httpJson(state.port, "POST", "/stop").catch(() => undefined);
-  stopSessionProcess(state);
-  clearSessionState(workspace);
-  return formatSessionReport(["session=down", "action=stop", `killed=${state.pid}`]);
+  teardownSession(workspace, state);
+  return formatSessionReport(["session=down", "action=stop", state ? `killed=${state.pid}` : ""]);
 }
 
-function statusSession(workspace: string): string {
+async function statusSession(workspace: string): Promise<string> {
   const state = readSessionState(workspace);
   if (!state || !isPidAlive(state.pid)) {
     return formatSessionReport(["session=down", "action=status"]);
   }
+  const live = (await sessionHttpOk(state.port))
+    ? await httpJson(state.port, "GET", "/status").catch(() => ({ phase: state.phase }))
+    : { phase: state.phase };
+  const phase = String(live.phase || state.phase);
+  const merged: WalletSessionState = {
+    ...state,
+    phase: phase === "up" ? "up" : phase === "browser" ? "browser" : "launching",
+  };
+  if (sessionPhaseIsHung(merged)) {
+    return formatSessionReport([
+      "session=hung",
+      `pid=${state.pid}`,
+      `port=${state.port}`,
+      `phase=${merged.phase}`,
+      "reason=Handshake still not up. Call start again (it tears down leftover Chromium) or harness_wallet_e2e.",
+      "do_not_sleep=true",
+    ]);
+  }
   return formatSessionReport([
-    `session=${state.phase}`,
+    `session=${phase}`,
     `pid=${state.pid}`,
     `port=${state.port}`,
     `url=${state.url || "none"}`,
     "wallet=metamask-extension",
+    phase === "launching" || phase === "browser"
+      ? "wait=call start again — it waits or recycles; do not bash Start-Sleep / netstat"
+      : "",
   ]);
 }
 
@@ -244,8 +339,10 @@ async function runSessionServe(workspace: string, params: WalletSessionParams): 
     throw new Error(`${ready.reason}\n${ready.provisionCommand}`);
   }
 
+  serveWorkspace = workspace;
   const appUrl = await detectLiveAppUrl(params.url);
   const listenPort = params.port && params.port > 0 ? params.port : DEFAULT_SESSION_PORT;
+  const startedAt = Date.now();
 
   await new Promise<void>((resolve, reject) => {
     const server = createServer((req, res) => {
@@ -264,13 +361,22 @@ async function runSessionServe(workspace: string, params: WalletSessionParams): 
         url: appUrl,
         workspace,
         phase: "launching",
+        startedAt,
+        phaseAt: startedAt,
       });
       resolve();
     });
   });
 
   try {
-    const prepared = await launchPreparedWalletBrowser(workspace);
+    const prepared = await launchPreparedWalletBrowser(workspace, {
+      onChromiumReady: () => {
+        const state = readSessionState(workspace);
+        if (state) {
+          writeSessionState(workspace, { ...state, phase: "browser", phaseAt: Date.now() });
+        }
+      },
+    });
     const ctx = prepared.context as SessionRuntime["context"];
     await ctx.addInitScript?.(clearDappWalletStorage);
     const page = (await ctx.newPage()) as DappPage;
@@ -288,6 +394,7 @@ async function runSessionServe(workspace: string, params: WalletSessionParams): 
         ...state,
         url: page.url(),
         phase: "up",
+        phaseAt: Date.now(),
       });
     }
     if (!dappReady.css || !dappReady.js) {
@@ -296,12 +403,16 @@ async function runSessionServe(workspace: string, params: WalletSessionParams): 
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
+    await shutdownRuntime();
+    releaseChromeProfile(chromeProfilePath(workspace));
+    clearSessionState(workspace);
+    process.exit(1);
   }
 
   await new Promise<void>(resolve => {
     const stop = () => {
       void shutdownRuntime().finally(() => {
+        releaseChromeProfile(chromeProfilePath(workspace));
         clearSessionState(workspace);
         resolve();
       });
@@ -360,16 +471,28 @@ async function handleSessionHttp(req: IncomingMessage, res: ServerResponse): Pro
 }
 
 async function statusPayload(): Promise<Record<string, string>> {
+  const state = serveWorkspace ? readSessionState(serveWorkspace) : undefined;
+  const phase = runtime ? "up" : state?.phase === "browser" ? "browser" : "launching";
   return {
-    session: runtime ? "up" : "launching",
-    phase: runtime ? "up" : "launching",
+    session: phase,
+    phase,
     url: runtime?.page.url() ?? "",
     wallet: "metamask-extension",
   };
 }
 
 async function snapshotText(): Promise<string> {
-  if (!runtime) return "session=launching\nreason=MetaMask Chromium is still starting.";
+  if (!runtime) {
+    const state = serveWorkspace ? readSessionState(serveWorkspace) : undefined;
+    if (state?.phase === "browser") {
+      return formatSessionReport([
+        "session=browser",
+        "reason=Chromium is up; MetaMask handshake still running.",
+        "wait=call harness_wallet_session start — it waits or recycles. Do not bash Start-Sleep.",
+      ]);
+    }
+    return "session=launching\nreason=MetaMask Chromium is still starting.";
+  }
   const page = runtime.page;
   const fields = await readFields(page);
   let aria = "";
