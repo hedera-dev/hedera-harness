@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
@@ -12,7 +13,7 @@ const {
   PLAYWRIGHT_MCP_PACKAGE,
   HARNESS_MCP_MARKER,
 } = await import(pathToFileURL(path.resolve("dist/mcpBrowser.js")).href);
-const { detectEvalInfrastructureFailure } = await import(
+const { detectEvalInfrastructureFailure, annotateInfrastructureFailure } = await import(
   pathToFileURL(path.resolve("dist/evalInfra.js")).href
 );
 
@@ -194,4 +195,31 @@ test("a genuine app failure is still treated as an app defect", () => {
     undefined,
     "repairing real defects must not be mistaken for an infrastructure abort",
   );
+});
+
+test("a Codex verdict that says the browser tools are unavailable is infrastructure", async () => {
+  // Captured from a real agent: codex EVALUATE. "Playwright MCP browser tools
+  // are unavailable" matched none of the past-tense patterns, so three "could
+  // not verify" findings went to the generator as app defects.
+  const captured = JSON.parse(
+    await readFile(path.resolve("test/fixtures/eval/codex-tools-unavailable.json"), "utf8"),
+  );
+  assert.ok(detectEvalInfrastructureFailure(captured), "must abort rather than repair");
+
+  const annotated = annotateInfrastructureFailure(captured);
+  assert.equal(annotated.infrastructureFailure, true);
+  assert.ok(annotated.findings.every(finding => finding.category === "eval-infra"));
+});
+
+test("an app feature that is unavailable is not mistaken for missing browser tools", () => {
+  const appBug = evalFailure(
+    [
+      ["eval:e1", "critical [E1] (/): The HBAR price widget says the price is unavailable."],
+      ["eval:e2", "major [E2] (/about): The About page heading is missing."],
+      ["eval:e3", "major [E3] (/): The header has no About link."],
+    ],
+    "Three assertions failed: the price feed is unavailable and the About page is incomplete.",
+  );
+
+  assert.equal(detectEvalInfrastructureFailure(appBug), undefined);
 });

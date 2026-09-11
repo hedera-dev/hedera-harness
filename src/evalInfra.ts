@@ -10,8 +10,11 @@ const INFRA_FINDING_ID_PREFIXES = [
 
 const INFRA_TEXT_PATTERNS: RegExp[] = [
   /user rejected mcp/i,
-  /playwright mcp(?: browser tools)? (?:were |was )?(?:rejected|unavailable)/i,
-  /mcp(?: tool)?s? (?:were |was )?(?:rejected|unavailable)/i,
+  // Present tense too: a Codex validator reported "Playwright MCP browser tools
+  // are unavailable", which the past-tense forms missed, so three "could not
+  // verify" findings were handed to the generator as app defects.
+  /playwright mcp(?: browser)?(?: tools?)? (?:are |is |were |was )?(?:rejected|unavailable)/i,
+  /mcp(?: browser)?(?: tool)?s? (?:are |is |were |was )?(?:rejected|unavailable)/i,
   /no playwright mcp/i,
   /playwright\/?mcp.*(unavailable|rejected)/i,
   /browser[_ ]navigate was rejected/i,
@@ -72,7 +75,7 @@ export function detectEvalInfrastructureFailure(
     return "Playwright MCP tool calls were rejected (need --force / --approve-mcps for headless validator).";
   }
 
-  if (/playwright mcp(?: browser tools)? (?:were |was )?(?:rejected|unavailable)/i.test(corpus)) {
+  if (/playwright mcp(?: browser)?(?: tools?)? (?:are |is |were |was )?(?:rejected|unavailable)/i.test(corpus)) {
     return "Playwright MCP was unavailable or rejected; validator could not drive the live app.";
   }
 
