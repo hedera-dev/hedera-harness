@@ -103,3 +103,28 @@ test("unknown events and malformed lines are ignored, not crashed on", async () 
   await logger.processChunk("not json\n{\n\n");
   assert.equal(logger.getProgress().toolCallsStarted, 0);
 });
+
+test("a command Codex never closes stops counting as in flight when the turn ends", async () => {
+  // Captured: Codex started `sleep 40`, moved on, wrote a file, completed the
+  // turn, and never emitted item.completed for the command.
+  const raw = await readFile(path.resolve("test/fixtures/streams/codex-unclosed-command.jsonl"), "utf8");
+  const lines = raw.trim().split("\n");
+  const commandStart = lines.findIndex(
+    line => line.includes('"item.started"') && line.includes('"command_execution"'),
+  );
+  assert.ok(commandStart >= 0, "fixture must contain the unclosed command");
+
+  const root = await makeTestTempDir("stream-unclosed-");
+  const logger = new AgentStreamLogger(path.join(root, "activity.log"));
+  await logger.initialize();
+
+  await logger.processChunk(`${lines.slice(0, commandStart + 1).join("\n")}\n`);
+  assert.equal(logger.hasToolCallInFlight(), true, "while the command runs, it is in flight");
+
+  await logger.processChunk(`${lines.slice(commandStart + 1).join("\n")}\n`);
+  assert.equal(logger.hasToolCallInFlight(), false, "turn.completed closes what was left open");
+  assert.ok(
+    logger.getProgress().toolCallsStarted > logger.getProgress().toolCallsCompleted,
+    "the reported counters still show the call Codex never closed",
+  );
+});

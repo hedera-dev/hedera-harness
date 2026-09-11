@@ -20,10 +20,17 @@ export interface StreamInterpretation {
   toolCallsStarted?: number;
   toolCallsCompleted?: number;
   sessionId?: string;
+  /**
+   * The agent finished its turn. Any call still open is abandoned, not
+   * running: Codex yields a long command, carries on, and never emits its
+   * completion, which would otherwise count as in flight for the rest of the run.
+   */
+  endsTurn?: boolean;
 }
 
 export class AgentStreamLogger {
   private lineBuffer = "";
+  private openToolCalls = 0;
   private progress: AgentProgress = {
     lastActivity: "waiting for agent output",
     toolCallsStarted: 0,
@@ -45,6 +52,11 @@ export class AgentStreamLogger {
 
   getProgress(): AgentProgress {
     return { ...this.progress };
+  }
+
+  /** True while the agent has started a tool call the stream has not yet closed. */
+  hasToolCallInFlight(): boolean {
+    return this.openToolCalls > 0;
   }
 
   async processChunk(chunk: string): Promise<void> {
@@ -76,6 +88,14 @@ export class AgentStreamLogger {
 
     this.progress.toolCallsStarted += interpretation.toolCallsStarted ?? 0;
     this.progress.toolCallsCompleted += interpretation.toolCallsCompleted ?? 0;
+    this.openToolCalls = interpretation.endsTurn
+      ? 0
+      : Math.max(
+          0,
+          this.openToolCalls +
+            (interpretation.toolCallsStarted ?? 0) -
+            (interpretation.toolCallsCompleted ?? 0),
+        );
     this.progress.lastActivity = interpretation.summary;
 
     await appendFile(
@@ -132,15 +152,18 @@ function interpretCodexEvent(event: Record<string, unknown>): StreamInterpretati
       usage && typeof usage === "object" && typeof (usage as { output_tokens?: unknown }).output_tokens === "number"
         ? ` outputTokens=${(usage as { output_tokens: number }).output_tokens}`
         : "";
-    return { summary: `RESULT success${tokens}` };
+    return { summary: `RESULT success${tokens}`, endsTurn: true };
   }
 
   if (type === "turn.failed") {
-    return { summary: `RESULT failed error ${codexErrorMessage(event.error)}` };
+    return { summary: `RESULT failed error ${codexErrorMessage(event.error)}`, endsTurn: true };
   }
 
   if (type === "error") {
-    return { summary: `RESULT failed error ${truncate(stringOf(event.message), 200)}` };
+    return {
+      summary: `RESULT failed error ${truncate(stringOf(event.message), 200)}`,
+      endsTurn: true,
+    };
   }
 
   // item.started / item.completed
@@ -362,6 +385,7 @@ function interpretCursorEvent(event: Record<string, unknown>): StreamInterpretat
     return {
       summary: `RESULT ${subtype}${isError ? " error" : ""}${durationMs ? ` durationMs=${durationMs}` : ""}`,
       sessionId,
+      endsTurn: true,
     };
   }
 
