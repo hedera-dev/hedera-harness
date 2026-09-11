@@ -131,8 +131,8 @@ export const AGENT_PRESETS: Record<AgentPresetName, AgentPreset> = {
       "sandbox_workspace_write.network_access=true",
       "-C",
       "{workspace}",
-      "-m",
-      "gpt-5.6-terra",
+      // No `-m` here: the loader appends `modelFlag defaultModel` to every
+      // preset, and Codex refuses a repeated `--model`.
       "{prompt}",
     ],
     timeoutMs: 3_600_000,

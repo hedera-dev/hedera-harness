@@ -151,3 +151,37 @@ test("withPlaywrightMcpSnapshot removes the file it created when none existed", 
   assert.equal(sawPlaywright, true);
   await assert.rejects(() => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"));
 });
+
+test("no preset carries its own model flag, because the loader appends one", () => {
+  // Codex refuses a repeated --model; a real run failed both attempts with
+  // "the argument '--model <MODEL>' cannot be used multiple times" before the
+  // agent did any work.
+  for (const [name, preset] of Object.entries(AGENT_PRESETS)) {
+    assert.ok(!preset.args.includes(preset.modelFlag), `${name} args must not include ${preset.modelFlag}`);
+    assert.ok(
+      !(preset.validatorArgs ?? []).includes(preset.modelFlag),
+      `${name} validatorArgs must not include ${preset.modelFlag}`,
+    );
+  }
+});
+
+test("a loaded codex recipe passes the model exactly once, and escalation still swaps it", async () => {
+  const { withModel } = await import(pathToFileURL(path.resolve("dist/modelSelection.js")).href);
+  const specPath = await writeRecipe(`schemaVersion: 3
+name: codex-run
+agent: codex
+validator:
+  enabled: true
+${MINIMAL_BASELINE}`);
+
+  const { spec } = await loadTemplateSpec(specPath);
+  const count = args => args.filter(arg => arg === "-m").length;
+
+  assert.equal(count(spec.generator.args), 1, `generator: ${spec.generator.args.join(" ")}`);
+  assert.equal(count(spec.validator.args), 1, `validator: ${spec.validator.args.join(" ")}`);
+  assert.equal(spec.generator.args[spec.generator.args.indexOf("-m") + 1], AGENT_PRESETS.codex.defaultModel);
+
+  const swapped = withModel(spec.generator, "-m", "some-other-model");
+  assert.equal(count(swapped.args), 1);
+  assert.equal(swapped.args[swapped.args.indexOf("-m") + 1], "some-other-model");
+});
