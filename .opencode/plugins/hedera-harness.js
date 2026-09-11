@@ -533,14 +533,19 @@ export const HederaHarnessPlugin = async () => {
       }),
       harness_tasks_status: tool({
         description:
-          "Read .harness/tasks.md work units (T1, T2…) and contract scope. contracts=none|solidity, contract_base=none|token|nft|escrow|payroll|vesting|governor|hts|custom, hardhat=skip|run. Default none (payments/HCS) — skip Hardhat. solidity → GENERATE uses OpenZeppelin MCP + harness-contracts; EVALUATE uses MetaMask on the contract UI. If file is missing, spawn one hedera-generate for the whole PRD.",
+          "Read .harness/tasks.md work units (T1, T2…) and contract scope. contracts=none|solidity, contract_base=none|token|nft|escrow|payroll|vesting|governor|hts|custom, hardhat=skip|run, oz_mcp=skip|ready|disabled|missing. Default none (payments/HCS) — skip Hardhat. When contracts=solidity and base is not hts, this enables OpenZeppelin MCP in project opencode.json (it ships disabled so unused sessions do not pay tool-schema tokens). New session needed for OZ tools; GENERATE may use @openzeppelin/contracts this session. EVALUATE uses MetaMask on the contract UI. If file is missing, spawn one hedera-generate for the whole PRD.",
         args: {
           workspace: tool.schema.string().optional(),
         },
         async execute(args, context) {
           const cwd = toolWorkspace(args, context);
           const { inspectTasks, formatTasksStatus } = await importDist(cwd, "harnessTasks.js");
-          return formatTasksStatus(inspectTasks(cwd));
+          const oz = await importDist(cwd, "ozMcp.js");
+          const before = inspectTasks(cwd);
+          const ensured = oz.ensureOzMcpForContracts(cwd, before.contracts, before.contractBase);
+          const printed = formatTasksStatus(inspectTasks(cwd));
+          if (ensured.skipped || !ensured.justEnabled) return printed;
+          return `${printed}\noz_enabled=true\nrestart=${ensured.status.restartHint}`;
         },
       }),
       harness_task_done: tool({
@@ -557,6 +562,26 @@ export const HederaHarnessPlugin = async () => {
           } catch (error) {
             return redact(error instanceof Error ? error.message : String(error));
           }
+        },
+      }),
+      harness_oz_mcp: tool({
+        description:
+          "OpenZeppelin Solidity MCP. Overlay ships it disabled so payments/HCS sessions do not inject those tool schemas. action=status|enable. enable flips project opencode.json only — never ~/.config/opencode. After enable, a new OpenCode session is required for solidity-erc20 / solidity-custom / … to appear. GENERATE still proceeds with @openzeppelin/contracts if tools are missing this session. HTS uses SearchHedera, not this MCP.",
+        args: {
+          action: tool.schema.string().optional().describe("status (default) or enable"),
+          workspace: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const cwd = toolWorkspace(args, context);
+          const action = (args.action || "status").trim().toLowerCase();
+          if (!["status", "enable"].includes(action)) {
+            return `Unknown action ${action}. Use status or enable.`;
+          }
+          const oz = await importDist(cwd, "ozMcp.js");
+          if (action === "enable") {
+            return oz.formatOzMcpStatus(oz.enableOzMcp(cwd));
+          }
+          return oz.formatOzMcpStatus(oz.inspectOzMcp(cwd));
         },
       }),
       harness_playwright_mcp: tool({

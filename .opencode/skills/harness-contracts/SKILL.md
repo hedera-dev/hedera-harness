@@ -7,9 +7,11 @@ description: When Contracts is solidity, pick a contract base (token, nft, escro
 
 Use this **only** when `harness_tasks_status` says `contracts=solidity`. `contracts=none` means no `.sol` of ours — an existing USDC token is still `none`.
 
-The overlay ships OpenZeppelin Contracts MCP (`openzeppelin-solidity` → `https://mcp.openzeppelin.com/contracts/solidity/mcp`). Tools: `solidity-erc20`, `solidity-erc721`, `solidity-erc1155`, `solidity-governor`, `solidity-custom` (and similar names under that server).
+OpenZeppelin Contracts MCP (`openzeppelin-solidity` → `https://mcp.openzeppelin.com/contracts/solidity/mcp`) ships **disabled** on `tui install`. Enabled MCP schemas are injected at session start even if unused, so payments/HCS runs must not load this server.
 
-**Call the matching OZ tool first**, then change names, fees, parties, and UI to match **Así está**. Do not write a blank contract from training data when the MCP tool is in the session.
+`harness_tasks_status` **enables it automatically** when `contracts=solidity` and `contract_base` is not `hts`. `harness_oz_mcp enable` does the same by hand. OpenCode only loads MCP at session start — after enable, OZ tools appear in a **new** session. This session: if `solidity-erc20` / `solidity-custom` / … are listed, call them first; if not, write from `@openzeppelin/contracts` and do not stall for a restart.
+
+**Call the matching OZ tool first** when it is in the session, then change names, fees, parties, and UI to match **Así está**. Do not write a blank contract from training data when the MCP tool is in the session.
 
 ## Header (PRD + `.harness/tasks.md`)
 
@@ -42,7 +44,7 @@ HTS is Hedera-specific. Do not wrap it in OpenZeppelin ERC-20. Seed `packages/ha
 3. Customize. Compile (`yarn hardhat:compile`). Wire the frontend with scaffold write hooks.
 4. Do not rebuild the whole app. Do not invent a second token if they asked for escrow.
 
-If OZ MCP tools are **missing**, say so and write from OpenZeppelin-style imports (`@openzeppelin/contracts`) anyway. Still `SearchHedera` for Hashio / chain 296 / HTS.
+If OZ MCP tools are **missing** this session, say `oz_mcp` was enabled for next time and write from OpenZeppelin-style imports (`@openzeppelin/contracts`) anyway. Still `SearchHedera` for Hashio / chain 296 / HTS. Do not ask the human to restart mid-GENERATE.
 
 ## EVALUATE (same MetaMask vault)
 

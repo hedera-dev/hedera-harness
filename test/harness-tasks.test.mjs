@@ -35,6 +35,7 @@ test("inspectTasks missing file is not all_done", async () => {
   assert.match(printed, /contracts=none/);
   assert.match(printed, /hardhat=skip/);
   assert.match(printed, /assert=next-only/);
+  assert.match(printed, /oz_mcp=skip/);
   assert.doesNotMatch(printed, /all_done=true/);
 });
 
@@ -114,6 +115,7 @@ ContractBase: escrow
   assert.equal(status.contracts, "solidity");
   assert.equal(status.contractBase, "escrow");
   assert.match(tasks.formatTasksStatus(status), /contract_base=escrow/);
+  assert.match(tasks.formatTasksStatus(status), /oz_mcp=missing/);
 });
 
 test("inspectTasks honors Contracts header over a payments PRD", async () => {
@@ -135,6 +137,7 @@ Contracts: solidity
   assert.match(tasks.formatTasksStatus(status), /hardhat=run/);
   assert.match(tasks.formatTasksStatus(status), /contract_base=hts/);
   assert.match(tasks.formatTasksStatus(status), /assert=next\+hardhat/);
+  assert.match(tasks.formatTasksStatus(status), /oz_mcp=skip/);
 });
 
 test("inspectTasks infers solidity from a real PRD when tasks omit the header", async () => {

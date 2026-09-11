@@ -53,7 +53,7 @@ When `solidity`, also set a **base** (then customize from the interview — do n
 ContractBase: escrow
 ```
 
-One of: `token` | `nft` | `escrow` | `payroll` | `vesting` | `governor` | `hts` | `custom`. GENERATE loads `harness-contracts` and OpenZeppelin MCP (`solidity-erc20` / `solidity-custom` / …) or `SearchHedera` for `hts`.
+One of: `token` | `nft` | `escrow` | `payroll` | `vesting` | `governor` | `hts` | `custom`. GENERATE loads `harness-contracts`. OpenZeppelin MCP stays **off** until this PRD is solidity (not `hts`); `harness_tasks_status` enables it. `hts` uses `SearchHedera`.
 
 HCS / CryptoTransfer / WalletConnect payments are **none**. Preserve the seed `packages/hardhat` tree; do not delete it and do not add work there unless `solidity`.
 
@@ -108,6 +108,8 @@ Contracts: none
 ```
 
 Use `Contracts: solidity` **and** `ContractBase: <token|nft|escrow|payroll|vesting|governor|hts|custom>` when the increment needs Solidity/Hardhat. Those lines are how ASSERT and GENERATE choose Hardhat vs skip, and which contract shape to start from.
+
+When you write `Contracts: solidity` and the base is **not** `hts`, call `harness_oz_mcp` `enable` (or rely on the next `harness_tasks_status`, which enables it). The overlay ships that MCP **disabled** so unused sessions do not pay its tool schemas. Do not tell the human to restart before GENERATE.
 
 - One checkbox if the increment is a single screen or route.
 - 3–7 checkboxes if there are several behaviors. Never “models then UI then tests”.

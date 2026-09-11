@@ -12,7 +12,7 @@
     "openzeppelin-solidity": {
       "type": "remote",
       "url": "https://mcp.openzeppelin.com/contracts/solidity/mcp",
-      "enabled": true,
+      "enabled": false,
       "oauth": false,
       "timeout": 20000
     },

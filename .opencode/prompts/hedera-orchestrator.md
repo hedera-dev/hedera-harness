@@ -69,7 +69,7 @@ After PRD, call `harness_tasks_status`.
 - `next=T…` — spawn `hedera-generate` **once per pending task**. Tell it the id and text. Wait until it returns. Then `harness_tasks_status` again. Do **not** spawn a second GENERATE while one is running. Do **not** dump the whole feature into one GENERATE when multiple checkboxes remain.
 - `all_done=true` — stop GENERATE, run ASSERT once.
 - `hardhat=skip` / `contracts=none` (default) — tell ASSERT not to run Hardhat or root `yarn lint`. Payments/HCS do not need it.
-- `hardhat=run` / `contracts=solidity` — ASSERT includes `yarn hardhat:compile`. GENERATE uses `contract_base=` + OpenZeppelin MCP (or `SearchHedera` for HTS). EVALUATE drives the **contract UI** with the same MetaMask session — not `harness_wallet_e2e`.
+- `hardhat=run` / `contracts=solidity` — ASSERT includes `yarn hardhat:compile`. GENERATE uses `contract_base=` + OpenZeppelin MCP **if those tools are in the session** (the overlay ships that MCP disabled; `harness_tasks_status` enables it for the next session) or `SearchHedera` for HTS. EVALUATE drives the **contract UI** with the same MetaMask session — not `harness_wallet_e2e`.
 
 That is how the TUI shows one Hedera-Generate task per unit. Official CLI still does one GENERATE per PRD increment; we only split **inside** an increment when `tasks.md` has more than one line.
 

@@ -68,6 +68,7 @@ test("tui install copies overlay and tui uninstall removes it", async () => {
   assert.equal(config.mcp?.["hedera-docs"]?.enabled, true);
   assert.equal(config.mcp?.["openzeppelin-solidity"]?.type, "remote");
   assert.equal(config.mcp?.["openzeppelin-solidity"]?.url, overlay.OPENZEPPELIN_MCP_URL);
+  assert.equal(config.mcp?.["openzeppelin-solidity"]?.enabled, false);
   assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-hedera-docs", "SKILL.md")));
   assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-contracts", "SKILL.md")));
 

@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInit } from "../initRunner.js";
+import { OPENZEPPELIN_MCP_NAME, OPENZEPPELIN_MCP_URL } from "../ozMcp.js";
 import type { TuiCliOptions } from "../types.js";
 
 export const HEDERA_DOCS_MCP_NAME = "hedera-docs";
 export const HEDERA_DOCS_MCP_URL = "https://docs.hedera.com/mcp";
-export const OPENZEPPELIN_MCP_NAME = "openzeppelin-solidity";
-export const OPENZEPPELIN_MCP_URL = "https://mcp.openzeppelin.com/contracts/solidity/mcp";
+export { OPENZEPPELIN_MCP_NAME, OPENZEPPELIN_MCP_URL };
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const POINTER_NAME = "hedera-harness.json";
 const AGENTS_START = "<!-- hedera-harness-tui:start -->";

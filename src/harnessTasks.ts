@@ -9,6 +9,7 @@ import {
   type ContractBase,
   type ContractScope,
 } from "./contractScope.js";
+import { inspectOzMcp, ozMcpNeeded } from "./ozMcp.js";
 import { inspectWorkspacePrd } from "./prdStatus.js";
 
 export const TASKS_FILE = ".harness/tasks.md";
@@ -20,6 +21,7 @@ export interface HarnessTask {
 }
 
 export interface TasksStatus {
+  workspaceDir: string;
   file: string;
   exists: boolean;
   tasks: HarnessTask[];
@@ -50,24 +52,46 @@ export function parseTasksMarkdown(markdown: string): HarnessTask[] {
 }
 
 export function inspectTasks(workspaceDir: string): TasksStatus {
-  const file = tasksFilePath(workspaceDir);
-  const contracts = resolveContractScope(workspaceDir);
-  const contractBase = resolveContractBase(workspaceDir, contracts);
+  const resolved = path.resolve(workspaceDir);
+  const file = tasksFilePath(resolved);
+  const contracts = resolveContractScope(resolved);
+  const contractBase = resolveContractBase(resolved, contracts);
   if (!existsSync(file)) {
-    return { file, exists: false, tasks: [], pending: [], contracts, contractBase };
+    return {
+      workspaceDir: resolved,
+      file,
+      exists: false,
+      tasks: [],
+      pending: [],
+      contracts,
+      contractBase,
+    };
   }
   const tasks = parseTasksMarkdown(readFileSync(file, "utf8"));
   const pending = tasks.filter(task => !task.done);
-  return { file, exists: true, tasks, pending, next: pending[0], contracts, contractBase };
+  return {
+    workspaceDir: resolved,
+    file,
+    exists: true,
+    tasks,
+    pending,
+    next: pending[0],
+    contracts,
+    contractBase,
+  };
 }
 
 export function formatTasksStatus(status: TasksStatus): string {
   const gate = hardhatGate(status.contracts);
+  const ozKind = ozMcpNeeded(status.contracts, status.contractBase)
+    ? inspectOzMcp(status.workspaceDir).kind
+    : "skip";
   const scopeLines = [
     `contracts=${status.contracts}`,
     `contract_base=${status.contractBase}`,
     `hardhat=${gate}`,
     `assert=${gate === "skip" ? "next-only" : "next+hardhat"}`,
+    `oz_mcp=${ozKind}`,
   ];
   if (!status.exists) {
     return [

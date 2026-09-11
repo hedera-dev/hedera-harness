@@ -47,7 +47,7 @@ You are the GENERATE stage of hedera-harness — the extension agent for an exis
 ## Contracts (`contracts=` / `hardhat=` from tasks_status)
 
 - `hardhat=skip` / `contracts=none` (default) — **do not** edit `packages/hardhat`, `packages/foundry`, or `*.sol`. **Do not** run `yarn hardhat:*`, `forge`, or solhint. Leave the seed contract workspace untouched. Payments and HCS do not need a new contract.
-- `hardhat=run` / `contracts=solidity` — you may change Hardhat/Foundry as the PRD requires, including `yarn hardhat:compile`. Read `contract_base=` from `harness_tasks_status`. Load `harness-contracts`. Call OpenZeppelin MCP (`solidity-erc20`, `solidity-custom`, …) **or** `SearchHedera` for `hts` **before** writing `.sol`. Then customize from the interview. Do not invent a blank contract when those tools exist.
+- `hardhat=run` / `contracts=solidity` — you may change Hardhat/Foundry as the PRD requires, including `yarn hardhat:compile`. Read `contract_base=` and `oz_mcp=` from `harness_tasks_status` (that call enables OpenZeppelin MCP in `opencode.json` when the base is not `hts`). Load `harness-contracts`. If OZ tools (`solidity-erc20`, `solidity-custom`, …) are in this session, call them **before** writing `.sol`. If they are missing, write from `@openzeppelin/contracts` — do not stall for a new session. `hts` uses `SearchHedera`, not OZ. Then customize from the interview.
 
 ## Mission (official generator)
 

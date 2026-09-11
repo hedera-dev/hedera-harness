@@ -36,7 +36,7 @@ node dist/index.js mcp status
 node dist/index.js tasks status
 ```
 
-Prefer plugin tools `harness_doctor`, `harness_latest_run`, `harness_wallet_gate`, `harness_wallet_status`, `harness_tasks_status`, `harness_playwright_mcp` over scraping logs by hand.
+Prefer plugin tools `harness_doctor`, `harness_latest_run`, `harness_wallet_gate`, `harness_wallet_status`, `harness_tasks_status`, `harness_oz_mcp`, `harness_playwright_mcp` over scraping logs by hand.
 
 **Hedera docs — MCP first.** Call `SearchHedera` (`hedera-docs`) before `websearch` / `webfetch`. Web on `https://docs.hedera.com` only if the MCP tool is missing or the call failed. One MCP call is not stalling GENERATE.
 
