@@ -1,6 +1,7 @@
 import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
 import { appendHarnessLog, writeJsonFile, writeStatusFile, type RunLayout } from "./runArtifacts.js";
+import { formatRateLimit } from "./agentStreamLogger.js";
 import type { AgentProgress } from "./agentStreamLogger.js";
 import type {
   AgentRunResult,
@@ -153,7 +154,22 @@ export async function runGenerateStage(
     exitCode: agentResult.exitCode,
     durationMs: agentResult.durationMs,
     timedOut: agentResult.timedOut,
+    telemetry: agentResult.telemetry,
   });
+
+  const rateLimit = agentResult.telemetry?.rateLimit;
+  if (rateLimit && rateLimit.status !== "allowed") {
+    await appendHarnessLog(layout.jsonlLogPath, {
+      type: "agent_rate_limited",
+      timestamp: new Date().toISOString(),
+      attempt,
+      role: "generator",
+      status: rateLimit.status,
+      rateLimitType: rateLimit.rateLimitType,
+      resetsAt: rateLimit.resetsAt,
+    });
+    console.log(`[hedera-harness] Agent rate limit: ${formatRateLimit(rateLimit)}`);
+  }
 
   if (agentResult.exitCode === 0) {
     return { agentResult };

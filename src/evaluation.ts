@@ -4,6 +4,7 @@ import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
 import { buildValidatorPrompt } from "./promptBuilder.js";
 import { writePromptFile } from "./runArtifacts.js";
 import type {
+  AgentTelemetry,
   ChainSigner,
   EvaluationResult,
   TemplateSpec,
@@ -20,7 +21,7 @@ export function isValidatorEnabled(spec: TemplateSpec): boolean {
   return spec.validator !== undefined && spec.validator.enabled !== false;
 }
 
-export async function runEvaluation(input: {
+export interface EvaluationInput {
   workspacePath: string;
   spec: TemplateSpec;
   attempt: number;
@@ -33,7 +34,23 @@ export async function runEvaluation(input: {
   evalRelativePath?: string;
   /** Appended to the validator invocation — e.g. --mcp-config for CLIs that take one. */
   extraArgs?: string[];
-}): Promise<EvaluationResult> {
+}
+
+/**
+ * EVALUATE is a full agent session, so its spend belongs in the run total
+ * alongside the generator's. The evaluator has many failure exits; stamping the
+ * telemetry once here keeps every one of them reporting what it cost.
+ */
+export async function runEvaluation(input: EvaluationInput): Promise<EvaluationResult> {
+  const telemetryRef: { current?: AgentTelemetry } = {};
+  const result = await evaluate(input, telemetryRef);
+  return telemetryRef.current ? { ...result, telemetry: telemetryRef.current } : result;
+}
+
+async function evaluate(
+  input: EvaluationInput,
+  telemetryRef: { current?: AgentTelemetry },
+): Promise<EvaluationResult> {
   const startedAt = Date.now();
   const validatorConfig = input.spec.validator;
   if (!validatorConfig || validatorConfig.enabled === false) {
@@ -101,6 +118,7 @@ export async function runEvaluation(input: {
       logPath: agentLogPath,
       activityLogPath: agentActivityLogPath,
     });
+    telemetryRef.current = agentResult.telemetry;
 
     if (agentResult.exitCode !== 0) {
       return annotateInfrastructureFailure(

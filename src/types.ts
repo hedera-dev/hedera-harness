@@ -78,6 +78,51 @@ export interface AgentRunInput {
 export interface AgentRunResult extends CommandExecutionResult {
   command: string;
   args: string[];
+  /** What the agent reported about itself on its stream, when it reported anything. */
+  telemetry?: AgentTelemetry;
+}
+
+/** Rate-limit state the agent CLI reports mid-stream. */
+export interface RateLimitSnapshot {
+  /** `rejected` means the CLI cannot make further requests until `resetsAt`. */
+  status: "allowed" | "allowed_warning" | "rejected";
+  /** e.g. `five_hour`, `seven_day`, `seven_day_opus`, `overage`. */
+  rateLimitType?: string;
+  /** Unix epoch seconds at which the window resets. */
+  resetsAt?: number;
+}
+
+/**
+ * What one agent invocation reported about itself.
+ *
+ * Every field is optional, and absent is not zero: the two CLIs report
+ * different subsets, and an agent killed mid-stream reports none at all. A
+ * missing cost means "not reported", which is why the outro omits the line
+ * rather than claiming $0.00 was spent.
+ */
+export interface AgentTelemetry {
+  model?: string;
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  numTurns?: number;
+  /** Last rate-limit envelope seen on the stream. */
+  rateLimit?: RateLimitSnapshot;
+}
+
+/** Agent spend for a whole run, summed across generator and evaluator calls. */
+export interface AgentUsageTotals {
+  /** Agent invocations observed. */
+  agentRuns: number;
+  /** Invocations that reported a cost — below `agentRuns` when a CLI does not. */
+  costedRuns: number;
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 export interface AgentProvider {
@@ -264,6 +309,8 @@ export interface EvaluationResult {
   /** True when failure is harness/agent tooling (MCP/browser), not the generated app. */
   infrastructureFailure?: boolean;
   infrastructureFailureReason?: string;
+  /** What the evaluator agent reported about itself. */
+  telemetry?: AgentTelemetry;
 }
 
 export interface ValidationFinding {
@@ -335,6 +382,8 @@ export interface RunReport {
   durationMs: number;
   validation: ValidationResult;
   evaluation?: EvaluationResult;
+  /** Agent spend across every invocation this kick, when any CLI reported it. */
+  agentUsage?: AgentUsageTotals;
 }
 
 export type HarnessLogEvent =
@@ -416,6 +465,16 @@ export type HarnessLogEvent =
       exitCode: number | null;
       durationMs: number;
       timedOut: boolean;
+      telemetry?: AgentTelemetry;
+    }
+  | {
+      type: "agent_rate_limited";
+      timestamp: string;
+      attempt: number;
+      role: "generator" | "validator";
+      status: "allowed_warning" | "rejected";
+      rateLimitType?: string;
+      resetsAt?: number;
     }
   | {
       type: "validation_finished";

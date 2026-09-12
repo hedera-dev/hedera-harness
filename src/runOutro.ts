@@ -1,3 +1,4 @@
+import { formatAgentUsage } from "./agentUsage.js";
 import type { CleanupResult } from "./runCleanup.js";
 import type { SessionMetadata } from "./session.js";
 import type { RunReport } from "./types.js";
@@ -26,6 +27,10 @@ export function formatRunOutro(input: OutroInput): string[] {
     `report=${report.runDirectory}/reports/report.json`,
     `session=${report.runDirectory}/session.json`,
     `attempts=${report.attemptsThisCycle ?? report.attempts}/${report.maxAttempts}`,
+    // Omitted entirely when no CLI reported spend, rather than shown as $0.00.
+    formatAgentUsage(report.agentUsage) !== undefined
+      ? `agentSpend=${formatAgentUsage(report.agentUsage)}`
+      : undefined,
     report.slices && report.slices.length > 1
       ? `increments=${report.slices.filter(s => s.passed).length}/${report.slices.length} delivered`
       : undefined,

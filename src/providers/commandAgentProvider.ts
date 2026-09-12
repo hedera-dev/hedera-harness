@@ -170,6 +170,7 @@ export class CommandAgentProvider implements AgentProvider {
           args,
           timedOut,
           signal,
+          ...(streamLogger ? { telemetry: streamLogger.getTelemetry() } : {}),
         };
 
         void finalizeAgentLog(input.logPath, result, streamLogger?.getProgress()).finally(() =>

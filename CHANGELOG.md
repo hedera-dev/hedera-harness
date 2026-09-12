@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Added
+
+- **Agent spend is reported.** The harness runs paid agent sessions — a
+  generator every attempt, an evaluator too on the semantic tier — and never
+  said what they cost, though the CLI reports it on its terminal `result` event.
+  Cost and token usage now land per attempt in the run log, as run totals
+  in `report.json` under `agentUsage`, and as an `agentSpend=` line in the
+  outro. A CLI that reports no cost is counted but never invented: the line says
+  `cost not reported`, or `1/2 agent runs reported cost`, rather than `$0.00`.
+- **A rejected rate limit stops the run instead of burning its attempts.**
+  Exhausting a usage window made the agent exit non-zero, which the loop read as
+  an application defect and answered by re-prompting — spending the remaining
+  attempts on something that could not succeed until the window reset. It is now
+  classified as an infrastructure failure, alongside an unreachable MCP browser,
+  and aborts with the reset time. An `allowed_warning` is logged, not acted on.
+
+### Fixed
+
+- **Agent activity is reported for `agent: claude`.** The stream-json parser
+  only understood Cursor's wire format (one `tool_call` event per call), so a
+  Claude run logged two lines for its whole duration and reported `0` tool
+  calls in `status.json` from start to finish — the file watcher was the only
+  thing keeping the heartbeat alive, which hid reads, greps, shell commands and
+  thinking. Claude's shapes (`tool_use` blocks on an `assistant` message,
+  `tool_result` blocks on the following `user` message) are now parsed into the
+  same vocabulary, and parallel tool calls on one message are counted
+  individually rather than as one. Cursor's format is unchanged.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

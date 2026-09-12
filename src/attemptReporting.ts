@@ -9,8 +9,9 @@ import {
 } from "./runArtifacts.js";
 import { logStage } from "./attemptStages.js";
 import { findingIds, formatFindingDelta, type FindingDelta } from "./findingsLifecycle.js";
+import { formatAgentUsage } from "./agentUsage.js";
 import type { AttemptLoopInput } from "./attemptLoop.js";
-import type { RunReport, TemplateSpec, ValidationResult } from "./types.js";
+import type { AgentUsageTotals, RunReport, TemplateSpec, ValidationResult } from "./types.js";
 
 /**
  * Artifact and console reporting for one attempt.
@@ -146,9 +147,12 @@ export async function abortOnInfrastructureFailure(input: {
   layout: RunLayout;
   attempt: number;
   validation: ValidationResult;
+  /** Overrides the evaluation reason — e.g. an agent rate-limit rejection. */
+  reason?: string;
 }): Promise<void> {
   const { layout, attempt, validation } = input;
   const reason =
+    input.reason ??
     validation.evaluation?.infrastructureFailureReason ??
     "evaluation infrastructure failure";
 
@@ -160,7 +164,7 @@ export async function abortOnInfrastructureFailure(input: {
   });
   await appendHarnessNote(
     layout.notesLogPath,
-    `Attempt ${attempt} evaluation infrastructure abort`,
+    `Attempt ${attempt} infrastructure abort`,
     [
       "Repair loop aborted: failure is harness/agent tooling, not the generated app.",
       reason,
@@ -169,7 +173,9 @@ export async function abortOnInfrastructureFailure(input: {
       ),
     ].join("\n"),
   );
-  logPhase("Aborting repair loop after evaluation infrastructure failure", reason);
+  // Reason-agnostic: this path now also covers a rejected agent rate limit,
+  // which is infrastructure but has nothing to do with the evaluator.
+  logPhase("Aborting repair loop after an infrastructure failure", reason);
 }
 
 export async function checkpoint(input: {
@@ -214,9 +220,12 @@ export async function finishRun(input: {
   startedAt: Date;
   validation: ValidationResult;
   delta: FindingDelta;
+  agentUsage?: AgentUsageTotals;
 }): Promise<RunReport> {
   const { layout, spec, isContinue, cycle, validation, delta } = input;
   const finishedAt = new Date();
+  const agentUsage =
+    input.agentUsage && input.agentUsage.agentRuns > 0 ? input.agentUsage : undefined;
 
   const report: RunReport = {
     specName: spec.name,
@@ -235,6 +244,7 @@ export async function finishRun(input: {
     durationMs: finishedAt.getTime() - input.startedAt.getTime(),
     validation,
     evaluation: validation.evaluation,
+    agentUsage,
   };
 
   await writeJsonFile(layout.reportPath, report);
@@ -258,6 +268,7 @@ export async function finishRun(input: {
     [
       `${report.passed ? "Passed" : "Failed"} after ${report.attemptsThisCycle ?? report.attempts} attempt(s) this kick.`,
       `Findings: ${formatFindingDelta(delta)}`,
+      agentUsage ? `Agent spend: ${formatAgentUsage(agentUsage)}` : undefined,
       `Report: ${layout.reportPath}`,
       isContinue ? `Total attempts in project: ${report.attempts}` : undefined,
     ]
