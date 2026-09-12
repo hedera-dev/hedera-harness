@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Agent activity is reported for `agent: claude`.** The stream-json parser
+  only understood Cursor's wire format (one `tool_call` event per call), so a
+  Claude run logged two lines for its whole duration and reported `0` tool
+  calls in `status.json` from start to finish — the file watcher was the only
+  thing keeping the heartbeat alive, which hid reads, greps, shell commands and
+  thinking. Claude's shapes (`tool_use` blocks on an `assistant` message,
+  `tool_result` blocks on the following `user` message) are now parsed into the
+  same vocabulary, and parallel tool calls on one message are counted
+  individually rather than as one. Cursor's format is unchanged.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
