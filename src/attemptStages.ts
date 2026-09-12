@@ -162,7 +162,10 @@ export async function runGenerateStage(
   return {
     agentResult,
     finding: {
-      id: agentResult.timedOut ? `generator-timeout:${attempt}` : `generator-exit:${attempt}`,
+      // Stable across attempts on purpose: the same failure recurring is one
+      // finding that stayed open, not one fixed and one new. The attempt is
+      // already recorded by the artifact this finding is written into.
+      id: agentResult.timedOut ? "generator-timeout" : "generator-exit",
       category: "agent",
       message: agentResult.timedOut
         ? `Generator agent timed out after ${Math.round(agentResult.durationMs / 1000)}s`
