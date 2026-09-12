@@ -4,6 +4,7 @@ export type HarnessCommand =
   | "init"
   | "run"
   | "doctor"
+  | "status"
   | "validate"
   | "validate-semantic";
 
@@ -31,6 +32,10 @@ export interface CliOptions {
   continueBranch?: string;
   /** `doctor` only: check the recipe alone, skipping host and project checks. */
   recipeOnly?: boolean;
+  /** `status` only: re-render until interrupted. */
+  watch?: boolean;
+  /** `status` only: emit the raw snapshot as JSON. */
+  json?: boolean;
 }
 
 export interface InitCliOptions {

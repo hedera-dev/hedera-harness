@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **`hedera-harness status`** — report what the newest run is doing: stage,
+  attempt, elapsed time, the agent's last activity, tool-call counts, and
+  findings once an attempt has been graded. The loop has always written
+  `status.json` on every phase change and on a 15-second heartbeat, and nothing
+  read it back; a run takes 40 minutes to two hours, so watching one meant
+  keeping the launching terminal in view. `--watch` repaints until the run
+  finishes, `--json` emits the snapshot for scripts and CI.
+
+  The command is strictly read-only — it locates the run directory without the
+  `mkdir` side effects the run loop's own resolver has — and it distinguishes a
+  working run from an abandoned one: a `_running` phase whose heartbeat has
+  stopped reports `no heartbeat, the run may have stopped` instead of looking
+  alive indefinitely.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

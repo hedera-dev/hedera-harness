@@ -1,10 +1,20 @@
 import { runInit } from "./initRunner.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
+import { formatRunStatus, readRunStatus } from "./status.js";
 import { validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import { runSession } from "./sessionRunner.js";
 import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>([
+  "init",
+  "run",
+  "doctor",
+  "status",
+  "validate",
+  "validate-semantic",
+]);
+/** How often `status --watch` re-reads the run artifacts. */
+const WATCH_INTERVAL_MS = 2_000;
 const DEFAULT_RUN_SPEC = ".harness/spec.yaml";
 
 export function parseCliArgs(argv: string[]): ParsedCli {
@@ -12,7 +22,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
     throw new Error(
-      `Expected command "init", "run", "doctor", "validate", or "validate-semantic".`,
+      `Expected command "init", "run", "doctor", "status", "validate", or "validate-semantic".`,
     );
   }
 
@@ -39,6 +49,7 @@ Usage:
   hedera-harness init [target-dir] [--repo <url>] [--ref <branch>] [--template <name>] [--skip-install]
   hedera-harness run [spec] [--max-attempts <count>] [--new] [--continue <branch>]
   hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
+  hedera-harness status [spec] [--workspace <path>] [--watch] [--json]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
 
@@ -51,6 +62,8 @@ Examples:
   hedera-harness run .harness/spec.yaml --new
   hedera-harness run .harness/spec.yaml --continue harness/run-my-feature-abc123
   hedera-harness doctor
+  hedera-harness status
+  hedera-harness status --watch
   hedera-harness validate
   hedera-harness validate .harness/spec.yaml
   hedera-harness validate-semantic .harness/spec.yaml
@@ -101,6 +114,11 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     if (!report.passed) {
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (parsed.command === "status") {
+    await runStatusCommand(parsed.options);
     return;
   }
 
@@ -171,6 +189,7 @@ function takeSpecPath(
   if (
     command === "run" ||
     command === "doctor" ||
+    command === "status" ||
     command === "validate" ||
     command === "validate-semantic"
   ) {
@@ -213,6 +232,55 @@ function parseInitOptions(args: string[]): InitCliOptions {
   return options;
 }
 
+/**
+ * Report the newest run, once or continuously.
+ *
+ * `--watch` repaints in place on a TTY and appends plain blocks when piped, so
+ * `hedera-harness status --watch | tee` stays readable.
+ */
+async function runStatusCommand(options: CliOptions): Promise<void> {
+  if (options.json) {
+    console.log(JSON.stringify(await readRunStatus(options), null, 2));
+    return;
+  }
+
+  if (!options.watch) {
+    console.log(formatRunStatus(await readRunStatus(options)));
+    return;
+  }
+
+  const repaint = process.stdout.isTTY === true;
+  let stop = false;
+  const onInterrupt = (): void => {
+    stop = true;
+  };
+  process.once("SIGINT", onInterrupt);
+
+  try {
+    while (!stop) {
+      const snapshot = await readRunStatus(options);
+      if (repaint) process.stdout.write("[2J[H");
+      console.log(formatRunStatus(snapshot));
+
+      // A finished run will not change again; watching it forever is a hang.
+      const phase = snapshot.status?.phase;
+      if (phase === "finished" || phase === "cleanup_complete") break;
+
+      await delay(WATCH_INTERVAL_MS);
+    }
+  } finally {
+    process.removeListener("SIGINT", onInterrupt);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, ms);
+    // Never hold the process open on the poll interval alone.
+    timer.unref?.();
+  });
+}
+
 function parseOptions(command: HarnessCommand, specPath: string, args: string[]): CliOptions {
   const options: CliOptions = { specPath };
 
@@ -228,6 +296,18 @@ function parseOptions(command: HarnessCommand, specPath: string, args: string[])
           throw new Error(`${arg} is only valid for doctor.`);
         }
         options.recipeOnly = true;
+        break;
+      case "--watch":
+        if (command !== "status") {
+          throw new Error(`${arg} is only valid for status.`);
+        }
+        options.watch = true;
+        break;
+      case "--json":
+        if (command !== "status") {
+          throw new Error(`${arg} is only valid for status.`);
+        }
+        options.json = true;
         break;
       case "--workspace":
         options.workspacePath = readValue(args, ++index, arg);

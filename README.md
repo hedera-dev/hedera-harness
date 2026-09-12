@@ -134,6 +134,7 @@ The harness never pushes, opens a PR, merges, deletes a branch, or switches away
 hedera-harness init [dir] [--repo URL] [--ref branch] [--template name] [--skip-install]
 hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
 hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
+hedera-harness status [spec] [--workspace <path>] [--watch] [--json]
 hedera-harness validate [spec] [--workspace <path>]
 hedera-harness validate-semantic [spec] [--workspace <path>]
 ```
@@ -149,6 +150,16 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 `--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
 
 **`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, Playwright when SMOKE is on, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
+
+**`status`** reports what the newest run is doing: stage, attempt, elapsed time, the agent's last activity, tool-call counts, and findings once an attempt has been graded. A run takes 40 minutes to two hours and the loop has always written `.harness/runs/<id>/status.json` on every phase change and on a 15-second heartbeat — `status` is the reader, so progress no longer depends on keeping the launching terminal in view.
+
+```bash
+hedera-harness status            # one snapshot
+hedera-harness status --watch    # repaint until the run finishes
+hedera-harness status --json     # machine-readable, for scripts and CI
+```
+
+It is read-only, and it says so when a `_running` phase stops heartbeating — a run whose terminal was closed reports `no heartbeat, the run may have stopped` rather than looking alive forever.
 
 ## Configuration
 
