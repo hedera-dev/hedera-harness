@@ -203,3 +203,50 @@ function formatFailedCommand(result: CommandExecutionResult): string {
 
   return stderr ? `Command "${renderedCommand}" ${reason}: ${stderr}` : `Command "${renderedCommand}" ${reason}.`;
 }
+
+/**
+ * Keep both ends of a long output.
+ *
+ * `BoundedOutput` already does this for an agent's stream, for the same reason:
+ * the part that says why is at the end. A head-only cut of a build log keeps the
+ * banner and drops the error.
+ */
+export function truncateEnds(text: string, maxLength = 1600): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+
+  const head = Math.floor(maxLength * 0.3);
+  const tail = maxLength - head;
+  const omitted = trimmed.length - maxLength;
+  return [
+    trimmed.slice(0, head),
+    `\n... ${omitted} characters omitted ...\n`,
+    trimmed.slice(trimmed.length - tail),
+  ].join("");
+}
+
+/**
+ * What a failed command actually said, for a finding's `details`.
+ *
+ * `stderr || stdout` dropped the wrong stream: a build that warns on stderr and
+ * reports the type error on stdout handed the agent the warning and nothing
+ * else, so the repair attempt that follows is blind.
+ */
+export function describeCommandFailure(
+  result: { stdout?: string; stderr?: string },
+  maxLength = 1600,
+): string {
+  const streams = (
+    [
+      ["stderr", result.stderr?.trim() ?? ""],
+      ["stdout", result.stdout?.trim() ?? ""],
+    ] as const
+  ).filter(([, text]) => text.length > 0);
+
+  if (streams.length === 0) return "";
+  // One stream needs no label; two do, or the agent cannot tell them apart.
+  if (streams.length === 1) return truncateEnds(streams[0]![1], maxLength);
+
+  const perStream = Math.floor(maxLength / streams.length);
+  return streams.map(([name, text]) => `${name}:\n${truncateEnds(text, perStream)}`).join("\n\n");
+}

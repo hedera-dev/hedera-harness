@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { makeOsTempDir } from "./tmpDir.mjs";
 
-const { BoundedOutput } = await import(pathToFileURL(path.resolve("dist/command.js")).href);
+const { BoundedOutput, truncateEnds, describeCommandFailure } = await import(
+  pathToFileURL(path.resolve("dist/command.js")).href,
+);
 const { writePromptFile } = await import(pathToFileURL(path.resolve("dist/runArtifacts.js")).href);
 
 test("BoundedOutput keeps short output verbatim", () => {
@@ -64,4 +66,36 @@ test("writePromptFile tolerates undefined and empty secrets", async () => {
   await writePromptFile(promptPath, "no secrets here", [undefined, ""]);
 
   assert.equal((await readFile(promptPath, "utf8")).trim(), "no secrets here");
+});
+
+test("a long output keeps the end, where the reason is", () => {
+  // Same rule BoundedOutput already follows for an agent stream: a head-only
+  // cut of a build log keeps the banner and drops the error.
+  const log = `${"info  - compiling module\n".repeat(400)}Type error in app/page.tsx line 12`;
+  const kept = truncateEnds(log, 400);
+
+  assert.ok(kept.includes("Type error in app/page.tsx line 12"), "the reason must survive");
+  assert.ok(kept.startsWith("info  - compiling module"), "the start is still useful context");
+  assert.match(kept, /characters omitted/);
+  assert.ok(kept.length < log.length);
+});
+
+test("short output is passed through untouched", () => {
+  assert.equal(truncateEnds("boom", 400), "boom");
+  assert.equal(describeCommandFailure({ stdout: "", stderr: "boom" }), "boom");
+  assert.equal(describeCommandFailure({ stdout: "", stderr: "" }), "");
+});
+
+test("a warning on stderr cannot hide the error on stdout", () => {
+  // The reported case: `stderr || stdout` handed the agent the harmless warning
+  // and dropped the type error entirely, so the repair that followed was blind.
+  const details = describeCommandFailure({
+    stdout: "ERROR: Property 'foo' does not exist on type 'Props'.",
+    stderr: "warning: peer dependency drift (harmless)",
+  });
+
+  assert.ok(details.includes("ERROR: Property 'foo' does not exist"), "the error must be there");
+  assert.ok(details.includes("warning: peer dependency drift"), "the warning is still context");
+  assert.match(details, /stdout:/);
+  assert.match(details, /stderr:/);
 });
