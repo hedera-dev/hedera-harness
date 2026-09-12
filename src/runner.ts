@@ -1,5 +1,5 @@
 import path from "node:path";
-import { access } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import {
   lastAttemptNumber,
   resolveArtifactDirsForWorkspace,
@@ -8,7 +8,14 @@ import {
 } from "./runArtifacts.js";
 import { logPhase } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
-import type { ChainSigner, CliOptions, EvaluationResult, ValidationResult } from "./types.js";
+import type { ChainSigner, CliOptions, EvaluationResult, ScenarioRunResult, ValidationResult } from "./types.js";
+import {
+  assertScenarioOperatorEnv,
+  executeScenarioPlan,
+  provisionScenarioActors,
+  resolveScenarioOperator,
+  sweepScenarioActors,
+} from "./scenario/index.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { selectActiveSlice, specHasEval } from "./sliceSelection.js";
 import { isReadyForPlaywrightSmoke, runDeterministicValidation } from "./validation/index.js";
@@ -168,5 +175,29 @@ export async function validateSemanticWorkspace(options: CliOptions): Promise<Ev
     return result;
   } finally {
     await devServer?.stop();
+  }
+}
+
+/** Run the SCENARIO plan against testnet without GENERATE / SMOKE / EVALUATE. */
+export async function validateScenarioWorkspace(options: CliOptions): Promise<ScenarioRunResult> {
+  const workspacePath = path.resolve(options.workspacePath ?? process.cwd());
+  await access(workspacePath);
+  const loaded = await loadTemplateSpec(options.specPath);
+  const { spec } = loaded;
+  if (!spec.scenarios?.enabled) {
+    throw new Error("validate-scenario requires scenarios.enabled in the recipe.");
+  }
+  assertScenarioOperatorEnv(spec);
+  let runDirectory = await resolveRunDirectoryForWorkspace(workspacePath);
+  if (runDirectory === path.resolve(workspacePath)) {
+    runDirectory = path.join(workspacePath, ".harness", "runs", `scenario-${Date.now()}`);
+    await mkdir(runDirectory, { recursive: true });
+  }
+  const operator = resolveScenarioOperator(spec);
+  const provisioned = await provisionScenarioActors(spec.scenarios.plan.actors, operator, runDirectory);
+  try {
+    return await executeScenarioPlan(spec.scenarios.plan, provisioned.actors);
+  } finally {
+    await sweepScenarioActors(provisioned.actors, operator, runDirectory, spec.scenarios.sweepBack);
   }
 }

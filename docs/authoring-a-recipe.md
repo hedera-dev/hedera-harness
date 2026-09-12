@@ -11,6 +11,7 @@ harness what to build and how to know it worked.
   validators/static.json           file and content assertions
   validators/yarn.json             commands that must pass
   validators/playwright-smoke.yaml SMOKE (optional)
+  scenarios.yaml                   SCENARIO (optional)
   eval.json                        EVALUATE (optional)
 ```
 
@@ -87,6 +88,7 @@ the one below stops catching your failures.
 | Stage | What it proves | Cost |
 |---|---|---|
 | ASSERT (files, static, commands) | the code is present and builds | seconds |
+| SCENARIO (native Hedera) | named actors completed real HTS/HCS/HBAR steps | testnet HBAR |
 | SMOKE (Playwright gate) | the app boots and its routes render | a dev server boot |
 | EVALUATE (evaluate checklist) | the app does what was asked | an agent session |
 | CHAIN (chain validation) | on-chain effects really happened | testnet HBAR |
@@ -182,6 +184,20 @@ chainValidation:
 
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.
+
+### SCENARIO — native multi-actor proof
+
+CHAIN is one burner in the browser. SCENARIO is the harness running real
+Hedera transactions for named actors, then checking the public mirror.
+
+```yaml
+scenarios:
+  enabled: true
+  file: .harness/scenarios.yaml
+```
+
+Operator env names are reused from `chainValidation.operator` when omitted.
+Details: [scenarios.md](scenarios.md).
 
 ## Building in increments
 

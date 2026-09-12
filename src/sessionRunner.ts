@@ -8,10 +8,16 @@ import {
 import { logPhase, runAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { envMaxAttempts } from "./env.js";
-import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
+import type { ChainSigner, CliOptions, RunReport, ScenarioActor, SliceReport } from "./types.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { selectActiveSlice } from "./sliceSelection.js";
 import { provideSkills } from "./skillProvider.js";
+import {
+  assertScenarioOperatorEnv,
+  provisionScenarioActors,
+  resolveScenarioOperator,
+  sweepScenarioActors,
+} from "./scenario/index.js";
 import {
   assertChainValidationOperatorEnv,
   provisionChainSigner,
@@ -84,11 +90,15 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   const startingAttempt = prepared.startingAttempt;
   const startedAt = new Date();
   let chainSigner: ChainSigner | undefined;
+  let scenarioActors: ScenarioActor[] | undefined;
   let report: RunReport | undefined;
   let cleanup: CleanupResult | undefined;
 
   if (spec.chainValidation?.enabled) {
     assertChainValidationOperatorEnv(spec.chainValidation);
+  }
+  if (spec.scenarios?.enabled) {
+    assertScenarioOperatorEnv(spec);
   }
 
   logPhase(
@@ -194,6 +204,19 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       );
     }
 
+    if (spec.scenarios?.enabled) {
+      const provisioned = await provisionScenarioActors(
+        spec.scenarios.plan.actors,
+        resolveScenarioOperator(spec),
+        layout.runDirectory,
+      );
+      scenarioActors = provisioned.actors;
+      logPhase(
+        provisioned.reused ? "Scenario actors reused" : "Scenario actors provisioned",
+        scenarioActors.map(actor => `${actor.name}=${actor.accountId}`).join(", "),
+      );
+    }
+
     const makeCheckpoint = async (
       workspace: string,
       attempt: number,
@@ -265,6 +288,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         vendoredSkills,
         vendoredContext,
         chainSigner,
+        scenarioActors,
         slice,
         previousOpenFindingIds: sliceIndex === firstSlice ? session.openFindingIds : [],
         commitAttempt: makeCheckpoint,
@@ -306,11 +330,25 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
       openFindingIds: report.openFindingIds,
       gateStatus: report.passed
         ? "passed"
-        : report.evaluation?.infrastructureFailure
+        : report.evaluation?.infrastructureFailure || report.validation.scenario?.infrastructureFailure
           ? "aborted"
           : "failed",
     });
   } finally {
+    if (scenarioActors && spec.scenarios?.enabled) {
+      const sweep = await sweepScenarioActors(
+        scenarioActors,
+        resolveScenarioOperator(spec),
+        layout.runDirectory,
+        spec.scenarios.sweepBack,
+      );
+      if (sweep.success) {
+        logPhase("Scenario actors swept", scenarioActors.map(actor => actor.accountId).join(", "));
+      } else {
+        logPhase("Scenario actor sweep failed (best-effort)", sweep.error);
+      }
+    }
+
     if (chainSigner && spec.chainValidation?.enabled) {
       const sweep = await sweepChainSigner(chainSigner, spec.chainValidation, layout.runDirectory);
       await appendHarnessLog(layout.jsonlLogPath, {
@@ -380,7 +418,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     lastAttempt: report.attempts,
     gateStatus: report.passed
       ? "passed"
-      : report.evaluation?.infrastructureFailure
+      : report.evaluation?.infrastructureFailure || report.validation.scenario?.infrastructureFailure
         ? "aborted"
         : "failed",
   };

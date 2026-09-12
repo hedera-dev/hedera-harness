@@ -1,11 +1,15 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
+import type { ScenarioConfig, ScenarioRunResult } from "./scenario/types.js";
+
+export type { ScenarioActor, ScenarioConfig, ScenarioRunResult } from "./scenario/types.js";
 
 export type HarnessCommand =
   | "init"
   | "run"
   | "doctor"
   | "validate"
-  | "validate-semantic";
+  | "validate-semantic"
+  | "validate-scenario";
 
 export interface CommandExecutionResult {
   command: string;
@@ -212,6 +216,8 @@ export interface TemplateSpec {
   forbiddenFiles: string[];
   secretScan?: SecretScanConfig;
   chainValidation?: ChainValidationConfig;
+  /** Opt-in native multi-actor scenario gate. Testnet only. */
+  scenarios?: ScenarioConfig;
   /** Host-app health commands run once before generation. */
   baseline?: BaselineConfig;
   maxAttempts: number;
@@ -276,7 +282,8 @@ export interface ValidationFinding {
     | "agent"
     | "playwright"
     | "eval"
-    | "eval-infra";
+    | "eval-infra"
+    | "scenario";
   message: string;
   details?: string;
   /**
@@ -296,6 +303,7 @@ export interface ValidationResult {
   commandResults: CommandExecutionResult[];
   playwrightGate?: PlaywrightGateResult;
   evaluation?: EvaluationResult;
+  scenario?: ScenarioRunResult;
 }
 
 /** Outcome of one increment in an ordered `prd:` list. */
@@ -462,4 +470,14 @@ export type HarnessLogEvent =
       passed: boolean;
       attempts: number;
       reportPath: string;
+    }
+  | {
+      type: "scenario_finished";
+      timestamp: string;
+      attempt: number;
+      passed: boolean;
+      stepCount: number;
+      assertionCount: number;
+      durationMs: number;
+      infrastructureFailure?: boolean;
     };

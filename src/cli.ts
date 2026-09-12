@@ -1,10 +1,17 @@
 import { runInit } from "./initRunner.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
-import { validateSemanticWorkspace, validateWorkspace } from "./runner.js";
+import { validateScenarioWorkspace, validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import { runSession } from "./sessionRunner.js";
 import type { CliOptions, HarnessCommand, InitCliOptions, ParsedCli } from "./types.js";
 
-const COMMANDS = new Set<HarnessCommand>(["init", "run", "doctor", "validate", "validate-semantic"]);
+const COMMANDS = new Set<HarnessCommand>([
+  "init",
+  "run",
+  "doctor",
+  "validate",
+  "validate-semantic",
+  "validate-scenario",
+]);
 const DEFAULT_RUN_SPEC = ".harness/spec.yaml";
 
 export function parseCliArgs(argv: string[]): ParsedCli {
@@ -12,7 +19,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
 
   if (!rawCommand || !isHarnessCommand(rawCommand)) {
     throw new Error(
-      `Expected command "init", "run", "doctor", "validate", or "validate-semantic".`,
+      `Expected command "init", "run", "doctor", "validate", "validate-semantic", or "validate-scenario".`,
     );
   }
 
@@ -41,6 +48,7 @@ Usage:
   hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
   hedera-harness validate [spec] [--workspace <path>]
   hedera-harness validate-semantic [spec] [--workspace <path>]
+  hedera-harness validate-scenario [spec] [--workspace <path>]
 
 Examples:
   hedera-harness init my-app
@@ -54,6 +62,7 @@ Examples:
   hedera-harness validate
   hedera-harness validate .harness/spec.yaml
   hedera-harness validate-semantic .harness/spec.yaml
+  hedera-harness validate-scenario .harness/spec.yaml
 
 Project-centric run notes:
   - Workspace is the current directory (cwd). Bootstrap with \`init\` first (or use an existing app with .harness/).
@@ -151,6 +160,34 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
     return;
   }
 
+  if (parsed.command === "validate-scenario") {
+    const result = await validateScenarioWorkspace(parsed.options);
+    console.log(
+      [
+        `SCENARIO finished`,
+        `passed=${result.passed}`,
+        `steps=${result.steps.length}`,
+        `asserts=${result.assertions.length}`,
+        `durationMs=${result.durationMs}`,
+        result.infrastructureFailure
+          ? `infrastructureFailure=true reason=${result.infrastructureFailureReason}`
+          : undefined,
+        ...result.steps.map(step =>
+          `  ${step.error ? "✘" : "✔"} ${step.id} ${step.kind}${step.transactionId ? ` ${step.transactionId}` : ""}${step.error ? ` — ${step.error}` : ""}`,
+        ),
+        ...result.assertions.map(
+          assertion => `  ${assertion.passed ? "✔" : "✘"} ${assertion.kind} — ${assertion.detail}`,
+        ),
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+    if (!result.passed) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   const { report, outroLines } = await runSession(parsed.options);
   console.log(outroLines.join("\n"));
 
@@ -172,7 +209,8 @@ function takeSpecPath(
     command === "run" ||
     command === "doctor" ||
     command === "validate" ||
-    command === "validate-semantic"
+    command === "validate-semantic" ||
+    command === "validate-scenario"
   ) {
     return { specPath: DEFAULT_RUN_SPEC, flagArgs: args };
   }

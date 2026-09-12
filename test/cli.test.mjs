@@ -65,7 +65,7 @@ test("parseCliArgs accepts validate without --workspace (cwd default at runtime)
   assert.equal(parsed.options.workspacePath, undefined);
 });
 
-test("parseCliArgs defaults validate and validate-semantic spec to .harness/spec.yaml", () => {
+test("parseCliArgs defaults validate, validate-semantic, and validate-scenario spec to .harness/spec.yaml", () => {
   const validate = cli.parseCliArgs(["validate"]);
   assert.equal(validate.command, "validate");
   assert.equal(validate.options.specPath, ".harness/spec.yaml");
@@ -73,6 +73,10 @@ test("parseCliArgs defaults validate and validate-semantic spec to .harness/spec
   const semantic = cli.parseCliArgs(["validate-semantic"]);
   assert.equal(semantic.command, "validate-semantic");
   assert.equal(semantic.options.specPath, ".harness/spec.yaml");
+
+  const scenario = cli.parseCliArgs(["validate-scenario"]);
+  assert.equal(scenario.command, "validate-scenario");
+  assert.equal(scenario.options.specPath, ".harness/spec.yaml");
 });
 
 test("parseCliArgs rejects removed extend command", () => {
@@ -113,6 +117,7 @@ test("printHelp documents init and project-centric run", () => {
   const help = lines.join("\n");
   assert.match(help, /hedera-harness init/);
   assert.match(help, /hedera-harness run/);
+  assert.match(help, /hedera-harness validate-scenario/);
   assert.match(help, /continues automatically/i);
   assert.match(help, /--new/);
   assert.doesNotMatch(help, /hedera-harness extend/);

@@ -14,7 +14,7 @@ npx hedera-harness@next run
 
 ## How a run works
 
-Each attempt runs four stages. Early stages short-circuit the rest, so a failing build never pays for a browser or an agent.
+Each attempt runs five stages. Early stages short-circuit the rest, so a failing build never pays for a browser or an agent.
 
 ```mermaid
 flowchart TD
@@ -22,11 +22,13 @@ flowchart TD
   branch --> baseline[Baseline health checks on the existing app]
   baseline --> generate[1 GENERATE - coding agent]
   generate --> assert[2 ASSERT - files, static, secrets, commands]
-  assert --> smoke[3 SMOKE - dev server + Playwright routes]
-  smoke --> evaluate[4 EVALUATE - adversarial validator vs evaluate checklist]
+  assert --> scenario[3 SCENARIO - native Hedera actors + mirror]
+  scenario --> smoke[4 SMOKE - dev server + Playwright routes]
+  smoke --> evaluate[5 EVALUATE - adversarial validator vs evaluate checklist]
   evaluate --> outcome[Pass / Fail / Abort]
   outcome --> artifacts[.harness/runs/ artifacts + checkpoint commits]
   assert -.->|fail + attempts left| generate
+  scenario -.->|fail + attempts left| generate
   smoke -.->|fail + attempts left| generate
   evaluate -.->|fail + attempts left| generate
 ```
@@ -38,7 +40,7 @@ flowchart TD
 Every attempt reports what moved, not just pass/fail:
 
 ```
-Stage 1/4 GENERATE — repair, attempt 3 [opus, escalated — last attempt fixed nothing]
+Stage 1/5 GENERATE — repair, attempt 3 [opus, escalated — last attempt fixed nothing]
 Attempt 3 FAILED — 2 open, 3 fixed, 1 new
 ```
 
@@ -105,6 +107,7 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 | Stage | Enable with | What it proves | Cost |
 |---|---|---|---|
 | **ASSERT** | on by default | files present, static assertions, no secrets, build passes | seconds |
+| **SCENARIO** | `scenarios` | harness funds named actors and runs native HTS/HCS/HBAR steps, then checks the public mirror | testnet HBAR |
 | **SMOKE** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
 | **EVALUATE** | `eval` + `validator.enabled` | an adversarial agent drives the live app against the evaluate checklist | an agent session |
 | **CHAIN** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
@@ -136,6 +139,7 @@ hedera-harness run [spec] [--max-attempts N] [--new] [--continue <branch>]
 hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
 hedera-harness validate [spec] [--workspace <path>]
 hedera-harness validate-semantic [spec] [--workspace <path>]
+hedera-harness validate-scenario [spec] [--workspace <path>]
 ```
 
 **`init`** decides what to do from the target:
@@ -148,7 +152,9 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 
 `--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
 
-**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, Playwright when SMOKE is on, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
+**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, Playwright when SMOKE is on, `chainValidation` env vars, and `scenarios` operator / plan. A real run costs 40 minutes to two hours; this costs seconds.
+
+**`validate-scenario`** runs the native Hedera plan against testnet with no agent. See [docs/scenarios.md](docs/scenarios.md).
 
 ## Configuration
 
@@ -178,7 +184,7 @@ npm install -D hedera-harness@next
 npx hedera-harness doctor
 ```
 
-Playwright (SMOKE) and `@hiero-ledger/sdk` (CHAIN) ship inside `hedera-harness` — do not add them to the project.
+Playwright (SMOKE) and `@hiero-ledger/sdk` (CHAIN / SCENARIO) ship inside `hedera-harness` — do not add them to the project.
 
 ```bash
 # CHAIN — funded ECDSA operator in the shell (the SDK is already in the harness)

@@ -1,0 +1,52 @@
+# Native Hedera scenario the harness runs itself (no agent).
+# Enable with scenarios.enabled + this file path in spec.yaml.
+
+actors:
+  alice:
+    fundHbar: 5
+  bob:
+    fundHbar: 2
+
+steps:
+  - id: pay
+    actor: alice
+    transferHbar:
+      to: bob
+      hbar: 1
+  - id: gold
+    actor: alice
+    tokenCreate:
+      name: GOLD
+      symbol: GOLD
+      decimals: 0
+      initialSupply: 1000
+  - id: associate
+    actor: bob
+    tokenAssociate:
+      token: gold
+  - id: drop
+    actor: alice
+    tokenAirdrop:
+      token: gold
+      to: bob
+      amount: 100
+  - id: chat
+    actor: alice
+    topicCreate: {}
+  - id: ping
+    actor: alice
+    topicSubmit:
+      topic: chat
+      message: paid
+
+assert:
+  - accountHbar:
+      actor: bob
+      min: 0.5
+  - tokenBalance:
+      actor: bob
+      token: gold
+      min: 100
+  - topicMessage:
+      topic: chat
+      contains: paid

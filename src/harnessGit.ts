@@ -50,6 +50,7 @@ export const HARNESS_RUNTIME_PATH_NAMES = new Set([
   "playwright-report",
   "test-results",
   "chain-signer.json",
+  "scenario-actors.json",
 ]);
 
 /** Secret / credential paths that must never be staged by harness checkpoints. */
@@ -58,6 +59,7 @@ export const HARNESS_SECRET_PATH_MARKERS = [
   /(^|\/)\.env(\.|$)/i,
   /(^|\/)secrets?\//i,
   /(^|\/)chain-signer\.json$/i,
+  /(^|\/)scenario-actors\.json$/i,
   /\.pem$/i,
   /\.key$/i,
   /(^|\/)credentials\.json$/i,

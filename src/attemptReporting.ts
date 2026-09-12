@@ -15,7 +15,7 @@ import type { RunReport, TemplateSpec, ValidationResult } from "./types.js";
 /**
  * Artifact and console reporting for one attempt.
  *
- * Split from the loop so `runAttemptLoop` reads as the four stages and their
+ * Split from the loop so `runAttemptLoop` reads as the stages and their
  * short-circuits, rather than as stage calls buried in log/status/notes writes.
  */
 export type AttemptKind = "generate" | "continue" | "repair";
@@ -122,7 +122,10 @@ export async function recordAttemptResult(input: {
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
     evaluationPassed: validation.evaluation?.passed,
-    infrastructureFailure: validation.evaluation?.infrastructureFailure ?? false,
+    infrastructureFailure:
+      validation.evaluation?.infrastructureFailure ||
+      validation.scenario?.infrastructureFailure ||
+      false,
   });
 
   const summary = validation.evaluation
@@ -150,7 +153,8 @@ export async function abortOnInfrastructureFailure(input: {
   const { layout, attempt, validation } = input;
   const reason =
     validation.evaluation?.infrastructureFailureReason ??
-    "evaluation infrastructure failure";
+    validation.scenario?.infrastructureFailureReason ??
+    "infrastructure failure";
 
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "validator_infra_aborted",
@@ -160,7 +164,7 @@ export async function abortOnInfrastructureFailure(input: {
   });
   await appendHarnessNote(
     layout.notesLogPath,
-    `Attempt ${attempt} evaluation infrastructure abort`,
+    `Attempt ${attempt} infrastructure abort`,
     [
       "Repair loop aborted: failure is harness/agent tooling, not the generated app.",
       reason,
