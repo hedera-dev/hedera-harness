@@ -108,7 +108,7 @@ export async function runEvaluation(input: {
           startedAt,
           [
             findingFromMessage(
-              `validator-exit:${input.attempt}`,
+              "validator-exit",
               agentResult.timedOut
                 ? `Validator agent timed out after ${Math.round(agentResult.durationMs / 1000)}s`
                 : `Validator agent exited with code ${agentResult.exitCode ?? "null"}`,

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A failure that recurs is one open finding, not one fixed and one new.**
+  `generator-exit`, `generator-timeout` and `validator-exit` carried the attempt
+  number, so the same crash on two attempts produced two different ids. One
+  unchanged failure read as "1 fixed, 1 new": the attempt summary claimed
+  progress that had not happened, and model escalation — which exists so a
+  cheaper model is not paid to repeat a failure — saw a non-zero fixed count and
+  stayed on the cheap model for exactly the case it was written for. The ids are
+  stable now; the attempt number is already recorded by the artifact each
+  finding is written into.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

@@ -3,6 +3,8 @@ import type { EvaluationResult, ValidationFinding } from "./types.js";
 const INFRA_FINDING_ID_PREFIXES = [
   "validator-config",
   "validator-runtime",
+  "validator-exit",
+  // Sessions written before the ids were stabilised carry the attempt number.
   "validator-exit:",
   "validator-output-unparseable",
   "validator-empty-issues",
