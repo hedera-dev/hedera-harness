@@ -76,6 +76,12 @@ baseline:
 # validators:
 #   playwright: .harness/validators/playwright-smoke.yaml
 #
+# The x402 gate proves a pay-per-call route on the SMOKE server: 402 with a
+# payable Hedera PAYMENT-REQUIRED, forged payments rejected, and with CHAIN a
+# real paid request settled on the mirror node. Needs validators.playwright.
+# validators:
+#   x402: .harness/validators/x402.yaml
+#
 # EVALUATE grades the running app against an evaluate checklist. The validator
 # inherits the agent preset above, including how it receives Playwright MCP.
 # (Also see the eval: examples near prd: above for list form.)

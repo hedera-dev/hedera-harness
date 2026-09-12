@@ -106,6 +106,7 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 |---|---|---|---|
 | **ASSERT** | on by default | files present, static assertions, no secrets, build passes | seconds |
 | **SMOKE** | `validators.playwright` | the app boots and its routes actually render | a dev server boot |
+| **SMOKE · x402** | `validators.x402` | paywalled routes really answer 402 with a payable Hedera `PAYMENT-REQUIRED`, reject forged payments, and (with CHAIN) accept a real one settled on the mirror node | a few HTTP requests |
 | **EVALUATE** | `eval` + `validator.enabled` | an adversarial agent drives the live app against the evaluate checklist | an agent session |
 | **CHAIN** | `chainValidation` | an ephemeral funded testnet signer completes real transactions, verified via mirror node | testnet HBAR |
 

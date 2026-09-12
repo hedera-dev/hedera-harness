@@ -136,3 +136,42 @@ test("doctor reports an unknown agent CLI as a failure", async () => {
   assert.match(agentCheck.detail, /not on PATH/);
   assert.equal(report.passed, false);
 });
+
+test("doctor validates the x402 gate config before a run", async () => {
+  const smoke = "server:\n  command: \"true\"\n  url: http://127.0.0.1:1\nroutes:\n  - name: home\n    path: /\n";
+  const files = {
+    ".harness/validators/smoke.yaml": smoke,
+    ".harness/validators/x402.yaml": "routes:\n  - name: quote\n    path: /api/quote\n    maxAmount: \"1000000\"\n",
+  };
+  const validators = "validators:\n  playwright: .harness/validators/smoke.yaml\n  x402: .harness/validators/x402.yaml\n";
+
+  const healthy = await makeProject({ specBody: specWith("node", validators), files });
+  const report = await runDoctor({
+    specPath: path.join(healthy, ".harness", "spec.yaml"),
+    workspacePath: healthy,
+  });
+  assert.equal(statusOf(report, "x402 gate"), "ok");
+  assert.match(formatDoctorReport(report), /x402 gate — 1 route\(s\) on hedera:testnet/);
+
+  const paysWithoutSigner = await makeProject({
+    specBody: specWith("node", validators),
+    files: { ...files, ".harness/validators/x402.yaml": "pay: true\nroutes:\n  - name: quote\n    path: /api/quote\n" },
+  });
+  const noSigner = await runDoctor({
+    specPath: path.join(paysWithoutSigner, ".harness", "spec.yaml"),
+    workspacePath: paysWithoutSigner,
+  });
+  assert.equal(statusOf(noSigner, "x402 gate"), "fail");
+  assert.match(formatDoctorReport(noSigner), /chainValidation is not enabled, so there is no signer/);
+
+  const typo = await makeProject({
+    specBody: specWith("node", validators),
+    files: { ...files, ".harness/validators/x402.yaml": "network: base-sepolia\nroutes:\n  - name: quote\n    path: /api/quote\n" },
+  });
+  const broken = await runDoctor({
+    specPath: path.join(typo, ".harness", "spec.yaml"),
+    workspacePath: typo,
+  });
+  assert.equal(statusOf(broken, "x402 gate"), "fail");
+  assert.match(formatDoctorReport(broken), /network must be a Hedera CAIP-2 id/);
+});

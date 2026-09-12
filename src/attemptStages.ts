@@ -11,6 +11,7 @@ import type {
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
+  X402GateResult,
 } from "./types.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
@@ -23,6 +24,7 @@ import {
   type DevServerSession,
 } from "./validation/devServer.js";
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
+import { runX402Gate } from "./validation/x402Gate.js";
 import { withValidatorMcp } from "./validatorMcp.js";
 import { WorkspaceWatcher } from "./workspaceWatcher.js";
 
@@ -181,15 +183,41 @@ export async function runAssertStage(context: AttemptStageContext): Promise<Vali
 
 /**
  * SMOKE — prove the app actually runs: optional on-chain deploy, then boot the dev
- * server and walk the configured routes.
+ * server, walk the configured routes, and (when configured) prove the x402
+ * paywall on the same server.
  */
 export async function runSmokeStage(
   context: AttemptStageContext,
   devServer: DevServerSession,
-): Promise<{ findings: ValidationFinding[]; playwrightGate?: PlaywrightGateResult }> {
+): Promise<{
+  findings: ValidationFinding[];
+  playwrightGate?: PlaywrightGateResult;
+  x402Gate?: X402GateResult;
+}> {
   const playwrightPath = context.spec.validators.playwrightPath!;
   const gate = await runPlaywrightGate(context.workspacePath, playwrightPath, devServer);
-  return { findings: gate.findings, playwrightGate: gate.result };
+
+  const x402Path = context.spec.validators.x402Path;
+  if (!x402Path) {
+    return { findings: gate.findings, playwrightGate: gate.result };
+  }
+
+  logStage("SMOKE", "x402 gate");
+  const x402 = await runX402Gate(x402Path, devServer, {
+    defaultNetwork: defaultX402Network(context.spec),
+    chainSigner: context.chainSigner,
+  });
+  return {
+    findings: [...gate.findings, ...x402.findings],
+    playwrightGate: gate.result,
+    x402Gate: x402.result,
+  };
+}
+
+/** CAIP-2 network the x402 gate expects when its config does not say. */
+export function defaultX402Network(spec: TemplateSpec): string {
+  const network = spec.chainValidation?.enabled ? spec.chainValidation.network : "testnet";
+  return `hedera:${network}`;
 }
 
 /** Optional on-chain deploy hook (Solidity templates), before the app starts. */
@@ -329,6 +357,7 @@ export async function runValidationStages(
       ...validation,
       findings: [...validation.findings, ...smoke.findings],
       playwrightGate: smoke.playwrightGate,
+      x402Gate: smoke.x402Gate,
     };
     afterSmoke.passed =
       afterSmoke.findings.filter(finding => finding.category !== "agent").length === 0;

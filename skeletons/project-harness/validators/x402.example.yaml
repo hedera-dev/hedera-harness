@@ -1,0 +1,14 @@
+# SMOKE x402 gate — copy to x402.yaml and point validators.x402 at it.
+# The gate runs against the SMOKE dev server (validators.playwright).
+#
+# network: hedera:testnet        # default: hedera:<chainValidation.network>
+# facilitatorUrl: https://x402.org/facilitator   # optional: /supported must list exact on network
+# pay: false                     # true pays each route once with the CHAIN signer (testnet only)
+routes:
+  - name: quote
+    path: /api/quote
+    # method: POST
+    # body: { symbol: HBAR }
+    maxAmount: "1000000"         # tinybars (0.01 HBAR); fail if the route asks for more
+    # payTo: "0.0.12345"         # expected receiver
+    # asset: "0.0.0"             # HBAR, or an HTS token id such as 0.0.429274 (testnet USDC)

@@ -18,6 +18,8 @@ import {
   type DevServerSession,
 } from "./validation/devServer.js";
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
+import { runX402Gate } from "./validation/x402Gate.js";
+import { defaultX402Network } from "./attemptStages.js";
 import {
   assertChainValidationOperatorEnv,
   provisionChainSigner,
@@ -53,11 +55,25 @@ export async function validateWorkspace(options: CliOptions): Promise<Validation
     devServer = await createDevServerSession(workspacePath, serverConfig, "validate");
     const gate = await runPlaywrightGate(workspacePath, playwrightPath, devServer);
     const findings = [...deterministic.findings, ...gate.findings];
+
+    // `validate` never provisions a signer, so the x402 gate runs its unpaid
+    // checks here; `pay: true` is reported as a finding rather than skipped.
+    let x402Gate: ValidationResult["x402Gate"];
+    if (spec.validators.x402Path) {
+      console.log("[hedera-harness] Running x402 gate...");
+      const x402 = await runX402Gate(spec.validators.x402Path, devServer, {
+        defaultNetwork: defaultX402Network(spec),
+      });
+      findings.push(...x402.findings);
+      x402Gate = x402.result;
+    }
+
     return {
       passed: findings.length === 0,
       findings,
       commandResults: deterministic.commandResults,
       playwrightGate: gate.result,
+      x402Gate,
     };
   } finally {
     await devServer?.stop();

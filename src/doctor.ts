@@ -85,6 +85,7 @@ export async function runDoctor(
   checks.push(...mid.map(toDoctorCheck));
   checks.push(await checkPromptOverrides(recipe.spec.projectRoot));
   checks.push(...(await checkOptionalDeps(recipe.spec, workspacePath)));
+  checks.push(...(await checkX402Gate(recipe.spec)));
   checks.push(...evaluate.map(toDoctorCheck));
   checks.push(...checkChainEnv(recipe.spec));
 
@@ -275,6 +276,44 @@ async function checkOptionalDeps(spec: TemplateSpec, cwd: string): Promise<Docto
     checks.push(await checkHarnessSdk());
   }
   return checks;
+}
+
+/**
+ * The x402 gate config is a separate YAML the recipe points at; a typo there
+ * would otherwise surface only after GENERATE and a dev-server boot.
+ */
+async function checkX402Gate(spec: TemplateSpec): Promise<DoctorCheck[]> {
+  const configPath = spec.validators.x402Path;
+  if (!configPath) return [];
+
+  const { loadX402GateConfig } = await import("./validation/x402Gate.js");
+  const { defaultX402Network } = await import("./attemptStages.js");
+  try {
+    const config = await loadX402GateConfig(configPath, { network: defaultX402Network(spec) });
+    const summary = `${config.routes.length} route(s) on ${config.network}${
+      config.facilitatorUrl ? `, facilitator ${config.facilitatorUrl}` : ""
+    }${config.pay ? ", pays with the CHAIN signer" : ""}`;
+    if (config.pay && !spec.chainValidation?.enabled) {
+      return [
+        {
+          name: "x402 gate",
+          status: "fail",
+          detail: `${summary} — but chainValidation is not enabled, so there is no signer to pay with`,
+          fix: "Enable chainValidation in the recipe, or set pay: false in the x402 gate config.",
+        },
+      ];
+    }
+    return [{ name: "x402 gate", status: "ok", detail: summary }];
+  } catch (error) {
+    return [
+      {
+        name: "x402 gate",
+        status: "fail",
+        detail: error instanceof Error ? error.message : String(error),
+        fix: `Fix ${path.relative(spec.projectRoot, configPath)} — see docs/authoring-a-recipe.md, "SMOKE — x402 gate".`,
+      },
+    ];
+  }
 }
 
 async function checkSmokeBrowser(projectRoot: string): Promise<DoctorCheck> {

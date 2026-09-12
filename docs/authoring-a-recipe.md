@@ -11,6 +11,7 @@ harness what to build and how to know it worked.
   validators/static.json           file and content assertions
   validators/yarn.json             commands that must pass
   validators/playwright-smoke.yaml SMOKE (optional)
+  validators/x402.yaml             SMOKE x402 gate (optional)
   eval.json                        EVALUATE (optional)
 ```
 
@@ -122,6 +123,52 @@ rendered, no console errors, no forbidden text. **Rich UX checks belong in the
 evaluate checklist** — this stage exists to fail fast before paying for an
 agent. `playwright` ships with `hedera-harness`; do not add it to the project.
 System Chrome is enough for the browser binary.
+
+### SMOKE — x402 gate
+
+```yaml
+validators:
+  playwright: .harness/validators/playwright-smoke.yaml   # boots the server
+  x402: .harness/validators/x402.yaml
+```
+
+For PRDs that ask for a **pay-per-call route** (x402 on Hedera), the Playwright
+gate is blind: a JSON route that answers 200 to everyone is a passing route.
+The x402 gate speaks the protocol against the same dev server, deterministically
+and in seconds, and turns each mistake into a finding the repair prompt can act
+on:
+
+| Probe | Must hold | Otherwise |
+|---|---|---|
+| unpaid request | HTTP 402 with a `PAYMENT-REQUIRED` header | `…:status` (200 = paywall not enforced), `…:header` (x402 v1 body, no header) |
+| header decodes | base64 JSON, `x402Version: 2`, `resource.url` | `…:decode`, `…:version`, `…:resource` |
+| every `accepts[]` entry | scheme `exact`, the recipe's Hedera network, `amount` in whole tinybars / smallest units, `asset` `0.0.0` or an HTS token id, `payTo`, `extra.feePayer` | `…:requirement`, listing each violated rule |
+| forged `PAYMENT-SIGNATURE` | rejected with 402, never 2xx or 5xx | `…:tamper` |
+| `facilitatorUrl` (opt-in) | `GET /supported` lists `exact` on that network | `x402:facilitator:supported` |
+| `pay: true` (opt-in, needs CHAIN) | the harness pays with the ephemeral signer: 2xx + `PAYMENT-RESPONSE { success: true, transaction }`, and the mirror node shows `payTo` credited exactly `amount` | `…:pay`, `…:settlement` |
+
+```yaml
+# .harness/validators/x402.yaml
+# network defaults to hedera:<chainValidation.network>, i.e. hedera:testnet
+facilitatorUrl: https://x402.org/facilitator   # optional cross-check
+pay: false                                     # true → real payment per route (testnet only)
+routes:
+  - name: quote
+    path: /api/quote
+    method: POST                               # default GET
+    body: { symbol: HBAR }                     # objects are sent as JSON
+    maxAmount: "1000000"                       # ceiling in tinybars (0.01 HBAR)
+    payTo: "0.0.12345"                         # optional: expected receiver
+    asset: "0.0.0"                             # optional: HBAR, or an HTS token id
+```
+
+`pay: true` is refused on `hedera:mainnet` and requires `chainValidation.enabled`;
+`doctor` checks both before a run. The paid probe builds the partially signed
+`TransferTransaction` the Hedera `exact` scheme specifies (payer → `payTo`,
+`transactionId.accountId = extra.feePayer`) with the CHAIN signer the harness
+already funds, so a green gate is the "real paid request end to end" — produced
+by the harness, not read off an agent transcript. `x402` findings repair in the
+runtime scope, alongside Playwright failures.
 
 ### EVALUATE — evaluate checklist
 

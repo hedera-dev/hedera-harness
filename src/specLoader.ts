@@ -76,6 +76,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
   };
 
   assertBaselineHasInstall(spec);
+  assertX402HasDevServer(spec);
 
   for (const warning of warnings) {
     console.warn(`[hedera-harness] ${path.basename(absoluteSpecPath)}: ${warning}`);
@@ -247,6 +248,7 @@ function readValidators(
       readOptionalString(validators, "commands") ?? DEFAULT_COMMANDS_VALIDATOR_PATH,
     ),
     playwrightPath: readOptionalValidatorPath(projectRoot, validators, "playwright"),
+    x402Path: readOptionalValidatorPath(projectRoot, validators, "x402"),
   };
 }
 
@@ -524,6 +526,18 @@ function assertBaselineHasInstall(spec: TemplateSpec): void {
     );
   }
   assertCommandsIncludeInstall(commands);
+}
+
+/**
+ * The x402 gate borrows the SMOKE dev server, so it cannot run without the
+ * Playwright config that says how to boot the app.
+ */
+function assertX402HasDevServer(spec: TemplateSpec): void {
+  if (spec.validators.x402Path && !spec.validators.playwrightPath) {
+    throw new Error(
+      "validators.x402 requires validators.playwright: the x402 gate probes routes on the SMOKE dev server, and server.command / server.url live in the Playwright config.",
+    );
+  }
 }
 
 function assertCommandsIncludeInstall(

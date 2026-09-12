@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+
+- **SMOKE x402 gate** (`validators.x402`). For recipes that ask for a
+  pay-per-call route, the harness now proves the paywall itself instead of
+  trusting a 200 from the Playwright gate: an unpaid request must answer 402
+  with a base64 `PAYMENT-REQUIRED` header; every `accepts[]` entry is checked
+  against the Hedera `exact` scheme (scheme, CAIP-2 network, whole-unit
+  `amount`, `asset`, `payTo`, `extra.feePayer`) and the recipe's ceilings
+  (`maxAmount`, `payTo`, `asset`); a forged `PAYMENT-SIGNATURE` must be
+  rejected, not served or crashed on; an optional `facilitatorUrl` must list
+  `exact` on that network. With `pay: true` and CHAIN enabled, the harness pays
+  each route once with the ephemeral signer — the partially signed
+  `TransferTransaction` the scheme specifies — and requires a 2xx with a
+  successful `PAYMENT-RESPONSE` whose transaction credits `payTo` exactly
+  `amount` on the mirror node. Paying on mainnet is refused. Findings carry the
+  `x402` category, repair in the runtime scope, and `doctor` validates the gate
+  config (and that `pay: true` has a signer) before a run.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

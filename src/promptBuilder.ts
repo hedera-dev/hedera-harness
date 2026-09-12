@@ -182,9 +182,11 @@ export function classifyRepairScope(findings: ValidationFinding[]): RepairScope 
   );
   if (
     !hasStructural &&
-    [...categories].every(category => ["commands", "playwright", "eval"].includes(category))
+    [...categories].every(category =>
+      ["commands", "playwright", "x402", "eval"].includes(category),
+    )
   ) {
-    if (categories.has("commands") || categories.has("playwright")) {
+    if (categories.has("commands") || categories.has("playwright") || categories.has("x402")) {
       return "runtime";
     }
   }

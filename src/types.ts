@@ -207,6 +207,8 @@ export interface TemplateSpec {
     staticPath: string;
     commandsPath: string;
     playwrightPath?: string;
+    /** x402 gate config (SMOKE); requires `playwrightPath` for the dev server. */
+    x402Path?: string;
   };
   requiredFiles: string[];
   forbiddenFiles: string[];
@@ -237,6 +239,47 @@ export interface PlaywrightGateResult {
   serverUrl: string;
   serverCommand: string;
   routes: PlaywrightGateRouteResult[];
+  durationMs: number;
+}
+
+export interface X402RouteResult {
+  name: string;
+  path: string;
+  method: string;
+  /** Status of the unpaid probe (must be 402). */
+  statusCode: number | null;
+  x402Version?: number;
+  /** Number of payment options the route advertised. */
+  acceptsCount: number;
+  /** The accepted requirement the gate graded (and paid, when `pay` is on). */
+  requirement?: {
+    scheme: string;
+    network: string;
+    amount: string;
+    asset: string;
+    payTo: string;
+    feePayer?: string;
+  };
+  /** Status of the forged-payment probe (must not be 2xx or 5xx). */
+  tamperStatusCode: number | null;
+  paid?: {
+    statusCode: number | null;
+    transactionId?: string;
+    settled: boolean;
+    mirrorUrl?: string;
+  };
+  durationMs: number;
+}
+
+export interface X402GateResult {
+  passed: boolean;
+  configPath: string;
+  serverUrl: string;
+  network: string;
+  facilitatorUrl?: string;
+  /** Whether the gate performed real payments with the CHAIN signer. */
+  paid: boolean;
+  routes: X402RouteResult[];
   durationMs: number;
 }
 
@@ -275,6 +318,7 @@ export interface ValidationFinding {
     | "commands"
     | "agent"
     | "playwright"
+    | "x402"
     | "eval"
     | "eval-infra";
   message: string;
@@ -295,6 +339,7 @@ export interface ValidationResult {
   findings: ValidationFinding[];
   commandResults: CommandExecutionResult[];
   playwrightGate?: PlaywrightGateResult;
+  x402Gate?: X402GateResult;
   evaluation?: EvaluationResult;
 }
 
