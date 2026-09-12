@@ -15,6 +15,7 @@ import { parseValidatorVerdict } from "./validatorVerdictParser.js";
 import { annotateInfrastructureFailure } from "./evalInfra.js";
 import { specHasEval } from "./sliceSelection.js";
 import type { DevServerSession } from "./validation/devServer.js";
+import { describeCommandFailure } from "./command.js";
 
 export function isValidatorEnabled(spec: TemplateSpec): boolean {
   return spec.validator !== undefined && spec.validator.enabled !== false;
@@ -112,7 +113,7 @@ export async function runEvaluation(input: {
               agentResult.timedOut
                 ? `Validator agent timed out after ${Math.round(agentResult.durationMs / 1000)}s`
                 : `Validator agent exited with code ${agentResult.exitCode ?? "null"}`,
-              agentResult.stderr || agentResult.stdout,
+              describeCommandFailure(agentResult),
             ),
           ],
           serverUrl,

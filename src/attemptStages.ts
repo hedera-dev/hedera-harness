@@ -12,7 +12,7 @@ import type {
   ValidationFinding,
   ValidationResult,
 } from "./types.js";
-import { executeCommand } from "./command.js";
+import { describeCommandFailure, executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
@@ -167,7 +167,7 @@ export async function runGenerateStage(
       message: agentResult.timedOut
         ? `Generator agent timed out after ${Math.round(agentResult.durationMs / 1000)}s`
         : `Generator agent exited with code ${agentResult.exitCode ?? "null"}`,
-      details: truncate(agentResult.stderr || agentResult.stdout),
+      details: describeCommandFailure(agentResult),
     },
   };
 }
@@ -219,7 +219,7 @@ export async function runChainDeploy(
         id: `chain-deploy:${commandConfig.name}`,
         category: "commands",
         message: `Chain deploy command failed: ${commandConfig.name}`,
-        details: truncate(result.stderr || result.stdout),
+        details: describeCommandFailure(result),
       });
     }
   }
@@ -384,12 +384,6 @@ export function mergeGenerateFinding(
     findings: [generateFinding, ...deterministic.findings],
     passed: deterministic.passed,
   };
-}
-
-function truncate(value: string, maxLength = 1200): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxLength) return trimmed;
-  return `${trimmed.slice(0, maxLength)}...`;
 }
 
 export type { CommandExecutionResult };

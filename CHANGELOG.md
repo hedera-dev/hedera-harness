@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A failing command now reports why.** Finding details were
+  `stderr || stdout`, truncated from the head, so a build that warned on stderr
+  and reported the type error on stdout handed the agent the warning and nothing
+  else, and a long log contributed its banner rather than its error. The repair
+  prompt is built from these details, so every repair attempt on such a failure
+  was blind — 15 to 40 minutes and a paid agent session each. Details now carry
+  both streams and keep the end of each, the rule `BoundedOutput` already
+  applies to an agent's stream. Covers validation commands, chain deploy
+  commands, the generator and the validator.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

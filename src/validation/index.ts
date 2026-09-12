@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { executeCommand } from "../command.js";
+import { describeCommandFailure, executeCommand } from "../command.js";
 import { pathExists } from "../fsUtils.js";
 import type {
   CommandExecutionResult,
@@ -321,7 +321,7 @@ async function validateCommands(
         id: `command:${commandConfig.name}`,
         category: "commands",
         message: `Validation command failed: ${commandConfig.name}`,
-        details: truncateOutput(result.stderr || result.stdout),
+        details: describeCommandFailure(result),
       });
       continue;
     }
@@ -392,8 +392,3 @@ function valuesEqual(actual: unknown, expected: unknown): boolean {
   return false;
 }
 
-function truncateOutput(output: string, maxLength = 1200): string {
-  const trimmed = output.trim();
-  if (trimmed.length <= maxLength) return trimmed;
-  return `${trimmed.slice(0, maxLength)}...`;
-}
