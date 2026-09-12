@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { Browser, Page, Response } from "playwright";
 import { parse as parseYaml } from "yaml";
 import { launchSharedBrowser } from "../mcpBrowser.js";
+import { newConsoleErrors, type ConsoleBaseline } from "./consoleBaseline.js";
 import type { PlaywrightGateResult, PlaywrightGateRouteResult, ValidationFinding } from "../types.js";
 import type { DevServerSession } from "./devServer.js";
 
@@ -43,6 +44,8 @@ export async function runPlaywrightGate(
   workspacePath: string,
   configPath: string,
   devServer: DevServerSession,
+  /** Console noise recorded against the untouched app; see consoleBaseline.ts. */
+  consoleBaseline?: ConsoleBaseline,
 ): Promise<{ result: PlaywrightGateResult; findings: ValidationFinding[] }> {
   const startedAt = Date.now();
   const config = await loadPlaywrightGateConfig(configPath);
@@ -106,6 +109,13 @@ export async function runPlaywrightGate(
           details: message,
         });
       } finally {
+        // Console messages arrive over the devtools protocol after the call that
+        // produced them. A small page hydrates instantly, so detaching here could
+        // beat the message and drop the error — measured on a loaded machine,
+        // where the same page reported its error in isolation but not in a full
+        // suite. One round trip flushes what the browser already queued, since
+        // the protocol delivers messages on a session in order.
+        await page.evaluate(() => undefined).catch(() => undefined);
         page.off("console", consoleListener);
       }
 
@@ -132,12 +142,16 @@ export async function runPlaywrightGate(
         });
       }
 
-      if (failOnConsoleError && consoleErrors.length > 0) {
+      // Only errors the app did not already log count against this attempt.
+      const unknownConsoleErrors = newConsoleErrors(route.name, consoleErrors, consoleBaseline);
+      const preExistingConsoleErrors = consoleErrors.length - unknownConsoleErrors.length;
+
+      if (failOnConsoleError && unknownConsoleErrors.length > 0) {
         findings.push({
           id: `playwright:route:${route.name}:console`,
           category: "playwright",
           message: `Playwright gate route ${route.path} logged browser console errors`,
-          details: truncateList(consoleErrors),
+          details: truncateList(unknownConsoleErrors),
         });
       }
 
@@ -155,6 +169,7 @@ export async function runPlaywrightGate(
         statusCode,
         rendered,
         consoleErrors,
+        preExistingConsoleErrors,
         forbiddenTextFound,
         durationMs: Date.now() - routeStartedAt,
       });

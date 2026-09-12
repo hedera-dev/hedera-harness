@@ -55,6 +55,8 @@ console.log(JSON.stringify({
 
 async function makeTier3Project(options = {}) {
   const agent = options.agent ?? "claude";
+  const serverBody = options.serverBody ?? FIXTURE_SERVER;
+  const agentBody = options.agentBody ?? MOCK_GENERATOR;
   const playwrightBody =
     options.playwrightBody ??
     `name: fixture-smoke
@@ -69,8 +71,8 @@ routes:
   const root = await makeTestTempDir("tiers-");
   await mkdir(path.join(root, ".harness", "validators"), { recursive: true });
   await writeFile(path.join(root, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
-  await writeFile(path.join(root, "server.mjs"), FIXTURE_SERVER);
-  await writeFile(path.join(root, "agent.mjs"), MOCK_GENERATOR);
+  await writeFile(path.join(root, "server.mjs"), serverBody);
+  await writeFile(path.join(root, "agent.mjs"), agentBody);
   await writeFile(path.join(root, "validator.mjs"), MOCK_VALIDATOR);
   await writeFile(path.join(root, ".harness", "prd.md"), "Serve a home page.\n");
 
@@ -270,5 +272,87 @@ routes:
   await assert.rejects(
     () => readdir(path.join(root, ".cursor")),
     "withValidatorMcp must not run at all — even a restored snapshot leaves .cursor/ behind",
+  );
+}, { timeout: 180_000 });
+
+/** Logs a console error on every page load; the timestamp differs every time. */
+const NOISY_SERVER = `
+import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+const onlyAfterMarker = process.env.FIXTURE_ERROR_AFTER_MARKER === "1";
+const server = createServer((req, res) => {
+  const noisy = !onlyAfterMarker || existsSync("BROKE");
+  const script = noisy
+    ? "<script>console.error('price feed unavailable at ' + Date.now())</script>"
+    : "";
+  res.writeHead(200, { "content-type": "text/html" });
+  res.end("<html><body><h1>Fixture app</h1><p>This page has enough visible text to count as rendered.</p>" + script + "</body></html>");
+});
+server.listen(0, "127.0.0.1", () => {
+  console.log("Local: http://127.0.0.1:" + server.address().port);
+});
+`;
+
+/** Writes the feature, and also the marker that makes the app start logging. */
+const BREAKING_GENERATOR = `
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+const ws = process.env.MOCK_WS;
+mkdirSync(path.join(ws, "built"), { recursive: true });
+writeFileSync(path.join(ws, "built", "feature.txt"), "done");
+writeFileSync(path.join(ws, "BROKE"), "the agent introduced a console error");
+`;
+
+async function runFixture(options, env) {
+  const { root, skillsEnv } = await makeTier3Project(options);
+  const previous = { ...process.env };
+  Object.assign(process.env, {
+    MOCK_WS: root,
+    MOCK_VALIDATOR_ARGV: path.join(root, "validator-argv.json"),
+    HUSKY: "0",
+    HARNESS_MAX_ATTEMPTS: "1",
+    ...skillsEnv,
+    ...env,
+  });
+  try {
+    return await runSession({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+      skipToolChecks: true,
+    });
+  } finally {
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_MAX_ATTEMPTS", "FIXTURE_ERROR_AFTER_MARKER", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) {
+      delete process.env[key];
+    }
+    Object.assign(process.env, previous);
+  }
+}
+
+test("console noise the app already logged does not fail SMOKE", async () => {
+  // The gate fails a route on any console error. A stock scaffold logs plenty
+  // with no agent involved, so without a baseline every attempt is spent
+  // repairing a condition no prompt can fix.
+  const { report } = await runFixture({ serverBody: NOISY_SERVER }, {});
+
+  assert.equal(report.passed, true, `open findings: ${report.openFindingIds.join(", ")}`);
+  assert.deepEqual(
+    report.openFindingIds.filter(id => id.endsWith(":console")),
+    [],
+    "pre-existing console noise must not be charged to the agent",
+  );
+}, { timeout: 180_000 });
+
+test("a console error the agent introduces still fails SMOKE", async () => {
+  // The other half: the baseline must not swallow a regression. Here the app is
+  // quiet until the generator writes the marker that makes it log.
+  const { report } = await runFixture(
+    { serverBody: NOISY_SERVER, agentBody: BREAKING_GENERATOR },
+    { FIXTURE_ERROR_AFTER_MARKER: "1" },
+  );
+
+  assert.equal(report.passed, false, "a new console error must still fail the gate");
+  assert.ok(
+    report.openFindingIds.some(id => id.endsWith(":console")),
+    `expected a console finding, got ${report.openFindingIds.join(", ")}`,
   );
 }, { timeout: 180_000 });
