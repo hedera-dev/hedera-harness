@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Checkpoint commits no longer run the project's git hooks.** A run that
+  passed every gate ended as `Error: Command "git commit -m harness: run
+  attempt 1 passed ..."` on any project whose pre-commit hook fails, leaving
+  the agent's work staged and uncommitted and the next run refusing the dirty
+  tree. A fresh scaffold-hbar is exactly that project: `.husky/pre-commit` runs
+  `yarn lint-staged` and no lint-staged config exists, so the hook exits 1 on
+  every commit. Checkpoints are harness bookkeeping on a `harness/*` branch,
+  and a formatting hook would rewrite files after ASSERT validated them, so
+  they now commit with `--no-verify`.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
