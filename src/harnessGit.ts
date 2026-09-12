@@ -361,7 +361,16 @@ export async function commitAttempt(
 
   await executeCommandOrThrow({
     command: "git",
-    args: ["commit", "-m", subject, "-m", body],
+    // A checkpoint is harness bookkeeping on a harness/* branch, not a user
+    // commit, so it does not run the project's git hooks. A fresh scaffold-hbar
+    // is the case that forced this: its `.husky/pre-commit` runs `yarn
+    // lint-staged` with no lint-staged config anywhere, so every commit fails
+    // and a run that had passed every gate ended as `Error: Command "git commit
+    // ..."`, leaving the agent's work staged and the next run refusing the tree.
+    // A formatting hook is worse than a failing one: it would rewrite files
+    // after ASSERT had already validated them. Lint and build are the harness's
+    // own gates, not git's.
+    args: ["commit", "--no-verify", "-m", subject, "-m", body],
     cwd: workspacePath,
   });
 

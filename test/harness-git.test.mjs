@@ -99,3 +99,34 @@ test("commitAttempt stages only consumer-relevant paths", async () => {
   const body = git(root, ["log", "-1", "--format=%B"]);
   assert.match(body, /Finding IDs: f1, f2/);
 });
+
+test("commitAttempt does not run the project's git hooks", async () => {
+  // A fresh scaffold-hbar fails every commit: `.husky/pre-commit` runs
+  // `yarn lint-staged` and no lint-staged config exists anywhere in the repo.
+  // Before this, a run that passed every gate died on its own checkpoint and
+  // left the agent's work staged, which the next run then refused as dirty.
+  const root = await initRepo();
+  await mkdir(path.join(root, ".hooks"), { recursive: true });
+  await writeFile(
+    path.join(root, ".hooks", "pre-commit"),
+    "#!/bin/sh\necho 'No valid configuration found.' >&2\nexit 1\n",
+    { mode: 0o755 },
+  );
+  git(root, ["config", "core.hooksPath", ".hooks"]);
+
+  // The hook has to actually fire, or this test proves nothing.
+  const blocked = spawnSync("git", ["commit", "--allow-empty", "-m", "probe"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.notEqual(blocked.status, 0, "the hook must block an ordinary commit");
+
+  await gitMod.createAndCheckoutHarnessBranch(root, "hooked", "beef01");
+  await writeFile(path.join(root, "app.ts"), "export {}\n");
+
+  const result = await gitMod.commitAttempt(root, 1, true, []);
+
+  assert.equal(result.committed, true, "the checkpoint must record the passing attempt");
+  assert.equal(git(root, ["status", "--porcelain"]), "", "no work may be left staged");
+  assert.match(git(root, ["show", "--name-only", "--pretty=format:", "HEAD"]), /app\.ts/);
+});
