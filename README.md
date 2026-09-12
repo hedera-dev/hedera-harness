@@ -117,7 +117,8 @@ untouched app, and keeps those errors. Later attempts are only failed by errors 
 there. Without it a stock scaffold — an unset WalletConnect id, a price feed that needs network — fails
 every attempt for a condition no repair prompt can fix. App-wide noise also carries onto routes the
 agent creates, which have no baseline of their own. Costs one dev server boot; skip it with
-`HARNESS_NO_CONSOLE_BASELINE=1`.
+`HARNESS_NO_CONSOLE_BASELINE=1`. It is recorded once per run directory, so a `--continue` reuses what was
+captured before the first attempt rather than re-reading a workspace the agent has already changed.
 
 The EVALUATE validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
 

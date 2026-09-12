@@ -13,8 +13,9 @@
   errors; later attempts are failed only by errors that were not already there.
   Texts are normalized so a fresh port, request id or timestamp does not read as
   new, and app-wide noise also clears on routes the agent creates, which have no
-  baseline of their own. Cached per run, skipped on `--continue`, and disabled
-  with `HARNESS_NO_CONSOLE_BASELINE=1`.
+  baseline of their own. Recorded once per run directory and reused by
+  `--continue`, which must not re-read a workspace the agent has already
+  changed; disabled with `HARNESS_NO_CONSOLE_BASELINE=1`.
 
 ### Fixed
 
