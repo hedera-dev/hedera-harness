@@ -39,8 +39,11 @@ Fix only the validation findings below. Do not redesign unrelated parts of the a
 - Keep Yarn-only workflows.
 - Do not add secrets or `.env` files.
 - Preserve scaffold-hbar template conventions.
-- Fix findings in priority order: [agent] process failures, [commands] build/lint, [playwright] runtime gate, [eval] checklist assertions, then [files]/[static]/[secret].
-- Do NOT attempt to fix [eval-infra] findings — those are harness/tooling failures (MCP/browser), not app defects.
+- Fix findings in priority order: [agent] process failures, [commands] build/lint, [playwright] runtime gate, [eval] checklist assertions, [chain-assertion] on-chain postcondition mismatches, then [files]/[static]/[secret].
+- A [chain-assertion] finding means a real on-chain action did not behave as the recipe
+  declared (see its `evidence`: transaction id, expected vs. observed) — fix the app logic or
+  configuration that produced the wrong on-chain outcome, not the test itself.
+- Do NOT attempt to fix [eval-infra] / [chain-assertion-infra] findings — those are harness/tooling or network failures (MCP/browser/Mirror Node), not app defects.
 - Re-run the relevant validation mentally before finishing.
 
 Append a brief repair note to `GENERATION_NOTES.md` at the workspace root, describing what failed and what you changed.

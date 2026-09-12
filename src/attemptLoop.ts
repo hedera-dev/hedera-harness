@@ -48,6 +48,8 @@ export interface SessionContext {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  /** Additional named ephemeral signers, keyed by chainValidation.actors entry name. */
+  chainActors?: Record<string, ChainSigner>;
 }
 
 /**
@@ -81,6 +83,8 @@ export interface AttemptLoopInput {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  /** Additional named ephemeral signers, keyed by chainValidation.actors entry name. */
+  chainActors?: Record<string, ChainSigner>;
   /** Which increment of an ordered `prd:` list this loop is delivering. */
   slice?: SliceContext;
   /** Finding ids still open when the previous cycle stopped, for delta reporting. */
@@ -127,6 +131,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     workspacePath,
     vendoredContext,
     chainSigner,
+    chainActors,
     commitAttempt,
   } = input;
 
@@ -151,6 +156,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       workspacePath,
       layout,
       chainSigner,
+      chainActors,
       evalRelativePath: vendoredContext.evalRelativePath,
     };
 
@@ -169,6 +175,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       attemptsThisCycle,
       prompt: latestPrompt,
       model: choice,
+      chainSigner,
+      chainActors,
     });
 
     const generatorConfig = withModel(

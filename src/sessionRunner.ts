@@ -14,6 +14,9 @@ import { selectActiveSlice } from "./sliceSelection.js";
 import { provideSkills } from "./skillProvider.js";
 import {
   assertChainValidationOperatorEnv,
+  chainActorFilename,
+  chainSignerPath,
+  provisionChainActor,
   provisionChainSigner,
   sweepChainSigner,
 } from "./validation/chainSigner.js";
@@ -84,6 +87,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
   const startingAttempt = prepared.startingAttempt;
   const startedAt = new Date();
   let chainSigner: ChainSigner | undefined;
+  const chainActors: Record<string, ChainSigner> = {};
   let report: RunReport | undefined;
   let cleanup: CleanupResult | undefined;
 
@@ -192,6 +196,35 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         provisioned.reused ? "Chain signer reused" : "Chain signer provisioned",
         `${chainSigner.accountId} (${chainSigner.evmAddress})`,
       );
+
+      for (const [actorName, actorConfig] of Object.entries(spec.chainValidation.actors ?? {})) {
+        const provisionedActor = await provisionChainActor(
+          actorName,
+          actorConfig.fundingHbar,
+          spec.chainValidation,
+          layout.runDirectory,
+        );
+        chainActors[actorName] = provisionedActor.signer;
+        await appendHarnessLog(layout.jsonlLogPath, {
+          type: "chain_signer_provisioned",
+          timestamp: new Date().toISOString(),
+          accountId: provisionedActor.signer.accountId,
+          evmAddress: provisionedActor.signer.evmAddress,
+          network: provisionedActor.signer.network,
+          reused: provisionedActor.reused,
+          actor: actorName,
+          ...(provisionedActor.toppedUpHbar !== undefined
+            ? { toppedUpHbar: provisionedActor.toppedUpHbar }
+            : {}),
+          ...(provisionedActor.replacedDeleted ? { replacedDeleted: true } : {}),
+        });
+        logPhase(
+          provisionedActor.reused
+            ? `Chain actor "${actorName}" reused`
+            : `Chain actor "${actorName}" provisioned`,
+          `${provisionedActor.signer.accountId} (${provisionedActor.signer.evmAddress})`,
+        );
+      }
     }
 
     const makeCheckpoint = async (
@@ -265,6 +298,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         vendoredSkills,
         vendoredContext,
         chainSigner,
+        chainActors,
         slice,
         previousOpenFindingIds: sliceIndex === firstSlice ? session.openFindingIds : [],
         commitAttempt: makeCheckpoint,
@@ -312,7 +346,11 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     });
   } finally {
     if (chainSigner && spec.chainValidation?.enabled) {
-      const sweep = await sweepChainSigner(chainSigner, spec.chainValidation, layout.runDirectory);
+      const sweep = await sweepChainSigner(
+        chainSigner,
+        spec.chainValidation,
+        chainSignerPath(layout.runDirectory),
+      );
       await appendHarnessLog(layout.jsonlLogPath, {
         type: "chain_signer_swept",
         timestamp: new Date().toISOString(),
@@ -324,6 +362,28 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         logPhase("Chain signer swept", chainSigner.accountId);
       } else {
         logPhase("Chain signer sweep failed (best-effort)", sweep.error);
+      }
+
+      for (const [actorName, actorSigner] of Object.entries(chainActors)) {
+        const actorSweep = await sweepChainSigner(
+          actorSigner,
+          spec.chainValidation,
+          path.join(layout.runDirectory, chainActorFilename(actorName)),
+        );
+        await appendHarnessLog(layout.jsonlLogPath, {
+          type: "chain_signer_swept",
+          timestamp: new Date().toISOString(),
+          accountId: actorSigner.accountId,
+          success: actorSweep.success,
+          error: actorSweep.error,
+          actor: actorName,
+        });
+        logPhase(
+          actorSweep.success
+            ? `Chain actor "${actorName}" swept`
+            : `Chain actor "${actorName}" sweep failed (best-effort)`,
+          actorSweep.success ? actorSigner.accountId : actorSweep.error,
+        );
       }
     }
 

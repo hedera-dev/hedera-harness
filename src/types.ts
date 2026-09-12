@@ -146,6 +146,58 @@ export interface ChainValidationDeployConfig {
   commands: ChainValidationDeployCommand[];
 }
 
+/** An additional named ephemeral signer, provisioned the same way as the primary one. */
+export interface ChainValidationActorConfig {
+  /** Defaults to chainValidation.fundingHbar when omitted. */
+  fundingHbar?: number;
+}
+
+export type ChainAssertionOutcome = "mustSucceed" | "mustRevert";
+
+/**
+ * Deterministic balance-delta check, composable with outcome. `asset` is HBAR, a native HTS
+ * token id, or an EVM/Solidity token contract's own storage-based balance (read via its
+ * standard `balanceOf(address)`, for an ERC20/ERC1400-style token — e.g. an Asset Tokenization
+ * Studio security token — which is *not* a native HTS token and has no Mirror Node
+ * account/token-association entry at all). `equals` is a signed integer as a string (tinybars
+ * for HBAR, smallest unit otherwise) to avoid floating-point precision loss.
+ */
+export interface ChainAssertionBalanceDeltaConfig {
+  /**
+   * The holder identifier the balance is sampled on. Exactly one of account/accountEnv.
+   * For `asset: "hbar"` or `{tokenId}`, a Hedera account id (0.0.x). For `asset: {contract}`,
+   * the holder's EVM address (0x...) — what `balanceOf` itself takes as its argument.
+   */
+  account?: string;
+  /** Env var holding the account/address at execution time (e.g. an actor's own account). */
+  accountEnv?: string;
+  asset: "hbar" | { tokenId: string } | { contract: string };
+  equals: string;
+}
+
+export interface ChainAssertionExpectConfig {
+  outcome: ChainAssertionOutcome;
+  /** Only meaningful with outcome: "mustRevert" — substring match against the failure reason. */
+  reasonContains?: string;
+  balanceDelta?: ChainAssertionBalanceDeltaConfig;
+}
+
+/**
+ * A single deterministic on-chain behavioral postcondition: execute `action` with `actor`'s
+ * signer (default: the primary chainSigner), then evaluate `expect` against real chain
+ * evidence — never an LLM judgment. See docs/authoring-a-recipe.md.
+ */
+export interface ChainAssertionConfig {
+  /** Stable across repair attempts — reused findings/report ids are keyed on this. */
+  id: string;
+  description?: string;
+  /** Name of an entry in chainValidation.actors. Omitted = the primary chainSigner. */
+  actor?: string;
+  /** Same shape as a deploy command — one named shell step, signer env vars injected. */
+  action: ChainValidationDeployCommand;
+  expect: ChainAssertionExpectConfig;
+}
+
 /**
  * Optional on-chain validation: provision an ephemeral funded ECDSA
  * testnet account, inject it as a burner wallet, and verify txs via mirror node.
@@ -158,6 +210,10 @@ export interface ChainValidationConfig {
   sweepBack: boolean;
   expose: ChainValidationExposeConfig;
   deploy?: ChainValidationDeployConfig;
+  /** Additional named ephemeral signers, alongside the primary chainSigner. */
+  actors?: Record<string, ChainValidationActorConfig>;
+  /** Deterministic on-chain behavioral postcondition checks. See ChainAssertionConfig. */
+  assertions?: ChainAssertionConfig[];
 }
 
 /** Ephemeral ECDSA test signer provisioned for a harness run. */
@@ -276,7 +332,9 @@ export interface ValidationFinding {
     | "agent"
     | "playwright"
     | "eval"
-    | "eval-infra";
+    | "eval-infra"
+    | "chain-assertion"
+    | "chain-assertion-infra";
   message: string;
   details?: string;
   /**
@@ -288,6 +346,12 @@ export interface ValidationFinding {
   assertion?: string;
   /** Route associated with an eval finding, when known. */
   route?: string;
+  /** Deterministic on-chain evidence for a chain-assertion finding. */
+  evidence?: {
+    transactionId?: string;
+    expected?: string;
+    observed?: string;
+  };
 }
 
 export interface ValidationResult {
@@ -387,6 +451,8 @@ export type HarnessLogEvent =
       evmAddress: string;
       network: "testnet";
       reused: boolean;
+      /** Name of the chainValidation.actors entry this signer is for; absent = the primary signer. */
+      actor?: string;
     }
   | {
       type: "chain_signer_swept";
@@ -394,6 +460,8 @@ export type HarnessLogEvent =
       accountId: string;
       success: boolean;
       error?: string;
+      /** Name of the chainValidation.actors entry this signer is for; absent = the primary signer. */
+      actor?: string;
     }
   | {
       type: "workspace_git_committed";

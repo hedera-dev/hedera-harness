@@ -182,8 +182,13 @@ export async function writePromptFile(
 ): Promise<void> {
   let persisted = prompt.trim();
   for (const secret of secrets) {
-    if (secret && secret.length > 0) {
-      persisted = persisted.split(secret).join("<redacted by hedera-harness>");
+    if (!secret) continue;
+    persisted = persisted.split(secret).join("<redacted by hedera-harness>");
+    // Also strip the bare (non-0x-prefixed) hex form, in case a leaked copy of the key lost
+    // its prefix somewhere upstream (e.g. an env var round-tripped through a shell).
+    const bare = secret.replace(/^0x/i, "");
+    if (bare && bare !== secret) {
+      persisted = persisted.split(bare).join("<redacted by hedera-harness>");
     }
   }
   await writeFile(promptPath, `${persisted}\n`, "utf8");

@@ -123,7 +123,9 @@ export async function buildRepairPrompt(
   attempt: number,
   vendoredContext?: VendoredContext,
 ): Promise<string> {
-  const actionable = findings.filter(finding => finding.category !== "eval-infra");
+  const actionable = findings.filter(
+    finding => finding.category !== "eval-infra" && finding.category !== "chain-assertion-infra",
+  );
   const scope = classifyRepairScope(actionable);
   const evalPath = vendoredContext?.evalRelativePath ?? VENDORED_EVAL_PATH;
   const prdPath = vendoredContext?.prdRelativePath ?? VENDORED_PRD_PATH;
@@ -166,7 +168,9 @@ export async function buildRepairPrompt(
 }
 
 export function classifyRepairScope(findings: ValidationFinding[]): RepairScope {
-  const actionable = findings.filter(finding => finding.category !== "eval-infra");
+  const actionable = findings.filter(
+    finding => finding.category !== "eval-infra" && finding.category !== "chain-assertion-infra",
+  );
   if (actionable.length === 0) {
     return "broad";
   }
@@ -182,9 +186,11 @@ export function classifyRepairScope(findings: ValidationFinding[]): RepairScope 
   );
   if (
     !hasStructural &&
-    [...categories].every(category => ["commands", "playwright", "eval"].includes(category))
+    [...categories].every(category =>
+      ["commands", "playwright", "eval", "chain-assertion"].includes(category),
+    )
   ) {
-    if (categories.has("commands") || categories.has("playwright")) {
+    if (categories.has("commands") || categories.has("playwright") || categories.has("chain-assertion")) {
       return "runtime";
     }
   }
@@ -284,11 +290,22 @@ function formatFindingsList(findings: ValidationFinding[]): string {
     return "- (no findings)";
   }
   return findings
-    .map(
-      finding =>
-        `- [${finding.category}] ${finding.message}${finding.details ? `\n  ${finding.details}` : ""}`,
-    )
+    .map(finding => {
+      const evidenceLine = finding.evidence
+        ? `\n  evidence: ${formatFindingEvidence(finding.evidence)}`
+        : "";
+      const detailsLine = finding.details ? `\n  ${finding.details}` : "";
+      return `- [${finding.category}] ${finding.message}${evidenceLine}${detailsLine}`;
+    })
     .join("\n");
+}
+
+function formatFindingEvidence(evidence: NonNullable<ValidationFinding["evidence"]>): string {
+  const parts: string[] = [];
+  if (evidence.transactionId) parts.push(`tx ${evidence.transactionId}`);
+  if (evidence.expected !== undefined) parts.push(`expected ${evidence.expected}`);
+  if (evidence.observed !== undefined) parts.push(`observed ${evidence.observed}`);
+  return parts.join(", ");
 }
 
 function formatEvalTargets(

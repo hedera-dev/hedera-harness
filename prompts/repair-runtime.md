@@ -34,8 +34,11 @@ Do not redesign unrelated features.
 ## Repair Rules
 - Keep Yarn-only workflows; do not add secrets or `.env` files.
 - Preserve scaffold-hbar template conventions.
-- Priority: [commands] → [playwright] → [eval].
-- Do NOT attempt to fix [eval-infra] / MCP tooling failures.
+- Priority: [commands] → [playwright] → [eval] → [chain-assertion].
+- A [chain-assertion] finding means a real on-chain action did not behave as the recipe
+  declared (see its `evidence`: transaction id, expected vs. observed) — fix the app logic or
+  configuration that produced the wrong on-chain outcome, not the test itself.
+- Do NOT attempt to fix [eval-infra] / [chain-assertion-infra] / MCP tooling failures.
 
 Append a brief repair note to `GENERATION_NOTES.md`.
 - Do not read or write files outside the current workspace.

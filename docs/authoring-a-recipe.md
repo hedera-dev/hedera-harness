@@ -183,6 +183,118 @@ chainValidation:
 Lifecycle: one account per run directory, reused across repair and continue
 attempts, best-effort sweep back to the operator at run end.
 
+#### `chainValidation.assertions` — deterministic on-chain postconditions
+
+CHAIN proves a real signed transaction landed. It does not, on its own, prove
+the app enforced a specific rule for that transaction — a deploy command that
+exits `0` is treated as successful regardless of what it actually did
+on-chain. `chainValidation.assertions` closes that gap: each entry executes
+one signed action and evaluates its outcome **in code**, against real chain
+evidence from Mirror Node, independent of EVALUATE's LLM judgment.
+
+Runs once per attempt, right after a successful chain deploy and before the
+dev server boots for SMOKE — it needs the app already deployed and the
+signer(s), not the browser. A failing assertion short-circuits the rest of
+the attempt the same way a failed deploy does.
+
+```yaml
+chainValidation:
+  # ...enabled/network/operator/fundingHbar/sweepBack/expose as above...
+  actors:                          # optional — additional named ephemeral signers
+    attacker: { fundingHbar: 5 }   # provisioned like the primary signer, own account
+    complianceOfficer: {}          # fundingHbar defaults to chainValidation.fundingHbar
+  assertions:
+    - id: reject-unverified-transfer   # stable across repair attempts — do not rename to "fix" a finding
+      description: "Unverified investor must not receive the bond"
+      actor: attacker                  # omit to use the primary chainSigner
+      action:
+        name: attempt-transfer-to-bob
+        command: yarn hardhat run scripts/transfer-to-bob.ts --network hederaTestnet
+        timeoutMs: 60000
+      expect:
+        outcome: mustRevert            # or mustSucceed
+        reasonContains: KYC            # optional, only valid with mustRevert
+    - id: coupon-balance-delta
+      action:
+        name: run-coupon
+        command: yarn hardhat run scripts/pay-coupon.ts --network hederaTestnet
+      expect:
+        outcome: mustSucceed
+        balanceDelta:
+          accountEnv: ALICE_ACCOUNT_ID   # exactly one of account / accountEnv
+          asset: hbar                    # or { tokenId: "0.0.x" }, or { contract: "0x..." }
+          equals: "500000000"            # signed integer as a string — tinybars for hbar
+```
+
+- `id` must be unique per recipe and **stable across repair attempts** — the
+  repair loop tracks findings by id (see `findingsLifecycle.ts`); renaming an
+  id makes a fix look like a new, unrelated finding instead of a closed one.
+- `actor`, if set, must name an entry in `chainValidation.actors` — an
+  undeclared actor is a load-time error, not a run-time surprise.
+- `expect.reasonContains` only applies to `mustRevert` — rejected at load
+  otherwise. **Only meaningfully narrows a revert on the EVM/JSON-RPC-relay path, and only
+  when the contract reverts with a standard `require(condition, "message")`** (Solidity's
+  `Error(string)` encoding, decoded automatically). A contract that reverts with a **custom
+  error** (`error InsufficientKyc(address who);` — the modern, gas-cheaper Solidity pattern,
+  and what production contracts including Asset Tokenization Studio's actually use) cannot be
+  decoded without that contract's own error ABI, which this mechanism deliberately doesn't
+  carry (see `chainAssertionEvidence.ts`'s module comment) — `reasonContains` then falls back
+  to matching Mirror Node's coarse status string (`"CONTRACT_REVERT_EXECUTED"`, identical for
+  every revert reason on that contract), which will rarely match a specific reason. Omit
+  `reasonContains` and rely on `outcome: mustRevert` alone when the contract you're asserting
+  against uses custom errors — this is still a real, deterministic pass/fail on whether the
+  call reverted at all, just not a policy-specific reason check.
+- `expect.balanceDelta` needs exactly one of `account` (a literal id/address) or
+  `accountEnv` (an env var read at execution time, e.g. an actor's own
+  account) — never both, never neither. For `asset: hbar` or `{tokenId}` this is a Hedera
+  account id (`0.0.x`); for `asset: {contract}` it's the holder's **EVM address** (`0x...`),
+  since that's what the contract's own `balanceOf` takes.
+- `expect.balanceDelta.equals` must be a signed integer string (tinybars for
+  `hbar`, smallest unit otherwise) — rejected at load otherwise, so a
+  typo like `"5.5e8"` or `"500,000,000"` never reaches evaluation.
+- `asset: { contract: "0x..." }` reads the balance via the contract's own standard ERC20
+  `balanceOf(address)` — for a Solidity token that lives entirely as contract storage (an
+  ERC20/ERC1400-style security token, e.g. an Asset Tokenization Studio bond), **not** a
+  native HTS token. This distinction matters: such a holder has **no** entry anywhere in
+  Mirror Node's account/token-association data, so `{tokenId}` would silently read `0` for
+  every such holder, always — confirmed empirically against a real ATS bond holder (zero
+  token associations despite a genuine, real, positive balance). Needs no external JSON-RPC
+  relay (Hashio or otherwise) — reads via Mirror Node's own read-only contract-call
+  simulation (`/contracts/call`), keeping this mechanism's Mirror-Node-only footprint.
+- `asset: {tokenId}` (native HTS) can take up to the full poll budget (`maxWaitMs`, default
+  20s) to resolve a genuinely-zero balance — e.g. an account with no association to that
+  token yet. Mirror Node's `/accounts/{id}` gives no way to distinguish "association not
+  indexed yet" from "confirmed, no association" other than retrying through the whole window;
+  correctness (never reporting a fresh association's real balance as a false zero) is chosen
+  over latency here. This mainly affects the BEFORE sample of a balance-delta assertion, since
+  that typically checks a state nothing has changed yet — the AFTER sample almost always
+  resolves quickly because the action just changed it. `asset: {contract}` (a single
+  contract-call simulation, no propagation-lag ambiguity) is unaffected.
+
+**How the action's outcome is captured.** `action.command` must print the id
+of the transaction it submitted somewhere in stdout/stderr, in the form
+`0.0.x@seconds.nanos` (the same format the Hedera SDK's own
+`transactionId.toString()` produces) — the harness looks for that pattern in
+the command's combined output. The command's own exit code is **not** the
+verdict: it only distinguishes "the action ran to completion" from "it
+didn't" (non-zero exit or a timeout → a `chain-assertion-infra` finding,
+since a script that couldn't even finish is not evidence either way). Once a
+transaction id is found, the harness independently queries Mirror Node for
+that transaction's real consensus result and compares it to `expect` — never
+trusting the script's own claim of success.
+
+**Findings.** A mismatch, an unresolvable evidence query, or a config problem
+(unknown actor, unset `accountEnv`) each produce one `ValidationFinding`:
+
+| category | meaning | fed to repair? |
+|---|---|---|
+| `chain-assertion` | confirmed policy mismatch, or a fixable config/script problem | yes |
+| `chain-assertion-infra` | evidence couldn't be obtained (Mirror Node lag/outage, action didn't complete) | no — treated like `eval-infra`; an attempt where *every* chain-assertion finding is this category aborts instead of spending a repair attempt on something no agent could fix |
+
+A `chain-assertion` finding's `evidence` field carries the transaction id and
+the expected vs. observed values, so the repair prompt (and any consumer of
+`report.json`) sees concrete proof, not just a message.
+
 ## Building in increments
 
 For anything larger than a single change, list PRDs in order:

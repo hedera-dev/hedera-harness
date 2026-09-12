@@ -14,7 +14,8 @@ import type {
 } from "./types.js";
 import { executeCommand } from "./command.js";
 import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
-import { buildDeployEnv } from "./validation/chainSigner.js";
+import { buildDeployEnv, redactSignerSecrets } from "./validation/chainSigner.js";
+import { runChainAssertions } from "./validation/chainAssertions.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
 import {
@@ -44,6 +45,8 @@ export interface AttemptStageContext {
   workspacePath: string;
   layout: RunLayout;
   chainSigner?: ChainSigner;
+  /** Additional named ephemeral signers, keyed by chainValidation.actors entry name. */
+  chainActors?: Record<string, ChainSigner>;
   /** Vendored eval checklist path, relative to the workspace. */
   evalRelativePath?: string;
 }
@@ -207,24 +210,60 @@ export async function runChainDeploy(
 
   for (const commandConfig of commands) {
     console.log(`[hedera-harness] Chain deploy: ${commandConfig.name} — ${commandConfig.command}`);
-    const result = await executeCommand({
-      command: commandConfig.command,
-      cwd: context.workspacePath,
-      env,
-      timeoutMs: commandConfig.timeoutMs,
-      shell: true,
-    });
+    let result;
+    try {
+      result = await executeCommand({
+        command: commandConfig.command,
+        cwd: context.workspacePath,
+        env,
+        timeoutMs: commandConfig.timeoutMs,
+        shell: true,
+      });
+    } catch (error) {
+      // executeCommand's promise can reject outright (ENOENT/EACCES/an unspawnable command),
+      // not just resolve with a non-zero exit — uncaught, this crashes the attempt instead of
+      // producing a finding. Same failure shape as a non-zero exit, discovered a step earlier.
+      findings.push({
+        id: `chain-deploy:${commandConfig.name}`,
+        category: "commands",
+        message: `Chain deploy command could not be started: ${commandConfig.name}`,
+        details: truncate(error instanceof Error ? error.message : String(error)),
+      });
+      continue;
+    }
     if (result.exitCode !== 0) {
       findings.push({
         id: `chain-deploy:${commandConfig.name}`,
         category: "commands",
         message: `Chain deploy command failed: ${commandConfig.name}`,
-        details: truncate(result.stderr || result.stdout),
+        // The deploy command's own env carries the signer's private key (buildDeployEnv) — a
+        // crash that echoes its environment must never leak it into a persisted finding/prompt.
+        details: truncate(redactSignerSecrets(result.stderr || result.stdout, [context.chainSigner])),
       });
     }
   }
 
   return findings;
+}
+
+/**
+ * Deterministic on-chain postcondition assertions: run after a successful chain deploy, before
+ * the dev server boots — they need the app already deployed and the signer(s), but not the
+ * browser. See docs/authoring-a-recipe.md "chainValidation.assertions".
+ */
+export async function runChainAssertionsStage(
+  context: AttemptStageContext,
+): Promise<ValidationFinding[]> {
+  const assertions = context.spec.chainValidation?.assertions ?? [];
+  if (!context.chainSigner || assertions.length === 0) return [];
+
+  // Logs per-assertion as each one actually executes (see chainAssertions.ts), not upfront.
+  return runChainAssertions({
+    workspacePath: context.workspacePath,
+    chainValidation: context.spec.chainValidation!,
+    primarySigner: context.chainSigner,
+    actorSigners: context.chainActors ?? {},
+  });
 }
 
 /** EVALUATE — adversarial validator grades the live app against the evaluate checklist. */
@@ -315,6 +354,41 @@ export async function runValidationStages(
       ...validation,
       passed: false,
       findings: [...validation.findings, ...deployFindings],
+    };
+  }
+
+  const chainAssertionFindings = await runChainAssertionsStage(context);
+  if (chainAssertionFindings.length > 0) {
+    // A pure infra batch (no confirmed policy violation, evidence just couldn't be obtained)
+    // must abort like an EVALUATE infra failure does, not spend a repair attempt on an agent
+    // that has nothing it can fix — reuses the same evaluation.infrastructureFailure signal
+    // attemptLoop.ts already checks, since "evaluation" is the closest generic slot for "a
+    // validation stage failed for tooling reasons"; a real policy violation (or a mix) is
+    // always treated as repairable, never silently absorbed as infra.
+    const allInfra = chainAssertionFindings.every(
+      finding => finding.category === "chain-assertion-infra",
+    );
+    if (allInfra) {
+      logStage("SMOKE", "chain assertion infrastructure failure — aborting, not a repair target");
+      return {
+        ...validation,
+        passed: false,
+        findings: [...validation.findings, ...chainAssertionFindings],
+        evaluation: {
+          passed: false,
+          findings: chainAssertionFindings,
+          durationMs: 0,
+          infrastructureFailure: true,
+          infrastructureFailureReason: chainAssertionFindings[0].message,
+        },
+      };
+    }
+
+    logStage("SMOKE", "chain assertion failed");
+    return {
+      ...validation,
+      passed: false,
+      findings: [...validation.findings, ...chainAssertionFindings],
     };
   }
 
