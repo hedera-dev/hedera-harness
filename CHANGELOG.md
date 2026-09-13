@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- **SMOKE could not start a server that does not print `Local:`.** Readiness
+  came only from a `Local: http://…` line in the server's output, so an
+  Express-style server ("listening on http://localhost:4021") failed after 30s
+  with "did not report a Local URL" while it had been serving `server.url` the
+  whole time, and an API whose root answers 404 was never ready. The configured
+  `server.url` is now polled alongside output detection, any HTTP answer below
+  500 counts as up (a 5xx keeps waiting), and a port that already answers
+  before the server starts, or that the server reports as taken, is never
+  trusted.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

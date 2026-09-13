@@ -4,7 +4,10 @@ import { killProcessTree } from "../command.js";
 import { parse as parseYaml } from "yaml";
 
 const LOCAL_URL_PATTERN = /Local:\s*(https?:\/\/[^\s-]+)/i;
-const URL_DETECT_TIMEOUT_MS = 30_000;
+const PORT_IN_USE_PATTERN = /Port (\d+) is in use/i;
+const READY_POLL_MS = 1_000;
+/** Bound on one readiness probe, so a socket that accepts but never answers cannot stall the budget. */
+const PROBE_TIMEOUT_MS = 5_000;
 
 export interface DevServerConfig {
   command: string;
@@ -15,7 +18,15 @@ export interface DevServerConfig {
 interface DevServerHandle {
   process: ChildProcess;
   configuredUrl: string;
-  detectedUrl: Promise<string>;
+  /** The URL the server printed in a `Local:` line, once it has. */
+  localUrl?: string;
+  /**
+   * True when `configuredUrl` cannot be this server: something answered there
+   * before it started, or it reported the port as taken and moved elsewhere.
+   */
+  configuredPortTaken: boolean;
+  /** Set when the process exits or fails to spawn; read while waiting for readiness. */
+  exitError?: Error;
 }
 
 /** Live dev server reused by Playwright gate and semantic validator within one attempt. */
@@ -28,7 +39,7 @@ export interface DevServerSession {
 }
 
 /**
- * Sole entrypoint for spawn → URL detect → readiness → teardown-on-failure.
+ * Sole entrypoint for spawn → readiness → teardown-on-failure.
  *
  * Callers borrow the returned session; gates must not spawn their own servers.
  */
@@ -37,12 +48,21 @@ export async function createDevServerSession(
   config: DevServerConfig,
   logPrefix = "dev",
 ): Promise<DevServerSession> {
-  const handle = startDevServer(workspacePath, config.command, config.configuredUrl, logPrefix);
+  // Anything already answering at server.url before the server starts is not
+  // the server, whatever it answers, so only a URL the server prints itself can
+  // be trusted then.
+  const configuredPortTaken = (await probeUrl(config.configuredUrl)).responded;
+  if (configuredPortTaken) {
+    console.log(
+      `[hedera-harness] ${logPrefix}: ${config.configuredUrl} already answers before the dev server started; following the server's reported Local URL only.`,
+    );
+  }
+
+  const handle = startDevServer(workspacePath, config, logPrefix, configuredPortTaken);
 
   let url: string;
   try {
-    url = await handle.detectedUrl;
-    await waitForServer(url, config.timeoutMs);
+    url = await waitForReadyUrl(handle, config.timeoutMs);
   } catch (error) {
     // The child leads a detached process group; without this it survives the
     // failed startup and keeps the port held for the rest of the session.
@@ -53,6 +73,10 @@ export async function createDevServerSession(
   if (url !== config.configuredUrl) {
     console.log(
       `[hedera-harness] Dev server using detected URL ${url} (config specified ${config.configuredUrl})`,
+    );
+  } else if (!handle.localUrl) {
+    console.log(
+      `[hedera-harness] Dev server ready at ${url} (it printed no "Local:" line, so server.url was polled directly)`,
     );
   }
 
@@ -90,44 +114,13 @@ export async function loadDevServerConfig(playwrightConfigPath: string): Promise
 
 function startDevServer(
   workspacePath: string,
-  command: string,
-  configuredUrl: string,
-  logPrefix = "playwright",
+  config: DevServerConfig,
+  logPrefix: string,
+  configuredPortTaken: boolean,
 ): DevServerHandle {
-  let resolveUrl: (url: string) => void = () => undefined;
-  let rejectUrl: (error: Error) => void = () => undefined;
-  let settled = false;
-
-  const detectedUrl = new Promise<string>((resolve, reject) => {
-    resolveUrl = resolve;
-    rejectUrl = reject;
-  });
-
-  const settleUrl = (url: string) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(detectTimer);
-    resolveUrl(normalizeBaseUrl(url));
-  };
-
-  const failUrl = (error: Error) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(detectTimer);
-    rejectUrl(error);
-  };
-
-  const detectTimer = setTimeout(() => {
-    failUrl(
-      new Error(
-        `Dev server did not report a Local URL within ${URL_DETECT_TIMEOUT_MS}ms. Expected output like "Local: http://localhost:3000".`,
-      ),
-    );
-  }, URL_DETECT_TIMEOUT_MS);
-
   // detached: true makes this child the leader of a new process group so
   // stopDevServer can signal -pid and tear down yarn/next grandchildren.
-  const child = spawn(command, {
+  const child = spawn(config.command, {
     cwd: workspacePath,
     shell: true,
     detached: true,
@@ -137,6 +130,12 @@ function startDevServer(
       FORCE_COLOR: "0",
     },
   });
+
+  const handle: DevServerHandle = {
+    process: child,
+    configuredUrl: config.configuredUrl,
+    configuredPortTaken,
+  };
 
   const onServerOutput = (stream: "stdout" | "stderr", chunk: Buffer) => {
     const text = chunk.toString("utf8");
@@ -150,11 +149,15 @@ function startDevServer(
     }
 
     const localUrl = extractLocalUrl(text);
-    if (localUrl) {
-      settleUrl(localUrl);
+    if (localUrl && !handle.localUrl) {
+      handle.localUrl = normalizeBaseUrl(localUrl);
     }
 
-    if (/Port \d+ is in use/i.test(text)) {
+    // Only the configured port matters: an app may report an auxiliary port
+    // as taken (a websocket, a proxy) and still serve server.url fine.
+    const inUse = PORT_IN_USE_PATTERN.exec(text);
+    if (inUse && inUse[1] === portOf(config.configuredUrl)) {
+      handle.configuredPortTaken = true;
       console.log(
         `[hedera-harness] ${logPrefix} detected a port conflict; health checks will follow the server's reported Local URL.`,
       );
@@ -165,46 +168,98 @@ function startDevServer(
   child.stderr?.on("data", chunk => onServerOutput("stderr", Buffer.from(chunk)));
 
   child.on("error", error => {
-    failUrl(error instanceof Error ? error : new Error(String(error)));
+    handle.exitError ??= error instanceof Error ? error : new Error(String(error));
   });
 
   child.on("close", (exitCode, signal) => {
-    if (settled) return;
     const reason = signal ? `signal ${signal}` : `exit code ${exitCode ?? "null"}`;
-    failUrl(new Error(`Dev server exited before reporting a Local URL (${reason}).`));
+    handle.exitError ??= new Error(`Dev server exited before it became ready (${reason}).`);
   });
 
-  return {
-    process: child,
-    configuredUrl,
-    detectedUrl,
-  };
+  return handle;
 }
 
-async function waitForServer(url: string, timeoutMs: number): Promise<void> {
+/**
+ * Resolve the URL the gate should drive.
+ *
+ * Two signals race. A `Local:` line names the URL the server actually bound,
+ * which is the only reliable answer when it moved off a taken port. Most
+ * servers outside Next and Vite never print one (Express says "listening on
+ * http://…"), so the configured `server.url` is polled in parallel and wins as
+ * soon as it answers — unless that port is known to belong to someone else, in
+ * which case only the printed URL is trusted.
+ *
+ * Any HTTP answer below 500 means the server is up. Status codes are judged per
+ * route by the gate: an API whose root answers 404 is ready, not broken.
+ */
+async function waitForReadyUrl(handle: DevServerHandle, timeoutMs: number): Promise<string> {
   const deadline = Date.now() + timeoutMs;
-  let lastError = "server not ready";
+  let lastReason = "no response yet";
 
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { redirect: "follow" });
-      if (response.status >= 200 && response.status < 400) {
-        return;
-      }
-      lastError = `HTTP ${response.status}`;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+  for (;;) {
+    if (handle.exitError) throw handle.exitError;
+
+    const candidate = handle.localUrl ?? (handle.configuredPortTaken ? undefined : handle.configuredUrl);
+    if (candidate) {
+      const probe = await probeUrl(candidate, Math.min(PROBE_TIMEOUT_MS, deadline - Date.now()));
+      if (probe.ready) return candidate;
+      lastReason = probe.reason;
+    } else {
+      lastReason = "the configured port is taken and the server has not printed a Local: URL";
     }
 
-    await sleep(1_000);
-  }
+    if (Date.now() >= deadline) {
+      const hint = handle.localUrl
+        ? ""
+        : handle.configuredPortTaken
+          ? ` ${handle.configuredUrl} was already taken, so only a "Local: http://…" line printed by the server could be used, and none appeared.`
+          : ` It printed no "Local: http://…" line, so server.url was polled; check that it names the port the server listens on.`;
+      throw new Error(
+        `Dev server did not become ready at ${candidate ?? handle.configuredUrl} within ${timeoutMs}ms (${lastReason}).${hint}`,
+      );
+    }
 
-  throw new Error(`Dev server did not become ready at ${url} within ${timeoutMs}ms (${lastError}).`);
+    await sleep(READY_POLL_MS);
+  }
 }
 
-async function stopDevServer(target: DevServerHandle | ChildProcess | null): Promise<void> {
-  const child = target && "process" in target && "detectedUrl" in target ? target.process : target;
-  if (!child || child.exitCode !== null) {
+/**
+ * `responded` — something answered HTTP at all (occupancy).
+ * `ready` — it answered below 500 (up; the gate judges each route's status).
+ * A 5xx is a server still starting or a proxy with no upstream: occupied, not ready.
+ */
+async function probeUrl(
+  url: string,
+  timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<{ responded: boolean; ready: boolean; reason: string }> {
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
+    });
+    return { responded: true, ready: response.status < 500, reason: `HTTP ${response.status}` };
+  } catch (error) {
+    return {
+      responded: false,
+      ready: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** The port a URL names, with the scheme default filled in; "" when the URL does not parse. */
+function portOf(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  } catch {
+    return "";
+  }
+}
+
+async function stopDevServer(handle: DevServerHandle): Promise<void> {
+  const child = handle.process;
+  if (child.exitCode !== null) {
     return;
   }
 

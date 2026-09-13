@@ -113,7 +113,12 @@ validators:
   playwright: .harness/validators/playwright-smoke.yaml
 ```
 
-- `server.command` / `server.url` match how the template starts
+- `server.command` starts the app and `server.url` is where it listens. The
+  harness polls that URL until it answers; a `Local: http://…` line in the
+  server's output is optional and only matters when the server moves to another
+  port. Any HTTP answer below 500 counts as up, including a `404` at `/` from
+  an API server — each route's status is judged by the gate. A 5xx (an app
+  still compiling, a proxy with no upstream) keeps waiting until `timeoutMs`.
 - one entry per critical route
 - `forbidden.visibleText` for crash banners
 

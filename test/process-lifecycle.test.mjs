@@ -161,3 +161,249 @@ test("createDevServerSession is the only lifecycle entry callers need", async ()
   assert.equal(mod.waitForServer, undefined, "waitForServer must stay module-private");
   assert.equal(mod.stopDevServer, undefined, "stopDevServer must stay module-private");
 });
+
+/** `count` distinct free loopback ports: bind them all before releasing any, so two calls cannot hand back the same one. */
+async function freePorts(count) {
+  const { createServer } = await import("node:net");
+  const servers = await Promise.all(
+    Array.from({ length: count }, () =>
+      new Promise((resolve, reject) => {
+        const server = createServer();
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => resolve(server));
+      }),
+    ),
+  );
+  const ports = servers.map(server => server.address().port);
+  await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
+  return ports;
+}
+
+test("createDevServerSession becomes ready from server.url when the server never prints a Local: line", async () => {
+  const dir = await makeOsTempDir("harness-devserver-nolocal-");
+  const [port] = await freePorts(1);
+  const serverScript = path.join(dir, "server.mjs");
+
+  // Express, Fastify, Hono and plain http servers all log like this. Before the
+  // fix the harness waited 30s for a "Local:" line and then gave up, although
+  // the configured server.url had been answering the whole time.
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+const server = createServer((_req, res) => {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end('{"ok":true}');
+});
+server.listen(${port}, "127.0.0.1", () => {
+  console.log("[gateway] listening on http://127.0.0.1:${port} (payTo 0.0.1234, 0.001 USDC/KB)");
+});
+`,
+  );
+
+  const startedAt = Date.now();
+  const session = await createDevServerSession(
+    dir,
+    {
+      command: `node ${JSON.stringify(serverScript)}`,
+      configuredUrl: `http://127.0.0.1:${port}`,
+      timeoutMs: 15_000,
+    },
+    "test",
+  );
+  try {
+    assert.equal(session.url, `http://127.0.0.1:${port}`);
+    assert.ok(
+      Date.now() - startedAt < 10_000,
+      "readiness must come from polling server.url, not from waiting out a URL-detect timeout",
+    );
+  } finally {
+    await session.stop();
+  }
+});
+
+test("createDevServerSession treats an API whose root answers 404 as up", async () => {
+  const dir = await makeOsTempDir("harness-devserver-404-");
+  const [port] = await freePorts(1);
+  const serverScript = path.join(dir, "server.mjs");
+
+  // Express answers "Cannot GET /" for an unrouted root. The routes the gate
+  // walks are what matter, and their status codes are judged there.
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+const server = createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"ok":true}');
+    return;
+  }
+  res.writeHead(404, { "content-type": "text/html" });
+  res.end("Cannot GET " + req.url);
+});
+server.listen(${port}, "127.0.0.1", () => {
+  console.log("Local: http://127.0.0.1:${port}");
+});
+`,
+  );
+
+  const session = await createDevServerSession(
+    dir,
+    {
+      command: `node ${JSON.stringify(serverScript)}`,
+      configuredUrl: `http://127.0.0.1:${port}`,
+      timeoutMs: 15_000,
+    },
+    "test",
+  );
+  try {
+    assert.equal(session.url, `http://127.0.0.1:${port}`);
+    const health = await fetch(`${session.url}/health`);
+    assert.equal(health.status, 200);
+  } finally {
+    await session.stop();
+  }
+});
+
+test("createDevServerSession follows the Local: URL when the configured port belongs to someone else", async () => {
+  const dir = await makeOsTempDir("harness-devserver-conflict-");
+  const { createServer } = await import("node:http");
+  const [decoyPort, realPort] = await freePorts(2);
+
+  // A decoy already holds server.url and answers 200 — the situation Next
+  // reports as "Port N is in use" before moving. The session must drive the
+  // server it started, never the decoy.
+  const decoy = createServer((_req, res) => {
+    res.writeHead(200);
+    res.end("decoy");
+  });
+  await new Promise(resolve => decoy.listen(decoyPort, "127.0.0.1", resolve));
+
+  const serverScript = path.join(dir, "server.mjs");
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+console.log("Port ${decoyPort} is in use, using available port ${realPort} instead.");
+const server = createServer((_req, res) => {
+  res.writeHead(200);
+  res.end("real");
+});
+server.listen(${realPort}, "127.0.0.1", () => {
+  console.log("Local: http://127.0.0.1:${realPort}");
+});
+`,
+  );
+
+  try {
+    const session = await createDevServerSession(
+      dir,
+      {
+        command: `node ${JSON.stringify(serverScript)}`,
+        configuredUrl: `http://127.0.0.1:${decoyPort}`,
+        timeoutMs: 15_000,
+      },
+      "test",
+    );
+    try {
+      assert.equal(session.url, `http://127.0.0.1:${realPort}`);
+      assert.equal(await (await fetch(session.url)).text(), "real");
+    } finally {
+      await session.stop();
+    }
+  } finally {
+    await new Promise(resolve => decoy.close(resolve));
+  }
+});
+
+test("createDevServerSession never trusts a listener that answered before the server started, whatever it answered", async () => {
+  const dir = await makeOsTempDir("harness-devserver-occupied-");
+  const { createServer } = await import("node:http");
+  const [decoyPort, realPort] = await freePorts(2);
+
+  // A decoy that is unhealthy at first (500) and healthy afterwards. Treating
+  // "not ready" as "free" would let the poll adopt it once it turns 200.
+  let decoyRequests = 0;
+  const decoy = createServer((_req, res) => {
+    decoyRequests += 1;
+    res.writeHead(decoyRequests === 1 ? 500 : 200);
+    res.end("decoy");
+  });
+  await new Promise(resolve => decoy.listen(decoyPort, "127.0.0.1", resolve));
+
+  const serverScript = path.join(dir, "server.mjs");
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+const server = createServer((_req, res) => {
+  res.writeHead(200);
+  res.end("real");
+});
+setTimeout(() => {
+  server.listen(${realPort}, "127.0.0.1", () => {
+    console.log("Local: http://127.0.0.1:${realPort}");
+  });
+}, 1500);
+`,
+  );
+
+  try {
+    const session = await createDevServerSession(
+      dir,
+      {
+        command: `node ${JSON.stringify(serverScript)}`,
+        configuredUrl: `http://127.0.0.1:${decoyPort}`,
+        timeoutMs: 15_000,
+      },
+      "test",
+    );
+    try {
+      assert.equal(session.url, `http://127.0.0.1:${realPort}`);
+      assert.equal(await (await fetch(session.url)).text(), "real");
+    } finally {
+      await session.stop();
+    }
+  } finally {
+    await new Promise(resolve => decoy.close(resolve));
+  }
+});
+
+test("createDevServerSession ignores a port-in-use message about a port that is not server.url", async () => {
+  const dir = await makeOsTempDir("harness-devserver-otherport-");
+  const [port] = await freePorts(1);
+  const serverScript = path.join(dir, "server.mjs");
+
+  // An auxiliary port (a websocket, a proxy) reported as taken must not stop
+  // the harness from polling the URL the app does serve.
+  await writeFile(
+    serverScript,
+    `
+import { createServer } from "node:http";
+console.log("Port 9229 is in use, inspector disabled");
+const server = createServer((_req, res) => {
+  res.writeHead(200);
+  res.end("ok");
+});
+server.listen(${port}, "127.0.0.1", () => {
+  console.log("listening on http://127.0.0.1:${port}");
+});
+`,
+  );
+
+  const session = await createDevServerSession(
+    dir,
+    {
+      command: `node ${JSON.stringify(serverScript)}`,
+      configuredUrl: `http://127.0.0.1:${port}`,
+      timeoutMs: 15_000,
+    },
+    "test",
+  );
+  try {
+    assert.equal(session.url, `http://127.0.0.1:${port}`);
+  } finally {
+    await session.stop();
+  }
+});
