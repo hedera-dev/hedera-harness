@@ -79,6 +79,18 @@ export class CommandAgentProvider implements AgentProvider {
       let settled = false;
       let idleTimer: NodeJS.Timeout | undefined;
       let hardKillTimer: NodeJS.Timeout | undefined;
+      // Stream lines are parsed asynchronously (each appends to the activity
+      // log and awaits onProgress). Chain them so the final `result` event is
+      // read before the close handler builds the run result, and so the
+      // activity log keeps the order the agent printed in.
+      let streamProcessing: Promise<void> = Promise.resolve();
+      const processStream = (text: string) => {
+        if (!streamLogger) return;
+        streamProcessing = streamProcessing.then(
+          () => streamLogger.processChunk(text),
+          () => streamLogger.processChunk(text),
+        );
+      };
 
       void initializeAgentLog(
         input.logPath,
@@ -101,7 +113,7 @@ export class CommandAgentProvider implements AgentProvider {
           input.logPath,
           `\n## harness\nagent ${reason === "idle" ? "idle-" : ""}timed out after ${reason === "idle" ? idleTimeoutMs : timeoutMs}ms\n`,
         );
-        void streamLogger?.processChunk(
+        processStream(
           `${JSON.stringify({
             type: "result",
             subtype: reason === "idle" ? "idle_timeout" : "timeout",
@@ -128,7 +140,7 @@ export class CommandAgentProvider implements AgentProvider {
         stdout.push(buffer);
         const text = buffer.toString("utf8");
         void appendAgentLog(input.logPath, buffer);
-        void streamLogger?.processChunk(text);
+        processStream(text);
       });
 
       child.stderr.on("data", chunk => {
@@ -149,12 +161,13 @@ export class CommandAgentProvider implements AgentProvider {
         reject(error);
       });
 
-      child.on("close", (exitCode, signal) => {
+      child.on("close", async (exitCode, signal) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
         clearTimeout(idleTimer);
         clearTimeout(hardKillTimer);
+        await streamProcessing.catch(() => undefined);
 
         const result: AgentRunResult = {
           exitCode,

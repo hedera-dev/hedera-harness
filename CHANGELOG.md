@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The last line an agent prints is parsed before the run is reported
+  closed.** Stream lines were handed to the activity logger with `void`, so
+  the final `result` event (and any tool event a slow `onProgress` was still
+  recording) could be processed after the child's `close` handler had already
+  built the run result and written the log footer. Lines are now chained and
+  awaited in order, which also keeps the activity log in the order the agent
+  printed in.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
