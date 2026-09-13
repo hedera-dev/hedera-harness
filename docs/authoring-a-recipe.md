@@ -192,7 +192,12 @@ each schedule it creates, one per line:
 
 ```
 HARNESS_SCHEDULE_ID=0.0.10457462
+HARNESS_SCHEDULE_ID=0x00000000000000000000000000000000009f9176
 ```
+
+Either form works: the entity id, or the long-zero address that HIP-1215
+`scheduleCall` returns to a contract (the last 8 bytes are the entity number, so
+that address is `0.0.10457462`). Duplicates are checked once.
 
 CHAIN then waits (`HARNESS_SCHEDULE_TIMEOUT_S`, default 120) for the schedule to
 execute, reads the scheduled transaction itself —
@@ -212,6 +217,12 @@ Two things to know when a contract does the scheduling:
   failed. Schedule a few seconds after the second you gate on.
 - `deleted: true` does not mean the schedule never ran. A scheduled call may
   delete its own schedule after executing; only `executed_timestamp` decides.
+- A schedule that waits for an expiry beyond the budget fails at once, naming
+  the expiry, rather than burning the whole budget: a coupon due tomorrow is not
+  something a run can wait for. Hand over only schedules due within the budget,
+  or raise `HARNESS_SCHEDULE_TIMEOUT_S`. A signature-gated schedule
+  (`wait_for_expiry: false`) is waited for, since its expiry says nothing about
+  when the last signature lands.
 
 ## Building in increments
 

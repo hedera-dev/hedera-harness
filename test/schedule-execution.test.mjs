@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
-const { parseScheduleIds, verifyScheduleExecution, verifyScheduledTransactions } = await import(
+const { parseScheduleIds, scheduleIdFromEvmAddress, verifyScheduleExecution, verifyScheduledTransactions } = await import(
   pathToFileURL(path.resolve("dist/validation/scheduleExecution.js")).href
 );
 
@@ -60,7 +60,7 @@ test("parseScheduleIds reads HARNESS_SCHEDULE_ID lines and nothing else", () => 
     "created schedule 0.0.999 for coupon 3", // prose with an id is not a hand-off
     "HARNESS_SCHEDULE_ID=0.0.10457462 ",
     "HARNESS_SCHEDULE_ID=0.0.10457460", // repeated
-    "HARNESS_SCHEDULE_ID=0x00000000000000000000000000000000009f9176", // not an entity id
+    "HARNESS_SCHEDULE_ID=0x00000000000000000000000000000000009f9176", // long-zero address of 0.0.10457462, already listed
   ].join("\n");
   assert.deepEqual(parseScheduleIds(stdout), ["0.0.10457460", "0.0.10457462"]);
   assert.deepEqual(parseScheduleIds(""), []);
@@ -203,4 +203,48 @@ test("verifyScheduledTransactions reports one commands finding per failed schedu
     await verifyScheduledTransactions([], { fetch: mirror.fetch, ...quick }),
     [],
   );
+});
+
+test("parseScheduleIds converts a HIP-1215 long-zero address to its entity id and skips alias addresses", () => {
+  const stdout = [
+    "  HARNESS_SCHEDULE_ID=0x00000000000000000000000000000000009f9176", // what scheduleCall returned for 0.0.10457462
+    `HARNESS_SCHEDULE_ID=0x${"A031B5".padStart(40, "0")}`, // 0.0.10498485, upper-case hex`
+    "HARNESS_SCHEDULE_ID=0x4d5d17D3b7B7a8b6d5d0dD2c1aB2c3D4e5F60718", // an alias address names no entity
+  ].join("\n");
+  assert.deepEqual(parseScheduleIds(stdout), ["0.0.10457462", "0.0.10498485"]);
+  assert.equal(scheduleIdFromEvmAddress("0x00000000000000000000000000000000009f9176"), "0.0.10457462");
+  assert.equal(scheduleIdFromEvmAddress("0x4d5d17D3b7B7a8b6d5d0dD2c1aB2c3D4e5F60718"), undefined);
+  assert.equal(scheduleIdFromEvmAddress("0.0.10457462"), undefined);
+});
+
+test("a schedule that waits for an expiry beyond the budget fails at once, naming the expiry", async () => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  const mirror = stubMirrorNode({
+    "/api/v1/schedules/0.0.10498485": [
+      { deleted: false, executed_timestamp: null, expiration_time: `${expiresAt}.000000000`, wait_for_expiry: true },
+    ],
+  });
+  const verdict = await verifyScheduleExecution("0.0.10498485", { fetch: mirror.fetch, ...quick });
+
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.reason, "not-executed");
+  assert.match(verdict.detail, /beyond the 5s wait budget/);
+  assert.match(verdict.detail, /HARNESS_SCHEDULE_TIMEOUT_S/);
+  assert.ok(verdict.detail.includes(`${expiresAt}.000000000`), verdict.detail);
+  assert.equal(mirror.requests.length, 1, "no polling once the expiry rules the budget out");
+});
+
+test("a signature-gated schedule is waited for even when its expiry is far off", async () => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 1800;
+  const mirror = stubMirrorNode({
+    "/api/v1/schedules/0.0.777": [
+      { deleted: false, executed_timestamp: null, expiration_time: `${expiresAt}.000000000`, wait_for_expiry: false },
+    ],
+  });
+  const verdict = await verifyScheduleExecution("0.0.777", { fetch: mirror.fetch, ...impatient });
+
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.reason, "not-executed");
+  assert.match(verdict.detail, /executed_timestamp is still null .* after 0\.04s/);
+  assert.ok(mirror.requests.length > 1, "kept polling until the budget ran out");
 });

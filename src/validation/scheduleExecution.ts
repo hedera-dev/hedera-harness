@@ -9,11 +9,33 @@ export const DEFAULT_SCHEDULE_TIMEOUT_MS = 120_000;
  * A deploy command hands the harness a schedule to prove by printing one of these
  * lines, e.g. `HARNESS_SCHEDULE_ID=0.0.10457462`. Whitespace around the line is
  * ignored so an indented `console.log` from a Foundry or Hardhat script qualifies.
+ *
+ * A contract that schedules through HIP-1215 `scheduleCall` gets the schedule back
+ * as an address, so `HARNESS_SCHEDULE_ID=0x…` is accepted too and converted to the
+ * entity id the mirror node wants (see `scheduleIdFromEvmAddress`).
  */
-const SCHEDULE_ID_LINE = /^\s*HARNESS_SCHEDULE_ID=(\d+\.\d+\.\d+)\s*$/gm;
+const SCHEDULE_ID_LINE = /^\s*HARNESS_SCHEDULE_ID=(\d+\.\d+\.\d+|0x[0-9a-fA-F]{40})\s*$/gm;
+
+/**
+ * The long-zero form of an EVM address: 12 zero bytes, then the entity number.
+ * That is what `IHRC1215.scheduleCall` returns and what `0.0.N` maps to; an alias
+ * address (a key hash) is not an entity and cannot name a schedule.
+ */
+const LONG_ZERO_ADDRESS = /^0x0{24}([0-9a-fA-F]{16})$/;
+
+export function scheduleIdFromEvmAddress(address: string): string | undefined {
+  const match = LONG_ZERO_ADDRESS.exec(address);
+  return match ? `0.0.${BigInt(`0x${match[1]}`)}` : undefined;
+}
 
 export function parseScheduleIds(output: string): string[] {
-  return [...new Set([...output.matchAll(SCHEDULE_ID_LINE)].map(match => match[1]))];
+  const ids: string[] = [];
+  for (const match of output.matchAll(SCHEDULE_ID_LINE)) {
+    const raw = match[1]!;
+    const id = raw.startsWith("0x") ? scheduleIdFromEvmAddress(raw) : raw;
+    if (id) ids.push(id);
+  }
+  return [...new Set(ids)];
 }
 
 export interface ScheduleExecutionOptions {
@@ -55,6 +77,8 @@ interface MirrorSchedule {
   deleted?: boolean;
   executed_timestamp?: string | null;
   expiration_time?: string | null;
+  /** True when the schedule fires at its expiry (HIP-1215 `scheduleCall`, `setWaitForExpiry`). */
+  wait_for_expiry?: boolean;
 }
 
 interface MirrorTransactionPage {
@@ -88,6 +112,11 @@ class MirrorNodeError extends Error {
  * Waits, bounded by `timeoutMs`, for mirror lag, for the schedule to reach its
  * expiry, and for the child to be indexed. `deleted` is only fatal before
  * execution: a scheduled call may delete its own schedule after running.
+ *
+ * A schedule that waits for an expiry beyond the budget cannot execute in time,
+ * so it fails at once, naming the expiry, instead of spending the whole budget.
+ * A signature-gated schedule (`wait_for_expiry: false`) executes as soon as the
+ * last signature lands, so its expiry says nothing about when, and it is waited for.
  */
 export async function verifyScheduleExecution(
   scheduleId: string,
@@ -129,6 +158,14 @@ export async function verifyScheduleExecution(
         } else if (schedule.deleted) {
           return fail("deleted", "deleted before it executed");
         } else {
+          const expiresAtMs = expiryMs(schedule.expiration_time);
+          if (schedule.wait_for_expiry && expiresAtMs !== undefined && expiresAtMs > deadline) {
+            const inSeconds = Math.ceil((expiresAtMs - Date.now()) / 1000);
+            return fail(
+              "not-executed",
+              `waits for its expiry at ${schedule.expiration_time} (${new Date(expiresAtMs).toISOString()}, in ${inSeconds}s), beyond the ${timeoutMs / 1000}s wait budget; raise HARNESS_SCHEDULE_TIMEOUT_S or hand over only schedules due within it`,
+            );
+          }
           pending = fail(
             "not-executed",
             `executed_timestamp is still null (expiration_time ${schedule.expiration_time ?? "unknown"})`,
@@ -206,6 +243,13 @@ export async function verifyScheduledTransactions(
   }
 
   return findings;
+}
+
+/** Mirror `expiration_time` (`seconds.nanos`) as epoch milliseconds; undefined when absent or unparsable. */
+function expiryMs(expirationTime: string | null | undefined): number | undefined {
+  if (!expirationTime) return undefined;
+  const seconds = Number(expirationTime);
+  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
 }
 
 /** 200 → body, 404 → undefined. 5xx, 429 and transport errors retry; other 4xx do not. */

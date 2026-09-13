@@ -14,6 +14,15 @@
   execution too, so it was never evidence on its own. Wait budget:
   `HARNESS_SCHEDULE_TIMEOUT_S` (default 120). The validator prompt states the
   same two-step rule for schedules the evaluator creates through the app.
+- **Schedules can be handed over as the address `scheduleCall` returns.**
+  `HARNESS_SCHEDULE_ID=0x…` with a long-zero address (what HIP-1215 gives a
+  contract) is converted to the entity id; alias addresses name no entity and
+  are ignored.
+- **A schedule whose expiry lies beyond the wait budget fails at once.** When
+  `wait_for_expiry` is set and `expiration_time` is later than the budget
+  allows, the finding names the expiry and `HARNESS_SCHEDULE_TIMEOUT_S` instead
+  of polling for the whole budget; signature-gated schedules are still waited
+  for.
 
 ## 2.0.0-rc.4 — 2026-09-03
 
