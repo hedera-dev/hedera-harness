@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+### Added
+
+- **`agent: codex`.** Third agent preset, driving `codex exec --json`. Runs with
+  `--ignore-user-config` so a user's own `~/.codex/config.toml` cannot pick the
+  model or load their personal MCP servers into a harness run, and with
+  `--approve-for-me` because `codex exec` otherwise answers every MCP browser
+  call with "user cancelled MCP tool call". EVALUATE delivers Playwright through
+  a new `config-args` MCP kind — inline `-c mcp_servers.*` overrides, touching
+  neither the project nor the user's config. The workspace-write sandbox that
+  `--approve-for-me` implies also cuts the network ("Could not resolve host"),
+  so the preset re-enables it. EVALUATE reads the verdict from Codex's final
+  `agent_message`: Codex emits no `result` event and JSON-escapes its reply
+  inside the event line, so the parser previously returned nothing and every
+  Codex EVALUATE would have aborted as `validator-output-unparseable`. The
+  preset disables Codex's built-in `apps` feature, whose own MCP server would
+  otherwise sit beside the harness's, and marks the Playwright server
+  `required` with a 60-second startup budget, so a server that cannot start
+  fails the session before a model turn is paid for.
+  **Known limitation:** codex-cli 0.147.0 surfaces MCP tools through its own
+  tool discovery, and the validator saw the browser tools in 10 of 22 real
+  sessions. It reports the gap instead of guessing, and the harness now aborts
+  on it rather than repairing (see Fixed).
+
+### Fixed
+
+- **Claude tool calls are counted again.** The activity logger only understood
+  Cursor's `tool_call` events, but Claude Code reports tools as `tool_use`
+  content blocks on `assistant` messages and returns `tool_result` blocks on a
+  synthetic `user` message. On the *default* agent every run therefore reported
+  `toolCallsStarted=0`, the 15-second heartbeat never named what the agent was
+  doing, and the per-attempt activity log held two lines. Decoding is now per
+  vocabulary, matched on the event itself, and covered by tests that replay
+  captured streams from all three CLIs.
+- **"Browser tools are unavailable" is infrastructure, in any tense.** The
+  EVALUATE classifier matched "Playwright MCP was unavailable" but not a
+  validator writing "Playwright MCP browser tools are unavailable", so a
+  validator with no browser handed its three "could not verify" findings to
+  the generator as app defects and burned repair attempts. The captured
+  verdict is the regression fixture, beside a guard that an app reporting
+  "the price is unavailable" is still an app defect.
+- **Long-running commands no longer kill the agent.** No agent CLI streams
+  anything while a command it launched is running, so a `yarn install` or
+  `next build` longer than `HARNESS_AGENT_IDLE_TIMEOUT_MS` read as a stuck
+  agent and was killed mid-command, burning the attempt — reproduced on Claude
+  and Codex. While a tool call is in flight the silence budget is now
+  `HARNESS_AGENT_TOOL_IDLE_TIMEOUT_MS` (default 10 minutes). An agent with no
+  call in flight still stops at the idle limit, which is the hang that limit
+  was written for.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

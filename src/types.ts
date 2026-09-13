@@ -1,4 +1,5 @@
 import type { AgentProgress } from "./agentStreamLogger.js";
+import type { AgentPresetName } from "./specDefaults.js";
 
 export type HarnessCommand =
   | "init"
@@ -197,8 +198,10 @@ export interface TemplateSpec {
   /**
    * Which agent CLI family this run targets. Drives MCP delivery and model
    * selection even when `generator:` overrides the invocation itself.
+   *
+   * Sourced from the preset table so adding an agent stays a one-file change.
    */
-  agent: "cursor" | "claude";
+  agent: AgentPresetName;
   generator: CommandAgentConfig;
   validator?: ValidatorAgentConfig;
   constraints?: TemplateConstraints;

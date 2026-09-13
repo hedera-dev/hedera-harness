@@ -220,6 +220,40 @@ test("a claude validator is handed --mcp-config and the project is not touched",
   );
 }, { timeout: 180_000 });
 
+test("a codex validator is handed the server as inline -c overrides and the project is not touched", async () => {
+  const { root, skillsEnv } = await makeTier3Project({ agent: "codex" });
+  const argvFile = path.join(root, "validator-argv.json");
+
+  const previous = { ...process.env };
+  Object.assign(process.env, { MOCK_WS: root, MOCK_VALIDATOR_ARGV: argvFile, HUSKY: "0", ...skillsEnv });
+  try {
+    await runSession({
+      specPath: path.join(root, ".harness", "spec.yaml"),
+      workspacePath: root,
+      skipToolChecks: true,
+    });
+  } finally {
+    for (const key of ["MOCK_WS", "MOCK_VALIDATOR_ARGV", "HUSKY", "HARNESS_SKILLS_REPO", "HARNESS_SKILLS_REF"]) delete process.env[key];
+    Object.assign(process.env, previous);
+  }
+
+  const argv = JSON.parse(await readFile(argvFile, "utf8"));
+  const command = argv.find(arg => arg.startsWith("mcp_servers.playwright.command="));
+  const serverArgs = argv.find(arg => arg.startsWith("mcp_servers.playwright.args="));
+  assert.ok(command && serverArgs, `validator should receive -c overrides; got ${argv.join(" ")}`);
+  assert.equal(argv[argv.indexOf(command) - 1], "-c");
+  assert.equal(argv[argv.indexOf(serverArgs) - 1], "-c");
+
+  // Session files must land in the run directory, or the next run's
+  // clean-tree check fails on `.playwright-mcp/`.
+  const parsed = JSON.parse(serverArgs.slice(serverArgs.indexOf("=") + 1));
+  assert.ok(parsed.includes("--output-dir"), "the server must be pointed at the run directory");
+
+  // The whole point of config-args delivery: nothing is written anywhere.
+  await assert.rejects(() => readFile(path.join(root, ".cursor", "mcp.json"), "utf8"));
+  await assert.rejects(() => readFile(path.join(root, ".codex", "config.toml"), "utf8"));
+}, { timeout: 180_000 });
+
 test("a Cursor SMOKE failure never writes .cursor/mcp.json", async () => {
   // agent: cursor would snapshot .cursor/mcp.json around EVALUATE. If SMOKE
   // fails first, withValidatorMcp must not run at all — no write, no restore.

@@ -23,6 +23,28 @@ export function readAgentIdleTimeoutMs(
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AGENT_IDLE_TIMEOUT_MS;
 }
 
+/**
+ * Silence allowed while one of the agent's own tool calls is still running.
+ *
+ * No agent CLI streams anything while a command it launched is working, so a
+ * `yarn install` or `next build` longer than the idle limit read as a stuck
+ * agent and was killed mid-command — reproduced on Claude and Codex. The idle
+ * limit exists for an agent that has *finished* its tools and hangs; that case
+ * has no call in flight and still stops at the idle limit. This budget only
+ * bounds a command that itself never returns, e.g. a foreground dev server.
+ * Override with HARNESS_AGENT_TOOL_IDLE_TIMEOUT_MS.
+ */
+export const DEFAULT_AGENT_TOOL_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+export function readAgentToolIdleTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env.HARNESS_AGENT_TOOL_IDLE_TIMEOUT_MS;
+  if (!raw) return DEFAULT_AGENT_TOOL_IDLE_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AGENT_TOOL_IDLE_TIMEOUT_MS;
+}
+
 export class CommandAgentProvider implements AgentProvider {
   private readonly config: CommandAgentConfig;
 
@@ -53,6 +75,7 @@ export class CommandAgentProvider implements AgentProvider {
     });
     const timeoutMs = input.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const idleTimeoutMs = readAgentIdleTimeoutMs();
+    const toolIdleTimeoutMs = readAgentToolIdleTimeoutMs();
     const streamLogger = input.activityLogPath
       ? new AgentStreamLogger(input.activityLogPath, input.onProgress)
       : null;
@@ -79,6 +102,8 @@ export class CommandAgentProvider implements AgentProvider {
       let settled = false;
       let idleTimer: NodeJS.Timeout | undefined;
       let hardKillTimer: NodeJS.Timeout | undefined;
+      let lastOutputAt = Date.now();
+      let silenceLimitMs = idleTimeoutMs;
 
       void initializeAgentLog(
         input.logPath,
@@ -93,13 +118,13 @@ export class CommandAgentProvider implements AgentProvider {
         if (settled) return;
         timedOut = true;
         idleTimedOut = reason === "idle";
-        const limitMs = reason === "idle" ? idleTimeoutMs : timeoutMs;
+        const limitMs = reason === "idle" ? silenceLimitMs : timeoutMs;
         console.log(
           `[hedera-harness] Agent ${reason === "idle" ? "idle-" : ""}timeout after ${Math.round(limitMs / 1000)}s — stopping agent`,
         );
         void appendAgentLog(
           input.logPath,
-          `\n## harness\nagent ${reason === "idle" ? "idle-" : ""}timed out after ${reason === "idle" ? idleTimeoutMs : timeoutMs}ms\n`,
+          `\n## harness\nagent ${reason === "idle" ? "idle-" : ""}timed out after ${limitMs}ms\n`,
         );
         void streamLogger?.processChunk(
           `${JSON.stringify({
@@ -113,9 +138,27 @@ export class CommandAgentProvider implements AgentProvider {
         hardKillTimer = setTimeout(() => killProcessTree(child, "SIGKILL"), 5_000);
       };
 
-      const resetIdleTimer = () => {
+      const armIdleTimer = (delayMs: number) => {
         clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => settleAgent("idle"), idleTimeoutMs);
+        idleTimer = setTimeout(onSilence, delayMs);
+      };
+
+      // Silence while a tool call is running is the command working, not the
+      // agent hanging: extend to the tool budget instead of killing.
+      const onSilence = () => {
+        const silentMs = Date.now() - lastOutputAt;
+        if (streamLogger?.hasToolCallInFlight() && silentMs < toolIdleTimeoutMs) {
+          silenceLimitMs = toolIdleTimeoutMs;
+          armIdleTimer(toolIdleTimeoutMs - silentMs);
+          return;
+        }
+        settleAgent("idle");
+      };
+
+      const resetIdleTimer = () => {
+        lastOutputAt = Date.now();
+        silenceLimitMs = idleTimeoutMs;
+        armIdleTimer(idleTimeoutMs);
       };
 
       const timeout = setTimeout(() => settleAgent("wall-clock"), timeoutMs);
@@ -162,7 +205,7 @@ export class CommandAgentProvider implements AgentProvider {
           stderr: [
             stderr.toString(),
             idleTimedOut
-              ? `\n[hedera-harness] Agent produced no output for ${idleTimeoutMs}ms; treating as failure.\n`
+              ? `\n[hedera-harness] Agent produced no output for ${silenceLimitMs}ms; treating as failure.\n`
               : "",
           ].join(""),
           durationMs: Date.now() - startedAt,

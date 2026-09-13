@@ -1,0 +1,61 @@
+{
+  "passed": false,
+  "verdict": {
+    "passed": false,
+    "summary": "Evaluation failed: Playwright MCP browser tools are unavailable, so no assertion could be positively verified.",
+    "issues": [
+      {
+        "id": "playwright-unavailable-e1",
+        "assertion": "E1",
+        "severity": "critical",
+        "route": "/about",
+        "message": "Could not verify the required h1 text because Playwright MCP browser navigation/snapshot tools are unavailable.",
+        "evidence": "No browser_navigate, browser_snapshot, browser_click, or equivalent Playwright MCP tool was available; /about was not visited and no UI or console observations could be collected."
+      },
+      {
+        "id": "playwright-unavailable-e2",
+        "assertion": "E2",
+        "severity": "major",
+        "route": "/about",
+        "message": "Could not verify the required paragraph because Playwright MCP browser navigation/snapshot tools are unavailable.",
+        "evidence": "No browser_navigate, browser_snapshot, browser_click, or equivalent Playwright MCP tool was available; /about was not visited and no UI or console observations could be collected."
+      },
+      {
+        "id": "playwright-unavailable-e3",
+        "assertion": "E3",
+        "severity": "major",
+        "route": "/",
+        "message": "Could not verify the header About link or its destination because Playwright MCP browser navigation/click tools are unavailable.",
+        "evidence": "No browser_navigate, browser_snapshot, browser_click, or equivalent Playwright MCP tool was available; / was not visited and no UI or console observations could be collected."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "eval:playwright-unavailable-e1",
+      "category": "eval",
+      "message": "critical [E1] (/about): Could not verify the required h1 text because Playwright MCP browser navigation/snapshot tools are unavailable.",
+      "details": "No browser_navigate, browser_snapshot, browser_click, or equivalent Playwright MCP tool was available; /about was not visited and no UI or console observations could be collected.",
+      "assertion": "E1",
+      "route": "/about"
+    },
+    {
+      "id": "eval:playwright-unavailable-e2",
+      "category": "eval",
+      "message": "major [E2] (/about): Could not verify the required paragraph because Playwright MCP browser navigation/snapshot tools are unavailable.",
+      "details": "No browser_navigate, browser_snapshot, browser_click, or equivalent Playwright MCP tool was available; /about was not visited and no UI or console observations could be collected.",
+      "assertion": "E2",
+      "route": "/about"
+    },
+    {
+      "id": "eval:playwright-unavailable-e3",
+      "category": "eval",
+      "message": "major [E3] (/): Could not verify the header About link or its destination because Playwright MCP browser navigation/click tools are unavailable.",
+      "details": "No browser_navigate, browser_snapshot, browser_click, or equivalent Playwright MCP tool was available; / was not visited and no UI or console observations could be collected.",
+      "assertion": "E3",
+      "route": "/"
+    }
+  ],
+  "serverUrl": "http://localhost:3137",
+  "durationMs": 33207
+}

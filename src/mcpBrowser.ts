@@ -240,6 +240,36 @@ export async function playwrightMcpServer(
   return { command: "npx", args };
 }
 
+/**
+ * The MCP server as inline config overrides, for CLIs that take `-c key=value`
+ * rather than a config file (Codex).
+ *
+ * Values are TOML, and JSON encoding of a string or a string array is valid
+ * TOML for both, so the server survives the round trip unquoted-by-hand.
+ */
+export async function playwrightMcpConfigArgs(
+  projectRoot: string,
+  outputDir?: string,
+): Promise<string[]> {
+  const server = await playwrightMcpServer(projectRoot, outputDir);
+  return [
+    "-c",
+    `mcp_servers.playwright.command=${JSON.stringify(server.command)}`,
+    "-c",
+    `mcp_servers.playwright.args=${JSON.stringify(server.args)}`,
+    // A server that cannot start fails the session before any model turn is
+    // paid for ("required MCP servers failed to initialize"), which the
+    // harness already treats as infrastructure. Without it Codex starts the
+    // turn anyway and the validator reports the browser tools unavailable.
+    "-c",
+    "mcp_servers.playwright.required=true",
+    // Required means Codex waits; give it the minute the harness's own probe
+    // allows for a cold `npx @playwright/mcp`.
+    "-c",
+    "mcp_servers.playwright.startup_timeout_sec=60",
+  ];
+}
+
 /** Standalone MCP config the harness owns, for CLIs that accept a config path. */
 export async function writePlaywrightMcpConfig(
   absolutePath: string,

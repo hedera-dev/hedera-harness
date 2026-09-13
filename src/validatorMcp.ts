@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
+  playwrightMcpConfigArgs,
   withPlaywrightMcpSnapshot,
   writePlaywrightMcpConfig,
 } from "./mcpBrowser.js";
@@ -17,8 +18,9 @@ export interface ValidatorMcpContext {
  * Deliver one authoritative Playwright MCP server to the validator CLI.
  *
  * Callers must wrap only the EVALUATE invocation: Claude accepts a config path
- * under harness artifacts, while Cursor snapshots `.cursor/mcp.json` for the
- * duration of `run` and restores it afterwards.
+ * under harness artifacts, Codex takes the server inline as config overrides,
+ * while Cursor snapshots `.cursor/mcp.json` for the duration of `run` and
+ * restores it afterwards.
  */
 export async function withValidatorMcp<T>(
   context: ValidatorMcpContext,
@@ -33,6 +35,10 @@ export async function withValidatorMcp<T>(
     const configPath = path.join(mcpDirectory, "playwright.json");
     await writePlaywrightMcpConfig(configPath, context.workspacePath);
     return run([delivery.flag, configPath, "--strict-mcp-config"]);
+  }
+
+  if (delivery.kind === "config-args") {
+    return run(await playwrightMcpConfigArgs(context.workspacePath, outputDirectory));
   }
 
   return withPlaywrightMcpSnapshot(
