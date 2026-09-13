@@ -41,6 +41,11 @@ baseline:
 #
 # maxAttempts: 3             # repair attempts per run before stopping
 #
+# Stop the attempt loop once the agent's reported spend reaches this many USD.
+# Enforceable when the agent prices its sessions (Claude does; Cursor does not).
+# budget:
+#   maxCostUsd: 5
+#
 # Each baseline command may set timeoutMs; the default is 10 minutes.
 #
 # validators:

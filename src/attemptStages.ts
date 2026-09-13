@@ -153,6 +153,9 @@ export async function runGenerateStage(
     exitCode: agentResult.exitCode,
     durationMs: agentResult.durationMs,
     timedOut: agentResult.timedOut,
+    costUsd: agentResult.usage?.costUsd,
+    inputTokens: agentResult.usage?.inputTokens,
+    outputTokens: agentResult.usage?.outputTokens,
   });
 
   if (agentResult.exitCode === 0) {

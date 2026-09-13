@@ -1,6 +1,7 @@
 import type { CleanupResult } from "./runCleanup.js";
 import type { SessionMetadata } from "./session.js";
 import type { RunReport } from "./types.js";
+import { formatRunCost } from "./costTracking.js";
 
 export interface OutroInput {
   report: RunReport;
@@ -16,7 +17,13 @@ export interface OutroInput {
 export function formatRunOutro(input: OutroInput): string[] {
   const { report, session, cleanup, specPath } = input;
   const infraAbort = Boolean(report.evaluation?.infrastructureFailure);
-  const status = report.passed ? "PASSED" : infraAbort ? "ABORTED" : "FAILED";
+  const status = report.passed
+    ? "PASSED"
+    : infraAbort
+      ? "ABORTED"
+      : report.cost?.budgetExhausted
+        ? "STOPPED (budget)"
+        : "FAILED";
 
   const lines: string[] = [
     `Run ${status}`,
@@ -26,6 +33,8 @@ export function formatRunOutro(input: OutroInput): string[] {
     `report=${report.runDirectory}/reports/report.json`,
     `session=${report.runDirectory}/session.json`,
     `attempts=${report.attemptsThisCycle ?? report.attempts}/${report.maxAttempts}`,
+    // Reports written before cost tracking landed have no cost block.
+    report.cost ? `cost=${formatRunCost(report.cost)}` : undefined,
     report.slices && report.slices.length > 1
       ? `increments=${report.slices.filter(s => s.passed).length}/${report.slices.length} delivered`
       : undefined,

@@ -69,6 +69,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     chainValidation: readChainValidation(parsed),
     baseline: readBaseline(parsed),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? DEFAULT_MAX_ATTEMPTS,
+    budget: readBudget(parsed),
     logging: {
       jsonlPath: resolveProjectPath(projectRoot, HARNESS_JSONL_LOG_PATH),
       notesPath: resolveProjectPath(projectRoot, HARNESS_NOTES_LOG_PATH),
@@ -379,6 +380,27 @@ function readString(value: Record<string, unknown>, key: string): string {
 function readOptionalString(value: Record<string, unknown>, key: string): string | undefined {
   const candidate = value[key];
   return typeof candidate === "string" ? candidate : undefined;
+}
+
+/**
+ * `budget.maxCostUsd` — a positive number of USD. A budget of zero would stop
+ * every run after its first attempt, so it is rejected rather than honoured.
+ */
+function readBudget(parsed: Record<string, unknown>): TemplateSpec["budget"] {
+  const budget = parsed.budget;
+  if (budget === undefined) return undefined;
+  if (!budget || typeof budget !== "object" || Array.isArray(budget)) {
+    throw new Error('Expected object "budget" in template spec.');
+  }
+  const record = budget as Record<string, unknown>;
+  const maxCostUsd = record.maxCostUsd;
+  if (maxCostUsd === undefined) return {};
+  if (typeof maxCostUsd !== "number" || !Number.isFinite(maxCostUsd) || maxCostUsd <= 0) {
+    throw new Error(
+      `budget.maxCostUsd must be a positive number of USD (got ${JSON.stringify(maxCostUsd)}).`,
+    );
+  }
+  return { maxCostUsd };
 }
 
 function readOptionalNumber(value: Record<string, unknown>, key: string): number | undefined {

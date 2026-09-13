@@ -11,6 +11,7 @@ import { logStage } from "./attemptStages.js";
 import { findingIds, formatFindingDelta, type FindingDelta } from "./findingsLifecycle.js";
 import type { AttemptLoopInput } from "./attemptLoop.js";
 import type { RunReport, TemplateSpec, ValidationResult } from "./types.js";
+import { formatRunCost, type RunCost } from "./costTracking.js";
 
 /**
  * Artifact and console reporting for one attempt.
@@ -89,8 +90,11 @@ export async function recordAttemptResult(input: {
   attempt: number;
   validation: ValidationResult;
   delta: FindingDelta;
+  /** Rendered spend for this attempt, e.g. `$1.42 this attempt, $4.10 so far`. */
+  spend?: string;
+  cost?: RunCost;
 }): Promise<void> {
-  const { layout, attempt, validation, delta } = input;
+  const { layout, attempt, validation, delta, spend, cost } = input;
 
   await writeJsonFile(
     path.join(layout.logsDirectory, `validation-attempt-${attempt}.json`),
@@ -123,6 +127,8 @@ export async function recordAttemptResult(input: {
     fixedFindingIds: delta.fixed,
     evaluationPassed: validation.evaluation?.passed,
     infrastructureFailure: validation.evaluation?.infrastructureFailure ?? false,
+    costUsd: cost?.totalUsd,
+    budgetUsd: cost?.budgetUsd,
   });
 
   const summary = validation.evaluation
@@ -138,7 +144,9 @@ export async function recordAttemptResult(input: {
       : formatFindingDelta(delta);
 
   console.log(
-    `[hedera-harness] Attempt ${attempt} ${validation.passed ? "PASSED" : "FAILED"} — ${summary}`,
+    `[hedera-harness] Attempt ${attempt} ${validation.passed ? "PASSED" : "FAILED"} — ${summary}${
+      spend ? ` · ${spend}` : ""
+    }`,
   );
 }
 
@@ -214,8 +222,9 @@ export async function finishRun(input: {
   startedAt: Date;
   validation: ValidationResult;
   delta: FindingDelta;
+  cost?: RunCost;
 }): Promise<RunReport> {
-  const { layout, spec, isContinue, cycle, validation, delta } = input;
+  const { layout, spec, isContinue, cycle, validation, delta, cost } = input;
   const finishedAt = new Date();
 
   const report: RunReport = {
@@ -235,6 +244,7 @@ export async function finishRun(input: {
     durationMs: finishedAt.getTime() - input.startedAt.getTime(),
     validation,
     evaluation: validation.evaluation,
+    cost,
   };
 
   await writeJsonFile(layout.reportPath, report);
@@ -258,6 +268,7 @@ export async function finishRun(input: {
     [
       `${report.passed ? "Passed" : "Failed"} after ${report.attemptsThisCycle ?? report.attempts} attempt(s) this kick.`,
       `Findings: ${formatFindingDelta(delta)}`,
+      cost ? `Agent spend: ${formatRunCost(cost)}` : undefined,
       `Report: ${layout.reportPath}`,
       isContinue ? `Total attempts in project: ${report.attempts}` : undefined,
     ]
@@ -271,11 +282,13 @@ export async function finishRun(input: {
     attempts: report.attempts,
     openFindingIds: delta.open,
     reportPath: layout.reportPath,
+    costUsd: cost?.totalUsd,
+    budgetUsd: cost?.budgetUsd,
   });
 
   logPhase(
     `Run finished: ${report.passed ? "PASSED" : "FAILED"}`,
-    `${formatFindingDelta(delta)} — ${layout.reportPath}`,
+    `${formatFindingDelta(delta)}${cost ? ` — agent spend ${formatRunCost(cost)}` : ""} — ${layout.reportPath}`,
   );
 
   return report;

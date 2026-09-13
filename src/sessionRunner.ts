@@ -267,6 +267,8 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         chainSigner,
         slice,
         previousOpenFindingIds: sliceIndex === firstSlice ? session.openFindingIds : [],
+        // One budget covers every increment of this kick, not one per increment.
+        costSoFar: report?.cost,
         commitAttempt: makeCheckpoint,
       });
 

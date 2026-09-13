@@ -1,4 +1,5 @@
-import type { AgentProgress } from "./agentStreamLogger.js";
+import type { AgentProgress, AgentUsage } from "./agentStreamLogger.js";
+import type { RunCost } from "./costTracking.js";
 
 export type HarnessCommand =
   | "init"
@@ -78,6 +79,8 @@ export interface AgentRunInput {
 export interface AgentRunResult extends CommandExecutionResult {
   command: string;
   args: string[];
+  /** Spend the agent reported on its stream, when it reported any. */
+  usage?: AgentUsage;
 }
 
 export interface AgentProvider {
@@ -174,6 +177,15 @@ export interface BaselineCommandConfig {
   timeoutMs?: number;
 }
 
+export interface BudgetConfig {
+  /**
+   * Stop the attempt loop once the agent's reported spend reaches this many
+   * USD. Only enforceable when the agent reports cost (Claude does; Cursor
+   * does not) — the harness says so when it cannot.
+   */
+  maxCostUsd?: number;
+}
+
 export interface BaselineConfig {
   /** Non-target health checks run once after branch creation (before generation). */
   commands?: BaselineCommandConfig[];
@@ -215,6 +227,8 @@ export interface TemplateSpec {
   /** Host-app health commands run once before generation. */
   baseline?: BaselineConfig;
   maxAttempts: number;
+  /** Spend ceiling for the coding agent across the attempts of one kick. */
+  budget?: BudgetConfig;
   logging: {
     jsonlPath: string;
     notesPath: string;
@@ -335,6 +349,8 @@ export interface RunReport {
   durationMs: number;
   validation: ValidationResult;
   evaluation?: EvaluationResult;
+  /** Agent spend per attempt and in total, as reported by the agent CLI. */
+  cost?: RunCost;
 }
 
 export type HarnessLogEvent =
@@ -416,6 +432,17 @@ export type HarnessLogEvent =
       exitCode: number | null;
       durationMs: number;
       timedOut: boolean;
+      costUsd?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    }
+  | {
+      type: "budget_exhausted";
+      timestamp: string;
+      attempt: number;
+      totalUsd: number;
+      budgetUsd: number;
+      attemptsUnused: number;
     }
   | {
       type: "validation_finished";

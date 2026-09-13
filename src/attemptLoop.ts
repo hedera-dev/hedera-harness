@@ -8,7 +8,7 @@ import {
   buildSessionPrompt,
   buildSessionRepairPrompt,
 } from "./promptBuilder.js";
-import { appendHarnessNote, type RunLayout } from "./runArtifacts.js";
+import { appendHarnessLog, appendHarnessNote, type RunLayout } from "./runArtifacts.js";
 import { runGenerateStage, runValidationStages, type AttemptStageContext } from "./attemptStages.js";
 import {
   announceAttempt,
@@ -37,6 +37,14 @@ import type {
   ValidationResult,
 } from "./types.js";
 import type { CheckpointCommitResult } from "./harnessGit.js";
+import {
+  createRunCost,
+  formatAttemptSpend,
+  isBudgetReached,
+  recordAttemptCost,
+  type RunCost,
+} from "./costTracking.js";
+import { formatUsd } from "./agentStreamLogger.js";
 
 /** Shared per-run session metadata passed through the attempt loop. */
 export interface SessionContext {
@@ -85,6 +93,8 @@ export interface AttemptLoopInput {
   slice?: SliceContext;
   /** Finding ids still open when the previous cycle stopped, for delta reporting. */
   previousOpenFindingIds?: string[];
+  /** Spend carried over from earlier increments of this kick, so one budget covers the run. */
+  costSoFar?: RunCost;
   /** Exclusion-safe checkpoint commit hook (never stages runtime or secret paths). */
   commitAttempt: (
     workspacePath: string,
@@ -140,6 +150,8 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
   let openFindingIds = input.previousOpenFindingIds ?? [];
   let previousFindings: ValidationFinding[] = [];
   let delta: FindingDelta = { open: openFindingIds, fixed: [], introduced: [] };
+  let cost = createRunCost(spec.budget?.maxCostUsd, input.costSoFar);
+  let warnedUnenforceableBudget = false;
 
   while (attemptsThisCycle < maxAttempts) {
     attempts += 1;
@@ -191,6 +203,15 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       ),
     });
 
+    cost = recordAttemptCost(cost, attempts, generate.agentResult.usage);
+    if (cost.budgetUsd !== undefined && !generate.agentResult.usage?.reported && !warnedUnenforceableBudget) {
+      warnedUnenforceableBudget = true;
+      logPhase(
+        "Budget cannot be enforced",
+        `budget.maxCostUsd is ${formatUsd(cost.budgetUsd)} but the agent reported no usage on its stream; attempts will not be stopped on spend`,
+      );
+    }
+
     validation = await runValidationStages(context, generate.finding);
 
     delta = computeFindingDelta(openFindingIds, validation.findings);
@@ -198,7 +219,14 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     previousFindings = validation.findings;
     openFindingIds = delta.open;
 
-    await recordAttemptResult({ layout, attempt: attempts, validation, delta });
+    await recordAttemptResult({
+      layout,
+      attempt: attempts,
+      validation,
+      delta,
+      spend: formatAttemptSpend(cost, attempts),
+      cost,
+    });
 
     if (validation.evaluation?.infrastructureFailure) {
       await abortOnInfrastructureFailure({ layout, attempt: attempts, validation });
@@ -225,6 +253,32 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
 
     if (validation.passed) break;
 
+    // A repair that fixes nothing costs as much as one that does. Once reported
+    // spend reaches the ceiling, stop and leave the branch for a human — the
+    // findings above are what the next kick would repair anyway.
+    if (isBudgetReached(cost)) {
+      cost = { ...cost, budgetExhausted: true };
+      const attemptsUnused = maxAttempts - attemptsThisCycle;
+      await appendHarnessLog(layout.jsonlLogPath, {
+        type: "budget_exhausted",
+        timestamp: new Date().toISOString(),
+        attempt: attempts,
+        totalUsd: cost.totalUsd!,
+        budgetUsd: cost.budgetUsd!,
+        attemptsUnused,
+      });
+      await appendHarnessNote(
+        layout.notesLogPath,
+        `Attempt ${attempts} budget exhausted`,
+        `Reported agent spend ${formatUsd(cost.totalUsd!)} reached budget.maxCostUsd ${formatUsd(cost.budgetUsd!)}; ${attemptsUnused} attempt(s) left unused.`,
+      );
+      logPhase(
+        "Budget exhausted — stopping",
+        `${formatUsd(cost.totalUsd!)} of ${formatUsd(cost.budgetUsd!)} spent after ${attemptsThisCycle} attempt(s); ${attemptsUnused} unused. Raise budget.maxCostUsd or continue the branch by hand.`,
+      );
+      break;
+    }
+
     if (attemptsThisCycle < maxAttempts) {
       latestPrompt = await promptStrategy.buildRepairPrompt(
         validation.findings.filter(finding => finding.status !== "fixed"),
@@ -246,6 +300,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     startedAt,
     validation,
     delta,
+    cost,
   });
 }
 

@@ -39,10 +39,10 @@ Every attempt reports what moved, not just pass/fail:
 
 ```
 Stage 1/4 GENERATE — repair, attempt 3 [opus, escalated — last attempt fixed nothing]
-Attempt 3 FAILED — 2 open, 3 fixed, 1 new
+Attempt 3 FAILED — 2 open, 3 fixed, 1 new · $1.42 this attempt, $4.10 so far, budget $5.00
 ```
 
-`2 open, 3 fixed` distinguishes an agent converging from one trading one failure for another — which is what tells you whether another attempt is worth its 15–40 minutes.
+`2 open, 3 fixed` distinguishes an agent converging from one trading one failure for another — which is what tells you whether another attempt is worth its 15–40 minutes. The spend is what the agent CLI reported on its stream (Claude prices every session; Cursor does not, and the harness then says `cost unknown` rather than $0). Set `budget: { maxCostUsd }` in the recipe and the loop stops when reported spend reaches it, leaving the branch and findings for a human instead of paying for a repair that fixes nothing.
 
 ## The recipe
 

@@ -147,6 +147,7 @@ export const KNOWN_SPEC_KEYS = new Set([
   "chainValidation",
   "baseline",
   "maxAttempts",
+  "budget",
 ]);
 
 /** Hard-fail at load. A silent drop would burn a generator session before EVALUATE. */

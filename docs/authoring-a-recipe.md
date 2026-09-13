@@ -66,6 +66,26 @@ That governs the whole run — how the generator is invoked, how the validator
 receives Playwright MCP, and which models are used. Enabling EVALUATE is then
 `validator: { enabled: true }`, not a second copy of the agent flags.
 
+## Attempts and budget
+
+`maxAttempts` (default 3) caps how many GENERATE → validate rounds one kick
+runs. `budget.maxCostUsd` caps what those rounds may cost:
+
+```yaml
+maxAttempts: 4
+budget:
+  maxCostUsd: 5        # stop once the agent's reported spend reaches $5
+```
+
+Spend is whatever the agent CLI reports on its stream — Claude's `result`
+event carries `total_cost_usd` and token counts; Codex reports tokens without
+a price; Cursor reports nothing. Every attempt line shows it
+(`$1.42 this attempt, $4.10 so far, budget $5.00`), `reports/report.json`
+keeps it per attempt under `cost`, and the outro prints the total. When the
+agent reports no usage the harness prints `cost unknown` and says the budget
+cannot be enforced; it never treats silence as free. One budget covers every
+increment of a kick; a `--continue` kick starts a fresh one, like `maxAttempts`.
+
 ## Baseline vs validators
 
 Two different questions, easy to conflate:
