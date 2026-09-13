@@ -54,6 +54,24 @@ test("app-wide noise carries onto a route the agent just created", () => {
   ]);
 });
 
+test("a page that did not exist yet contributes no baseline", () => {
+  // Before the agent runs, a configured route it has still to create answers
+  // 404, and Chromium logs that as a console error. Recording it would hide the
+  // identical message later, when the new page references a missing image.
+  const notFound = "Failed to load resource: the server responded with a status of 404 (Not Found)";
+  const baseline = buildConsoleBaseline([
+    { name: "home", statusCode: 200, consoleErrors: [] },
+    { name: "about", statusCode: 404, consoleErrors: [notFound] },
+  ]);
+
+  assert.deepEqual(baseline.anyRoute, [], "a 404 page has no noise worth remembering");
+  assert.deepEqual(
+    newConsoleErrors("about", [notFound], baseline),
+    [notFound],
+    "a missing asset on the page the agent built must still fail the route",
+  );
+});
+
 test("with no baseline every error still counts", () => {
   assert.deepEqual(newConsoleErrors("home", ["boom"], undefined), ["boom"]);
 });

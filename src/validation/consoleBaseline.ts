@@ -41,12 +41,17 @@ export function normalizeConsoleError(text: string): string {
 }
 
 export function buildConsoleBaseline(
-  routes: Pick<PlaywrightGateRouteResult, "name" | "consoleErrors">[],
+  routes: Pick<PlaywrightGateRouteResult, "name" | "consoleErrors" | "statusCode">[],
 ): ConsoleBaseline {
   const byRoute: Record<string, string[]> = {};
   const anyRoute = new Set<string>();
 
   for (const route of routes) {
+    // Only a page that already loads has noise worth remembering. A route the
+    // agent has not created yet answers 404, and Chromium logs that as "Failed
+    // to load resource: ... 404 (Not Found)". Recording it would hide the same
+    // text later, when the new page points at an image or script that is missing.
+    if (route.statusCode === null || (route.statusCode ?? 0) >= 400) continue;
     const normalized = route.consoleErrors.map(normalizeConsoleError).filter(Boolean);
     byRoute[route.name] = [...new Set(normalized)];
     for (const error of normalized) anyRoute.add(error);

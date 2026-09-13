@@ -190,8 +190,8 @@ export async function runAssertStage(context: AttemptStageContext): Promise<Vali
  * them can be spent on noise the agent did not cause and cannot fix: a stock
  * scaffold logs plenty with no agent involved.
  *
- * Routes that do not exist yet simply contribute nothing — the point is the
- * console, not the status code.
+ * Routes that do not load yet (the agent has still to create them) contribute
+ * nothing; see buildConsoleBaseline.
  */
 export async function captureConsoleBaseline(input: {
   spec: TemplateSpec;
