@@ -36,12 +36,19 @@ A user connects a **Hedera-capable signer** and attempts the paid endpoint. Two 
 | **Burner wallet** | Harness validator + local demos | ECDSA private key from `localStorage["burnerWallet.pk"]`; app partially signs with `@hiero-ledger/sdk` / `@x402/hedera` |
 | **HashPack (Hedera WalletConnect)** | Real end users | Wallet signs via HIP-820 / WalletConnect (`hedera_signTransaction`); app never sees the private key |
 
+At startup, discover the facilitator capability instead of assuming a cached wire format:
+
+1. Call `GET /supported` on the configured facilitator base URL
+2. Select an advertised entry for the `exact` scheme on `hedera:testnet`
+3. Use its advertised x402 version and `signers["hedera:*"][0]` fee payer
+4. Refuse paid requests with an actionable configuration error if any required capability is absent
+
 Flow (identical for both modes after the signer is selected):
 
 1. Initial request returns **HTTP 402 Payment Required** with `PaymentRequirements` (asset, amount, payTo, feePayer)
 2. App builds a `TransferTransaction` with the facilitator's `feePayer` as the transaction payer
 3. App **partially signs** the frozen transfer (does **not** submit it)
-4. App retries the request with the `X-PAYMENT` header
+4. App retries with the payment header required by the discovered x402 version (`PAYMENT-SIGNATURE` for v2; do not hardcode the legacy `X-PAYMENT` name)
 5. Resource server forwards to Blocky402 (`/verify` → `/settle`); facilitator co-signs and submits
 6. On success, server returns premium data (HTTP 200)
 7. UI shows success feedback including a HashScan link to the settlement transaction
@@ -101,7 +108,7 @@ Implement a small **signer port** so UI and payment code never assume a private 
 
 ```
 HederaSigner
-  - partialSignTransfer(requirements) → base64 X-PAYMENT payload   // x402
+  - partialSignTransfer(requirements) → encoded payment payload    // x402
   - execute(transaction) → transactionId                            // HCS admin/receipts
 ```
 
@@ -131,9 +138,9 @@ Connecting a wallet must not be confused with being able to pay: the UI should i
 
 - Resource server implements x402 server-side: respond with 402 + `PaymentRequirements` for unpaid requests
 - Use `@x402/hedera` (or equivalent) for the `exact` scheme on the burner path; WalletConnect path may build the same transfer and sign via the wallet
-- Facilitator: Blocky402 testnet (`https://api.testnet.blocky402.com`)
+- Facilitator: configured Blocky402 testnet base URL; confirm support with `GET /supported` before serving paid traffic
 - Asset: HBAR (`0.0.0`), amount in tinybars (demo-friendly amount)
-- Client-side always: freeze transfer with facilitator `feePayer` as payer → **partial sign** → `X-PAYMENT` → retry
+- Client-side always: freeze transfer with the discovered facilitator fee payer → **partial sign** → encode for the discovered x402 version → retry
 
 ### Consensus Service (HCS) — receipts
 
@@ -152,7 +159,10 @@ Provide Next.js API routes for:
 
 ### Facilitator integration
 
-- Use Blocky402 testnet facilitator (`https://api.testnet.blocky402.com`)
+- Read the Blocky402 testnet facilitator base URL from configuration
+- Call `GET /supported` and require an advertised `exact` scheme for `hedera:testnet`
+- Derive the transaction fee payer from `signers["hedera:*"][0]`; never keep a copied account ID in source
+- Use the response's x402 version to choose the request/response header format
 - Call `POST /verify` and `POST /settle` server-side
 - The facilitator's fee-payer account pays network fees and submits the payment transaction
 - Do NOT build a custom facilitator
@@ -204,6 +214,7 @@ The harness will check (deterministically):
 - Forbidden workspaces/files are absent
 - No secret-like content in source
 - `yarn install`, `yarn lint`, and `yarn next:build` succeed without live credentials
+- Unit tests cover supported-capability parsing, missing Hedera support, missing fee payer, and unsupported x402 versions
 
 On-chain / semantic validation (when a Test Signer is provided) exercises **only the burner path** end-to-end. HashPack is affordance + architecture reviewed in the contract; it is not driven by Playwright automation.
 
