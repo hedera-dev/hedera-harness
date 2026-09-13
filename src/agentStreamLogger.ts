@@ -159,11 +159,10 @@ function interpretCodexEvent(event: Record<string, unknown>): StreamInterpretati
     return { summary: `RESULT failed error ${codexErrorMessage(event.error)}`, endsTurn: true };
   }
 
+  // A top-level error carries the reason, e.g. a model the account cannot use.
+  // `turn.failed` follows it and is what ends the turn.
   if (type === "error") {
-    return {
-      summary: `RESULT failed error ${truncate(stringOf(event.message), 200)}`,
-      endsTurn: true,
-    };
+    return { summary: `ERROR ${truncate(stringOf(event.message), 200)}` };
   }
 
   // item.started / item.completed
@@ -224,6 +223,7 @@ function interpretCodexEvent(event: Record<string, unknown>): StreamInterpretati
 
 function isCodexEventType(type: string): boolean {
   return (
+    type === "error" ||
     type.startsWith("thread.") ||
     type.startsWith("turn.") ||
     type === "item.started" ||

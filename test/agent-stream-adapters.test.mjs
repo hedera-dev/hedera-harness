@@ -65,6 +65,19 @@ test("codex narration is reported but never counted as a tool call", () => {
   assert.match(failure.summary, /RESULT failed error model not supported/);
 });
 
+test("a codex error event is logged, not dropped", () => {
+  // Captured from codex-cli 0.147.0 asked for a model the account cannot use.
+  // The Codex detector did not list a top-level `error`, so this line never
+  // reached the activity log.
+  const line = String.raw`{"type":"error","message":"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'definitely-not-a-real-model' model is not supported when using Codex with a ChatGPT account.\"}}"}`;
+  const event = interpretStreamEvent(JSON.parse(line));
+
+  assert.ok(event, "the error event must be decoded");
+  assert.match(event.summary, /^ERROR .*not supported when using Codex/);
+  assert.equal(event.toolCallsStarted ?? 0, 0);
+  assert.equal(event.endsTurn ?? false, false, "turn.failed ends the turn, not the error line");
+});
+
 test("cursor events keep their existing summaries", () => {
   assert.equal(
     interpretStreamEvent({ type: "system", subtype: "init", model: "composer-2.5" }).summary,
