@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A recipe file that does not parse fails preflight, not the run.** Doctor and
+  `run` only checked that `validators/static.json`, `validators/yarn.json`, the
+  SMOKE config and `eval.json` existed. A trailing comma in `static.json` passed
+  doctor as "present" and then crashed ASSERT with a bare SyntaxError after the
+  generator had run, leaving its work uncommitted on the harness branch so the
+  next run refused to continue. Each file is now parsed the way its stage reads
+  it (JSON/YAML, `commands[]`, `routes[]`, `assertions[]`) before a branch is
+  created. The same loader serves the stages, so a validator or SMOKE config
+  the generator breaks mid-run becomes a finding instead of a crash.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

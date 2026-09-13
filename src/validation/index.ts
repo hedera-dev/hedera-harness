@@ -14,6 +14,7 @@ import {
   writeCachedInstallFingerprint,
 } from "./installFingerprint.js";
 import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "../runtimePaths.js";
+import { loadRecipeFile } from "./recipeFiles.js";
 
 export interface DeterministicValidationOptions {
   /** Persist install fingerprint across attempts under this run cache path. */
@@ -150,8 +151,9 @@ async function validateForbiddenFiles(
 }
 
 async function validateStaticConfig(workspacePath: string, staticPath: string): Promise<ValidationFinding[]> {
-  const raw = await readFile(staticPath, "utf8");
-  const config = JSON.parse(raw) as StaticValidatorConfig;
+  const loaded = await loadRecipeFile<StaticValidatorConfig>("static", staticPath);
+  if (loaded.problem !== undefined) return [validatorFileFinding(workspacePath, staticPath, "static", loaded.problem)];
+  const config = loaded.config;
   const findings: ValidationFinding[] = [];
 
   for (const assertion of config.jsonAssertions ?? []) {
@@ -281,12 +283,18 @@ async function validateCommands(
   commandsPath: string,
   installCachePath?: string,
 ) {
-  const raw = await readFile(commandsPath, "utf8");
-  const config = JSON.parse(raw) as CommandValidatorConfig;
   const findings: ValidationFinding[] = [];
   const commandResults: CommandExecutionResult[] = [];
+  const loaded = await loadRecipeFile<CommandValidatorConfig>("commands", commandsPath);
+  if (loaded.problem !== undefined) {
+    return {
+      findings: [validatorFileFinding(workspacePath, commandsPath, "commands", loaded.problem)],
+      commandResults,
+    };
+  }
+  const config = loaded.config;
 
-  for (const commandConfig of config.commands) {
+  for (const commandConfig of config.commands ?? []) {
     if (commandConfig.name === "install" && installCachePath) {
       const currentFingerprint = await computeInstallFingerprint(workspacePath);
       const cachedFingerprint = await readCachedInstallFingerprint(installCachePath);
@@ -333,6 +341,27 @@ async function validateCommands(
   }
 
   return { findings, commandResults };
+}
+
+/**
+ * A validator file that does not load is a finding, not a crash.
+ *
+ * Preflight refuses a recipe whose files do not load before anything is spent,
+ * so by the time ASSERT sees one it was edited (or deleted) during GENERATE.
+ * That is an app finding the repair prompt can act on; a thrown SyntaxError
+ * ended the run with the agent's work uncommitted and no report.
+ */
+export function validatorFileFinding(
+  workspacePath: string,
+  filePath: string,
+  category: "static" | "commands" | "playwright",
+  problem: string,
+): ValidationFinding {
+  return {
+    id: `validator-file:${category}`,
+    category,
+    message: `${path.relative(workspacePath, filePath)} does not load: ${problem}`,
+  };
 }
 
 async function collectTextFiles(workspacePath: string, current = ""): Promise<string[]> {

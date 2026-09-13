@@ -13,7 +13,8 @@ import type {
   ValidationResult,
 } from "./types.js";
 import { executeCommand } from "./command.js";
-import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validation/index.js";
+import { runDeterministicValidation, isReadyForPlaywrightSmoke, validatorFileFinding } from "./validation/index.js";
+import { loadRecipeFile } from "./validation/recipeFiles.js";
 import { buildDeployEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
@@ -308,6 +309,22 @@ export async function runValidationStages(
     return validation;
   }
 
+  // The same rule as ASSERT's validator files: a SMOKE config the generator
+  // broke is a finding to repair, not a crash after the session was paid for.
+  const playwrightPath = context.spec.validators.playwrightPath!;
+  const smokeConfig = await loadRecipeFile("playwright", playwrightPath);
+  if (smokeConfig.problem !== undefined) {
+    logStage("SMOKE", "skipped — the SMOKE config does not load");
+    return {
+      ...validation,
+      passed: false,
+      findings: [
+        ...validation.findings,
+        validatorFileFinding(context.workspacePath, playwrightPath, "playwright", smokeConfig.problem),
+      ],
+    };
+  }
+
   const deployFindings = await runChainDeploy(context);
   if (deployFindings.length > 0) {
     logStage("SMOKE", "chain deploy failed");
@@ -318,7 +335,7 @@ export async function runValidationStages(
     };
   }
 
-  const serverConfig = await loadDevServerConfig(context.spec.validators.playwrightPath!);
+  const serverConfig = await loadDevServerConfig(playwrightPath);
   let devServer: DevServerSession | null = null;
   try {
     logStage("SMOKE", "booting dev server");

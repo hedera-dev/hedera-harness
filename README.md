@@ -148,7 +148,7 @@ hedera-harness validate-semantic [spec] [--workspace <path>]
 
 `--template hedera-demo` selects a scaffold-hbar template branch. `init` never overwrites an existing recipe — it reports what it kept.
 
-**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every path the recipe references, Playwright when SMOKE is on, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
+**`doctor`** reports everything at once instead of stopping at the first problem: node, git, git state, the recipe and its warnings, the agent CLI, the package manager, every file the recipe references (and that each one parses), Playwright when SMOKE is on, and `chainValidation` env vars. A real run costs 40 minutes to two hours; this costs seconds.
 
 ## Configuration
 
