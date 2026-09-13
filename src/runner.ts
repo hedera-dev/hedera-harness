@@ -41,6 +41,13 @@ export async function validateWorkspace(options: CliOptions): Promise<Validation
     return deterministic;
   }
 
+  if (deterministic.infrastructureFailure) {
+    console.log(
+      `[hedera-harness] Skipping Playwright gate because ASSERT could not run: ${deterministic.infrastructureFailureReason}`,
+    );
+    return deterministic;
+  }
+
   if (!isReadyForPlaywrightSmoke(deterministic)) {
     console.log("[hedera-harness] Skipping Playwright gate because deterministic gates are not clean.");
     return deterministic;

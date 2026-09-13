@@ -1,4 +1,5 @@
 import path from "node:path";
+import { executeCommand } from "./command.js";
 import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { isValidatorEnabled } from "./evaluation.js";
@@ -86,6 +87,7 @@ export async function runDoctor(
   checks.push(await checkPromptOverrides(recipe.spec.projectRoot));
   checks.push(...(await checkOptionalDeps(recipe.spec, workspacePath)));
   checks.push(...evaluate.map(toDoctorCheck));
+  checks.push(...(await checkHolGuard(recipe.spec, workspacePath)));
   checks.push(...checkChainEnv(recipe.spec));
 
   return { checks, passed: checks.every(check => check.status !== "fail") };
@@ -335,6 +337,69 @@ async function checkHarnessSdk(): Promise<DoctorCheck> {
       fix: "Reinstall hedera-harness — CHAIN uses the SDK bundled with the CLI, not a project peer.",
     };
   }
+}
+
+/**
+ * Only when validators.holGuard is enabled: the scanner must answer before a
+ * run, or ASSERT aborts after GENERATE has already been paid for. With the
+ * default `uvx --from hol-guard plugin-scanner` this is also where the package
+ * is fetched the first time, so a slow first `doctor` is expected.
+ */
+async function checkHolGuard(spec: TemplateSpec, cwd: string): Promise<DoctorCheck[]> {
+  const config = spec.validators.holGuard;
+  if (!config) return [];
+
+  const name = "HOL Guard scanner";
+  const executable = config.command.split(/\s+/)[0] ?? config.command;
+  const fix =
+    "Required by validators.holGuard. Install uv (https://docs.astral.sh/uv/) so `uvx --from hol-guard plugin-scanner` can run, or point validators.holGuard.command at an installed scanner.";
+
+  if (!executable.includes("/") && !executable.includes("\\") && !(await commandExists(executable, cwd))) {
+    return [{ name, status: "fail", detail: `${executable} is not on PATH`, fix }];
+  }
+
+  try {
+    const result = await executeCommand({
+      command: `${config.command} --help`,
+      cwd,
+      shell: true,
+      timeoutMs: 120_000,
+    });
+    if (result.timedOut || result.exitCode !== 0) {
+      return [
+        {
+          name,
+          status: "fail",
+          detail: result.timedOut
+            ? `\`${config.command} --help\` timed out`
+            : `\`${config.command} --help\` exited ${result.exitCode ?? "null"}`,
+          fix: [fix, truncateLine(result.stderr || result.stdout)].filter(Boolean).join("\n"),
+        },
+      ];
+    }
+    return [
+      {
+        name,
+        status: "ok",
+        detail: `${config.command} answers --help; findings at ${config.failOnSeverity}+ fail ASSERT`,
+      },
+    ];
+  } catch (error) {
+    return [
+      {
+        name,
+        status: "fail",
+        detail: error instanceof Error ? error.message : String(error),
+        fix,
+      },
+    ];
+  }
+}
+
+function truncateLine(value: string, maxLength = 300): string {
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength)}...`;
 }
 
 function checkChainEnv(spec: TemplateSpec): DoctorCheck[] {

@@ -172,7 +172,7 @@ export async function runGenerateStage(
   };
 }
 
-/** ASSERT — deterministic gates: required/forbidden files, static config, secrets, commands. */
+/** ASSERT — deterministic gates: required/forbidden files, static config, secrets, commands, opt-in HOL Guard scan. */
 export async function runAssertStage(context: AttemptStageContext): Promise<ValidationResult> {
   return runDeterministicValidation(context.workspacePath, context.spec, {
     installCachePath: path.join(context.layout.cacheDirectory, "install-fingerprint.txt"),
@@ -299,6 +299,13 @@ export async function runValidationStages(
   // Generator exit/timeout findings are recorded but must not fail ASSERT or skip
   // SMOKE/EVALUATE — Cursor often hangs after finishing work; the gates decide pass.
   const validation = mergeGenerateFinding(deterministic, generateFinding);
+
+  // An ASSERT gate that could not run is not a verdict on the app. Stop here;
+  // the attempt loop aborts on the infrastructure flag instead of repairing.
+  if (validation.infrastructureFailure) {
+    logStage("SMOKE", "skipped — ASSERT could not run one of its gates");
+    return { ...validation, passed: false };
+  }
 
   if (!isReadyForPlaywrightSmoke(validation)) {
     logStage("SMOKE", "skipped — deterministic gates are not clean");

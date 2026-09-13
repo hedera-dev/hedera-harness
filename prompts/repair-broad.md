@@ -39,7 +39,8 @@ Fix only the validation findings below. Do not redesign unrelated parts of the a
 - Keep Yarn-only workflows.
 - Do not add secrets or `.env` files.
 - Preserve scaffold-hbar template conventions.
-- Fix findings in priority order: [agent] process failures, [commands] build/lint, [playwright] runtime gate, [eval] checklist assertions, then [files]/[static]/[secret].
+- Fix findings in priority order: [agent] process failures, [commands] build/lint, [playwright] runtime gate, [eval] checklist assertions, then [files]/[static]/[secret]/[security].
+- A [security] finding is a HOL Guard plugin-safety rule with the file and line it fired on (plugin manifest, skill, MCP config, agent workspace file). Fix the file it names as the remediation says; do not disable the scanner or the rule to make it pass.
 - Do NOT attempt to fix [eval-infra] findings — those are harness/tooling failures (MCP/browser), not app defects.
 - Re-run the relevant validation mentally before finishing.
 

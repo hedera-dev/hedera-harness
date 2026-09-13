@@ -87,6 +87,7 @@ the one below stops catching your failures.
 | Stage | What it proves | Cost |
 |---|---|---|
 | ASSERT (files, static, commands) | the code is present and builds | seconds |
+| ASSERT · HOL Guard (opt-in) | no plugin-safety findings above your threshold | a static scan |
 | SMOKE (Playwright gate) | the app boots and its routes render | a dev server boot |
 | EVALUATE (evaluate checklist) | the app does what was asked | an agent session |
 | CHAIN (chain validation) | on-chain effects really happened | testnet HBAR |
@@ -105,6 +106,45 @@ the one below stops catching your failures.
 - lint and a production build, or your template's equivalent
 - timeouts generous enough for a cold CI machine
 - nothing that needs live secrets
+
+### ASSERT — HOL Guard scan (opt-in)
+
+```yaml
+validators:
+  holGuard:
+    enabled: true
+    failOnSeverity: high        # critical | high | medium | low; default high
+    # profile: strict-security  # scanner policy profile, default `default`
+    # command: uvx --from hol-guard plugin-scanner   # the harness appends `scan . --format json`
+    # timeoutMs: 240000
+```
+
+For PRDs that produce AI plugins, skills, MCP configuration or agent-workspace
+files, the static and command validators cannot say whether what the agent
+wrote is safe to install. HOL Guard's `plugin-scanner` can. When enabled, ASSERT
+runs it after the build commands and turns every finding at or above
+`failOnSeverity` into a `[security]` finding:
+
+```
+[security] [HIGH] MCP_SERVER_UNPINNED_REMOTE: MCP server is fetched from an unpinned remote (.mcp.json:7)
+```
+
+- The id is `hol-guard:<rule>:<file>:<line>`, never the attempt number, so a
+  rule that keeps firing on the same file is one open finding, not one fixed
+  and one new.
+- `[security]` findings take the broad repair scope, like `[static]`; the
+  details carry the scanner's description and remediation.
+- `info` findings never fail ASSERT. Lower `failOnSeverity` to `low` to see
+  everything; the scanner's own score and grade are kept under `holGuard` in
+  `reports/report.json`.
+- A scanner that cannot run (no `uvx`, a crash, no JSON on stdout, a timeout)
+  is a harness problem, not an app finding: the attempt aborts through the
+  same infrastructure path as an EVALUATE browser failure, and nothing is
+  sent to the agent to "repair". `doctor` checks the scanner answers before a
+  run; with the default command that is also when `uvx` fetches the package.
+
+Recipes without the block are unchanged. Nothing is sent anywhere: the scan is
+local, and HOL Guard Cloud is not involved.
 
 ### SMOKE — Playwright gate
 

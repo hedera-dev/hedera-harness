@@ -14,6 +14,7 @@ import {
   writeCachedInstallFingerprint,
 } from "./installFingerprint.js";
 import { ISOLATED_CONTEXT_DIR, ISOLATED_SKILLS_DIR, SKILL_CACHE_DIRNAME } from "../runtimePaths.js";
+import { runHolGuardScan } from "./holGuard.js";
 
 export interface DeterministicValidationOptions {
   /** Persist install fingerprint across attempts under this run cache path. */
@@ -107,11 +108,29 @@ export async function runDeterministicValidation(
   findings.push(...commandValidation.findings);
   commandResults.push(...commandValidation.commandResults);
 
-  return {
+  const result: ValidationResult = {
     passed: findings.length === 0,
     findings,
     commandResults,
   };
+
+  // Opt-in, and after the build commands on purpose: a compile miss stays a
+  // repairable [commands] finding rather than turning into a scanner abort.
+  if (spec.validators.holGuard) {
+    const scan = await runHolGuardScan(workspacePath, spec.validators.holGuard);
+    if (scan.commandResult) commandResults.push(scan.commandResult);
+    if (scan.summary) result.holGuard = scan.summary;
+    if (scan.infrastructureFailure) {
+      result.passed = false;
+      result.infrastructureFailure = true;
+      result.infrastructureFailureReason = scan.infrastructureFailure;
+    } else {
+      findings.push(...scan.findings);
+      result.passed = findings.length === 0;
+    }
+  }
+
+  return result;
 }
 
 async function validateRequiredFiles(workspacePath: string, requiredFiles: string[]): Promise<ValidationFinding[]> {

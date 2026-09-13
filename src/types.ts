@@ -179,6 +179,28 @@ export interface BaselineConfig {
   commands?: BaselineCommandConfig[];
 }
 
+export type HolGuardSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+/** Severities that may act as the failing threshold (`info` never fails ASSERT). */
+export type HolGuardFailOnSeverity = Exclude<HolGuardSeverity, "info">;
+
+/**
+ * Opt-in HOL Guard scan inside ASSERT. The scanner (`plugin-scanner`) reads the
+ * workspace for AI plugin, skill, MCP and agent-workspace risks; its findings
+ * become ordinary ASSERT findings the repair loop can act on. Absent, or
+ * `enabled: false`, leaves a recipe exactly as it was.
+ */
+export interface HolGuardConfig {
+  enabled: true;
+  /** How to invoke the scanner; the harness appends `scan . --format json`. */
+  command: string;
+  /** Findings at or above this severity fail ASSERT. Default: "high". */
+  failOnSeverity: HolGuardFailOnSeverity;
+  /** Scanner policy profile, passed as `--profile` when set. */
+  profile?: string;
+  timeoutMs: number;
+}
+
 export interface TemplateSpec {
   /** Recipe schema version. Absent in the file means 1 (the original schema). */
   schemaVersion: number;
@@ -207,6 +229,8 @@ export interface TemplateSpec {
     staticPath: string;
     commandsPath: string;
     playwrightPath?: string;
+    /** Opt-in HOL Guard scan (ASSERT). */
+    holGuard?: HolGuardConfig;
   };
   requiredFiles: string[];
   forbiddenFiles: string[];
@@ -275,6 +299,7 @@ export interface ValidationFinding {
     | "commands"
     | "agent"
     | "playwright"
+    | "security"
     | "eval"
     | "eval-infra";
   message: string;
@@ -290,12 +315,34 @@ export interface ValidationFinding {
   route?: string;
 }
 
+/** What the HOL Guard scan saw, kept on the result so the report can show it. */
+export interface HolGuardScanSummary {
+  command: string;
+  score?: number;
+  grade?: string;
+  /** Findings the scanner reported at any severity. */
+  findingsTotal: number;
+  /** Findings at or above `failOnSeverity`, i.e. the ones that became ASSERT findings. */
+  blockingTotal: number;
+  failOnSeverity: HolGuardFailOnSeverity;
+  durationMs: number;
+}
+
 export interface ValidationResult {
   passed: boolean;
   findings: ValidationFinding[];
   commandResults: CommandExecutionResult[];
   playwrightGate?: PlaywrightGateResult;
+  holGuard?: HolGuardScanSummary;
   evaluation?: EvaluationResult;
+  /**
+   * True when an ASSERT gate could not run at all (scanner missing, crashed,
+   * unparseable output). Harness tooling, not an app defect: the loop aborts
+   * through the same path as an EVALUATE infrastructure failure instead of
+   * asking the agent to repair it.
+   */
+  infrastructureFailure?: boolean;
+  infrastructureFailureReason?: string;
 }
 
 /** Outcome of one increment in an ordered `prd:` list. */
@@ -449,6 +496,8 @@ export type HarnessLogEvent =
       timestamp: string;
       attempt: number;
       reason: string;
+      /** Which stage could not run. Absent on events written before ASSERT could abort. */
+      stage?: "ASSERT" | "EVALUATE";
     }
   | {
       type: "repair_started";

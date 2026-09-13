@@ -114,6 +114,12 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         validation.playwrightGate
           ? `playwrightGate=${validation.playwrightGate.passed} routes=${validation.playwrightGate.routes.length}`
           : undefined,
+        validation.holGuard
+          ? `holGuard=${validation.holGuard.blockingTotal} blocking of ${validation.holGuard.findingsTotal} finding(s) (${validation.holGuard.failOnSeverity}+)`
+          : undefined,
+        validation.infrastructureFailure
+          ? `infrastructure=${validation.infrastructureFailureReason}`
+          : undefined,
         ...validation.findings.map(finding => `- ${finding.message}`),
         ...validation.commandResults.map(
           result => `command ${result.command} exit=${result.exitCode} durationMs=${result.durationMs}`,

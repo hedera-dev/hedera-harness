@@ -177,8 +177,10 @@ export function classifyRepairScope(findings: ValidationFinding[]): RepairScope 
     return "eval-scoped";
   }
 
+  // A [security] finding points at a manifest, skill or MCP file, not at the
+  // running app, so it takes the broad repair like the other static gates.
   const hasStructural = [...categories].some(category =>
-    ["files", "static", "secret", "agent"].includes(category),
+    ["files", "static", "secret", "security", "agent"].includes(category),
   );
   if (
     !hasStructural &&

@@ -1,4 +1,4 @@
-import type { CommandAgentConfig, SecretScanConfig } from "./types.js";
+import type { CommandAgentConfig, HolGuardFailOnSeverity, SecretScanConfig } from "./types.js";
 
 /**
  * `.harness/spec.yaml` schema this harness writes and accepts.
@@ -16,6 +16,24 @@ export const DEFAULT_PRD_PATH = ".harness/prd.md";
 export const DEFAULT_STATIC_VALIDATOR_PATH = ".harness/validators/static.json";
 export const DEFAULT_COMMANDS_VALIDATOR_PATH = ".harness/validators/yarn.json";
 export const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * HOL Guard scan (opt-in ASSERT gate). `uvx` resolves the scanner from PyPI on
+ * first use, so a machine needs uv but no separate install step; `doctor`
+ * checks the scanner answers before a run. The harness appends
+ * `scan . --format json` to the command.
+ */
+export const DEFAULT_HOL_GUARD_COMMAND = "uvx --from hol-guard plugin-scanner";
+export const DEFAULT_HOL_GUARD_FAIL_ON: HolGuardFailOnSeverity = "high";
+export const DEFAULT_HOL_GUARD_TIMEOUT_MS = 4 * 60 * 1000;
+export const HOL_GUARD_FAIL_ON_SEVERITIES: readonly HolGuardFailOnSeverity[] = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+];
+/** Policy profiles the scanner accepts for `--profile`. */
+export const HOL_GUARD_PROFILES = ["default", "public-marketplace", "strict-security"] as const;
 
 /**
  * Not configurable. Logs live under `.harness/runs/` because that is the only

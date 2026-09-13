@@ -1,0 +1,2 @@
+Installed 12 packages in 1.2s
+plugin-scanner: error: unrecognized arguments: --format

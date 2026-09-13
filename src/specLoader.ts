@@ -5,6 +5,8 @@ import type {
   BaselineConfig,
   ChainValidationConfig,
   CommandAgentConfig,
+  HolGuardConfig,
+  HolGuardFailOnSeverity,
   SecretScanConfig,
   TemplateSpec,
 } from "./types.js";
@@ -12,6 +14,11 @@ import {
   AGENT_PRESETS,
   DEFAULT_AGENT_PRESET,
   DEFAULT_COMMANDS_VALIDATOR_PATH,
+  DEFAULT_HOL_GUARD_COMMAND,
+  DEFAULT_HOL_GUARD_FAIL_ON,
+  DEFAULT_HOL_GUARD_TIMEOUT_MS,
+  HOL_GUARD_FAIL_ON_SEVERITIES,
+  HOL_GUARD_PROFILES,
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_PRD_PATH,
   DEFAULT_SECRET_PATTERNS,
@@ -247,6 +254,57 @@ function readValidators(
       readOptionalString(validators, "commands") ?? DEFAULT_COMMANDS_VALIDATOR_PATH,
     ),
     playwrightPath: readOptionalValidatorPath(projectRoot, validators, "playwright"),
+    holGuard: readHolGuard(validators),
+  };
+}
+
+/**
+ * Parse the inline `validators.holGuard` block. Absent, or `enabled` not true,
+ * returns undefined so recipes that never opt in load byte-for-byte as before
+ * and ASSERT never spawns the scanner.
+ */
+function readHolGuard(validators: Record<string, unknown>): HolGuardConfig | undefined {
+  const candidate = validators.holGuard;
+  if (candidate === undefined) return undefined;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error(`Expected object "validators.holGuard" in template spec.`);
+  }
+  const config = candidate as Record<string, unknown>;
+  if (config.enabled !== undefined && typeof config.enabled !== "boolean") {
+    throw new Error(`validators.holGuard.enabled must be true or false.`);
+  }
+  if (config.enabled !== true) return undefined;
+
+  const failOnSeverity = readOptionalString(config, "failOnSeverity") ?? DEFAULT_HOL_GUARD_FAIL_ON;
+  if (!(HOL_GUARD_FAIL_ON_SEVERITIES as readonly string[]).includes(failOnSeverity)) {
+    throw new Error(
+      `validators.holGuard.failOnSeverity must be one of ${HOL_GUARD_FAIL_ON_SEVERITIES.join(", ")} (info never fails ASSERT).`,
+    );
+  }
+
+  const command = readOptionalString(config, "command") ?? DEFAULT_HOL_GUARD_COMMAND;
+  if (!command.trim()) {
+    throw new Error(`validators.holGuard.command must be a non-empty string when set.`);
+  }
+
+  const profile = readOptionalString(config, "profile");
+  if (profile !== undefined && !(HOL_GUARD_PROFILES as readonly string[]).includes(profile)) {
+    throw new Error(
+      `validators.holGuard.profile must be one of ${HOL_GUARD_PROFILES.join(", ")}.`,
+    );
+  }
+
+  const timeoutMs = readOptionalNumber(config, "timeoutMs") ?? DEFAULT_HOL_GUARD_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`validators.holGuard.timeoutMs must be a positive number of milliseconds.`);
+  }
+
+  return {
+    enabled: true,
+    command: command.trim(),
+    failOnSeverity: failOnSeverity as HolGuardFailOnSeverity,
+    profile,
+    timeoutMs,
   };
 }
 

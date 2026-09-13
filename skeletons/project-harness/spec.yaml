@@ -72,6 +72,16 @@ baseline:
 #
 # ── Higher stages (opt-in) ───────────────────────────────────────────────────
 #
+# ASSERT can also run HOL Guard's plugin-scanner over the workspace, after the
+# build commands: AI plugin, skill, MCP and agent-workspace risks become
+# repairable [security] findings. Needs uv (uvx) on PATH; doctor checks it.
+# validators:
+#   holGuard:
+#     enabled: true
+#     failOnSeverity: high     # critical | high | medium | low
+#     # profile: strict-security
+#     # command: uvx --from hol-guard plugin-scanner
+#
 # SMOKE boots the app and walks its routes.
 # validators:
 #   playwright: .harness/validators/playwright-smoke.yaml

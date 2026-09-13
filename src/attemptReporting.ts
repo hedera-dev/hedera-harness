@@ -122,10 +122,13 @@ export async function recordAttemptResult(input: {
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
     evaluationPassed: validation.evaluation?.passed,
-    infrastructureFailure: validation.evaluation?.infrastructureFailure ?? false,
+    infrastructureFailure:
+      validation.infrastructureFailure ?? validation.evaluation?.infrastructureFailure ?? false,
   });
 
-  const summary = validation.evaluation
+  const summary = validation.infrastructureFailure
+    ? `infrastructure: ${validation.infrastructureFailureReason}`
+    : validation.evaluation
     ? validation.evaluation.passed
       ? (validation.evaluation.verdict?.summary ?? "evaluate checklist passed")
       : validation.evaluation.infrastructureFailure
@@ -148,28 +151,34 @@ export async function abortOnInfrastructureFailure(input: {
   validation: ValidationResult;
 }): Promise<void> {
   const { layout, attempt, validation } = input;
+  // ASSERT owns its own flag (a scanner that could not run); EVALUATE's lives on
+  // the evaluation. Either one takes the same exit from the loop.
+  const stage = validation.infrastructureFailure ? "ASSERT" : "EVALUATE";
   const reason =
-    validation.evaluation?.infrastructureFailureReason ??
-    "evaluation infrastructure failure";
+    (stage === "ASSERT"
+      ? validation.infrastructureFailureReason
+      : validation.evaluation?.infrastructureFailureReason) ??
+    `${stage.toLowerCase()} infrastructure failure`;
 
   await appendHarnessLog(layout.jsonlLogPath, {
     type: "validator_infra_aborted",
     timestamp: new Date().toISOString(),
     attempt,
     reason,
+    stage,
   });
   await appendHarnessNote(
     layout.notesLogPath,
-    `Attempt ${attempt} evaluation infrastructure abort`,
+    `Attempt ${attempt} ${stage} infrastructure abort`,
     [
       "Repair loop aborted: failure is harness/agent tooling, not the generated app.",
       reason,
-      ...(validation.evaluation?.findings ?? []).map(
+      ...(stage === "EVALUATE" ? (validation.evaluation?.findings ?? []) : []).map(
         finding => `- [${finding.category}] ${finding.message}`,
       ),
     ].join("\n"),
   );
-  logPhase("Aborting repair loop after evaluation infrastructure failure", reason);
+  logPhase(`Aborting repair loop after ${stage} infrastructure failure`, reason);
 }
 
 export async function checkpoint(input: {

@@ -1,0 +1,36 @@
+{
+  "schema_version": "scan-result.v1",
+  "tool_version": "3.0.1",
+  "profile": "default",
+  "policy_pass": true,
+  "verify_pass": true,
+  "scope": "plugin",
+  "score": 97,
+  "raw_score": 97,
+  "effective_score": 97,
+  "grade": "A",
+  "ecosystems": ["claude"],
+  "packages": [],
+  "summary": {
+    "gradeLabel": "Excellent",
+    "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 1 },
+    "integrations": []
+  },
+  "trust": { "total": 91.0, "domains": [] },
+  "categories": [],
+  "findings": [
+    {
+      "ruleId": "README_PRESENT",
+      "severity": "info",
+      "category": "documentation",
+      "title": "README present",
+      "description": "A README was found.",
+      "remediation": null,
+      "filePath": "README.md",
+      "lineNumber": 1,
+      "source": "native"
+    }
+  ],
+  "timestamp": "2026-09-12T19:30:00Z",
+  "pluginDir": "."
+}

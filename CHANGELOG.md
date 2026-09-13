@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- **Opt-in HOL Guard scan in ASSERT** (`validators.holGuard`). After the build
+  commands, the harness runs HOL Guard's `plugin-scanner scan . --format json`
+  (via `uvx` by default) and turns every finding at or above
+  `failOnSeverity` (default `high`) into a `[security]` ASSERT finding with a
+  stable id, `hol-guard:<rule>:<file>:<line>`, so a rule that keeps firing on
+  the same file is one open finding across attempts. AI plugin, skill, MCP and
+  agent-workspace risks in generated work are therefore repaired by the loop
+  before SMOKE or EVALUATE is paid for. A scanner that cannot run (no `uvx`,
+  a crash, no JSON) is a harness abort through the existing infrastructure
+  path, never an app finding; `doctor` checks the scanner answers before a
+  run. Recipes without the block are unchanged. Proposed in #8.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

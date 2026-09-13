@@ -1,0 +1,89 @@
+{
+  "schema_version": "scan-result.v1",
+  "tool_version": "3.0.1",
+  "profile": "default",
+  "policy_pass": false,
+  "verify_pass": true,
+  "scope": "plugin",
+  "score": 61,
+  "raw_score": 61,
+  "effective_score": 61,
+  "grade": "D",
+  "ecosystems": ["claude"],
+  "packages": [
+    {
+      "ecosystem": "claude",
+      "packageKind": "plugin",
+      "rootPath": ".",
+      "manifestPath": ".claude-plugin/plugin.json",
+      "name": "marketplace-agent",
+      "version": "0.1.0"
+    }
+  ],
+  "summary": {
+    "gradeLabel": "Needs work",
+    "findings": { "critical": 0, "high": 2, "medium": 1, "low": 1, "info": 1 },
+    "integrations": []
+  },
+  "trust": { "total": 42.0, "domains": [] },
+  "categories": [],
+  "findings": [
+    {
+      "ruleId": "MCP_SERVER_UNPINNED_REMOTE",
+      "severity": "high",
+      "category": "security",
+      "title": "MCP server is fetched from an unpinned remote",
+      "description": "The MCP server command runs `npx -y some-mcp-server@latest`, so the code executed changes whenever the registry does.",
+      "remediation": "Pin the package to an exact version and record its integrity hash.",
+      "filePath": ".mcp.json",
+      "lineNumber": 7,
+      "source": "native"
+    },
+    {
+      "ruleId": "SKILL_SHELL_WITHOUT_ALLOWLIST",
+      "severity": "high",
+      "category": "security",
+      "title": "Skill grants unrestricted shell access",
+      "description": "skills/deploy/SKILL.md allows Bash with no command allowlist.",
+      "remediation": "Restrict allowed-tools to the commands the skill needs.",
+      "filePath": "skills/deploy/SKILL.md",
+      "lineNumber": 3,
+      "source": "native"
+    },
+    {
+      "ruleId": "PLUGIN_MANIFEST_MISSING_LICENSE",
+      "severity": "medium",
+      "category": "best-practices",
+      "title": "Plugin manifest has no license field",
+      "description": "Marketplace listings require a license.",
+      "remediation": "Add a `license` field to .claude-plugin/plugin.json.",
+      "filePath": ".claude-plugin/plugin.json",
+      "lineNumber": null,
+      "source": "native"
+    },
+    {
+      "ruleId": "CODEXIGNORE_MISSING",
+      "severity": "low",
+      "category": "best-practices",
+      "title": "No .codexignore file",
+      "description": "Without .codexignore the agent may read build output.",
+      "remediation": "Add a .codexignore.",
+      "filePath": null,
+      "lineNumber": null,
+      "source": "native"
+    },
+    {
+      "ruleId": "README_PRESENT",
+      "severity": "info",
+      "category": "documentation",
+      "title": "README present",
+      "description": "A README was found.",
+      "remediation": null,
+      "filePath": "README.md",
+      "lineNumber": 1,
+      "source": "native"
+    }
+  ],
+  "timestamp": "2026-09-12T19:30:00Z",
+  "pluginDir": "."
+}

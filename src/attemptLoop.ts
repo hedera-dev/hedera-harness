@@ -200,7 +200,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
 
     await recordAttemptResult({ layout, attempt: attempts, validation, delta });
 
-    if (validation.evaluation?.infrastructureFailure) {
+    if (validation.infrastructureFailure || validation.evaluation?.infrastructureFailure) {
       await abortOnInfrastructureFailure({ layout, attempt: attempts, validation });
       await checkpoint({ layout, commitAttempt, workspacePath, attempt: attempts, validation });
       break;
