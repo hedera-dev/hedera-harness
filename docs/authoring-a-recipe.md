@@ -222,7 +222,7 @@ on-chain behaviour as separate increments.
 A real run costs 40 minutes to two hours, so check cheaply first:
 
 ```bash
-hedera-harness doctor              # node, git, agent CLI, recipe, every referenced path
+hedera-harness doctor              # node, git, agent CLI, recipe, every referenced file parsed as its stage reads it
 hedera-harness validate            # ASSERT only, no agent
 hedera-harness validate-semantic   # run EVALUATE only, against a workspace you already have
 ```

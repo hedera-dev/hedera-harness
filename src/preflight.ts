@@ -6,6 +6,7 @@ import {
 } from "./harnessGit.js";
 import { isValidatorEnabled } from "./evaluation.js";
 import { resolvePackageInstallTool } from "./optionalDeps.js";
+import { loadRecipeFile, type RecipeFileKind } from "./validation/recipeFiles.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
 import type { TemplateSpec } from "./types.js";
 import { allEvalPaths, specHasEval } from "./sliceSelection.js";
@@ -297,12 +298,6 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]>
     if (!target) continue;
     try {
       await access(target);
-      verdicts.push({
-        id: `recipe-file:${label}`,
-        name: label,
-        status: "ok",
-        detail: "present",
-      });
     } catch {
       verdicts.push({
         id: `recipe-file:${label}`,
@@ -313,9 +308,43 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]>
         fix: "The recipe points at a file that does not exist.",
         runErrorCode: "missing-recipe-file",
       });
+      continue;
     }
+
+    // Existence is not enough. A static.json with a trailing comma passed here
+    // as "present", then took the run down in ASSERT with a bare SyntaxError
+    // after the generator had been paid for, its work left uncommitted. Parse
+    // each file the way its stage will; PRDs are prose and are not read.
+    const kind = recipeFileKind(label);
+    const problem = kind ? (await loadRecipeFile(kind, target)).problem : undefined;
+    verdicts.push(
+      problem
+        ? {
+            id: `recipe-file:${label}`,
+            name: label,
+            status: "fail",
+            detail: `does not load: ${problem}`,
+            runDetail: `Harness run preflight failed: ${label} at ${target} does not load: ${problem}`,
+            fix: "Fix the file before running — ASSERT/SMOKE/EVALUATE would only hit this after a paid generator session.",
+            runErrorCode: "invalid-recipe-file",
+          }
+        : {
+            id: `recipe-file:${label}`,
+            name: label,
+            status: "ok",
+            detail: "present",
+          },
+    );
   }
   return verdicts;
+}
+
+function recipeFileKind(label: string): RecipeFileKind | undefined {
+  if (label === "validators.static") return "static";
+  if (label === "validators.commands") return "commands";
+  if (label === "validators.playwright") return "playwright";
+  if (label.startsWith("eval")) return "eval";
+  return undefined;
 }
 
 /**
