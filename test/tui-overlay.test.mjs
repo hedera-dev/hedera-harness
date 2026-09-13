@@ -16,6 +16,10 @@ test("parseCliArgs accepts tui install and uninstall", () => {
   assert.equal(install.tuiOptions?.targetDir, "D:\\my-dapp");
   assert.equal(install.tuiOptions?.keepDefault, true);
   assert.equal(install.tuiOptions?.skipInit, true);
+  assert.equal(install.tuiOptions?.skipInstall, undefined);
+
+  const skipYarn = cli.parseCliArgs(["tui", "install", "./app", "--skip-install"]);
+  assert.equal(skipYarn.tuiOptions?.skipInstall, true);
 
   const uninstall = cli.parseCliArgs(["tui", "uninstall", "./app"]);
   assert.equal(uninstall.tuiOptions?.subcommand, "uninstall");
@@ -41,6 +45,7 @@ test("printHelp documents tui install", () => {
   assert.match(help, /hedera-harness tui/);
   assert.match(help, /--keep-default/);
   assert.match(help, /Does not write ~\/\.config\/opencode/);
+  assert.match(help, /yarn install.*no timeout/);
 });
 
 test("tui install copies overlay and tui uninstall removes it", async () => {
@@ -51,6 +56,7 @@ test("tui install copies overlay and tui uninstall removes it", async () => {
     subcommand: "install",
     targetDir: root,
     skipInit: true,
+    skipInstall: true,
   });
   assert.ok(existsSync(path.join(root, "opencode.json")));
   assert.ok(existsSync(path.join(root, ".opencode", "agents", "hedera-generate.md")));
@@ -69,13 +75,17 @@ test("tui install copies overlay and tui uninstall removes it", async () => {
   assert.equal(config.mcp?.["openzeppelin-solidity"]?.type, "remote");
   assert.equal(config.mcp?.["openzeppelin-solidity"]?.url, overlay.OPENZEPPELIN_MCP_URL);
   assert.equal(config.mcp?.["openzeppelin-solidity"]?.enabled, false);
+  assert.ok(config.watcher?.ignore?.some((p) => String(p).includes("node_modules")));
   assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-hedera-docs", "SKILL.md")));
   assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-contracts", "SKILL.md")));
+  assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-tokens", "SKILL.md")));
+  assert.ok(existsSync(path.join(root, ".opencode", "skills", "harness-e2e-contract", "SKILL.md")));
 
   const pointer = JSON.parse(await readFile(path.join(root, ".opencode", "hedera-harness.json"), "utf8"));
   assert.equal(pointer.schemaVersion, 1);
   assert.ok(pointer.harnessRoot);
   assert.ok(installed.writtenFiles.includes("opencode.json"));
+  assert.match(installed.nextSteps.join("\n"), /skip-install/);
 
   const removed = await overlay.uninstallTuiOverlay({ subcommand: "uninstall", targetDir: root });
   assert.equal(existsSync(path.join(root, "opencode.json")), false);
@@ -104,6 +114,7 @@ test("tui install merges existing opencode.json and --keep-default leaves Gentle
     targetDir: root,
     keepDefault: true,
     skipInit: true,
+    skipInstall: true,
   });
   const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
   assert.equal(config.default_agent, "gentle-orchestrator");
@@ -138,6 +149,7 @@ test("tui install auto-inits an existing project without --no-init", async () =>
     subcommand: "install",
     targetDir: root,
     skipSkills: true,
+    skipInstall: true,
   });
   assert.equal(installed.inited, true);
   assert.ok(existsSync(path.join(root, ".harness", "spec.yaml")));
@@ -169,6 +181,61 @@ test("tui install refuses the harness package root and ~/.config/opencode", asyn
   );
 });
 
+test("orchestrator interviews one question at a time and reshapes seed UI", async () => {
+  const body = await readFile(path.resolve(".opencode", "prompts", "hedera-orchestrator.md"), "utf8");
+  assert.match(body, /One `question` at a time/i);
+  assert.match(body, /Never dump/i);
+  assert.match(body, /scaffold is the chassis/i);
+  assert.match(body, /FORBIDDEN:\*\* OpenCode bash `yarn install`/);
+  assert.doesNotMatch(body, /whether `\/` \(scaffold Home \/ Debug Contracts\) \*\*stays\*\*/);
+  const generate = await readFile(path.resolve(".opencode", "agents", "hedera-generate.md"), "utf8");
+  assert.match(generate, /must become the interviewed dApp/);
+  assert.match(generate, /Do \*\*not\*\* leave the seed Hedera landing/);
+  assert.match(generate, /harness_tokens/);
+  const docsSkill = await readFile(
+    path.resolve(".opencode", "skills", "harness-hedera-docs", "SKILL.md"),
+    "utf8",
+  );
+  assert.match(docsSkill, /harness_tokens/);
+  const tokenSkill = await readFile(
+    path.resolve(".opencode", "skills", "harness-tokens", "SKILL.md"),
+    "utf8",
+  );
+  assert.match(tokenSkill, /0x0000000000000000000000000000000000068cda/);
+  assert.match(tokenSkill, /token=lookup/);
+});
+
+test("GENERATE stamps the e2e contract and EVALUATE drives it on any app", async () => {
+  const generate = await readFile(path.resolve(".opencode", "agents", "hedera-generate.md"), "utf8");
+  assert.match(generate, /harness_e2e_contract action=set/);
+  assert.match(generate, /harness-e2e-contract/);
+
+  const evaluate = await readFile(path.resolve(".opencode", "agents", "hedera-evaluate.md"), "utf8");
+  assert.match(evaluate, /harness_e2e_contract/);
+  assert.match(evaluate, /e2e-contract-missing/);
+  assert.match(evaluate, /never\*\* ask the human to close Chrome/i);
+  assert.match(evaluate, /beta/);
+  // The payments-only carve-out is gone: the contract makes E2E all-terrain.
+  assert.doesNotMatch(evaluate, /it only knows `pay-amount`/);
+
+  const skill = await readFile(
+    path.resolve(".opencode", "skills", "harness-e2e-contract", "SKILL.md"),
+    "utf8",
+  );
+  assert.match(skill, /\.harness\/e2e\.json/);
+  assert.match(skill, /confirmations=2/);
+
+  const plugin = await readFile(path.resolve(".opencode", "plugins", "hedera-harness.js"), "utf8");
+  assert.match(plugin, /harness_e2e_contract: tool\(/);
+  assert.match(plugin, /e2eContract\.js/);
+
+  const readme = await readFile(path.resolve("README.md"), "utf8");
+  assert.match(readme, /Beta: persistent test wallet/);
+  assert.match(readme, /not the release done bar/);
+  const orchestrator = await readFile(path.resolve(".opencode", "prompts", "hedera-orchestrator.md"), "utf8");
+  assert.match(orchestrator, /beta — persistent test wallet/i);
+});
+
 test("stage agents allow obligated yarn commands without a permission prompt", async () => {
   const agentsDir = path.resolve(".opencode", "agents");
   const yarnAgents = [
@@ -191,4 +258,8 @@ test("stage agents allow obligated yarn commands without a permission prompt", a
   assert.match(assertMd, /"tail \*": allow/);
   const smokeMd = await readFile(path.join(agentsDir, "hedera-smoke.md"), "utf8");
   assert.match(smokeMd, /"yarn next:dev\*": deny/);
+  const initMd = await readFile(path.join(agentsDir, "hedera-init.md"), "utf8");
+  assert.match(initMd, /"yarn install\*": deny/);
+  const orchestratorJson = JSON.parse(await readFile(path.resolve("opencode.json"), "utf8"));
+  assert.equal(orchestratorJson.agent["hedera-orchestrator"].permission.bash["yarn install*"], "deny");
 });

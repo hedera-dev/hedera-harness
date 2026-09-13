@@ -26,6 +26,17 @@
     "playwright*": false,
     "browser_*": false
   },
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      "**/node_modules/**",
+      "dist/**",
+      ".git/**",
+      "**/.next/**",
+      ".harness/wallet/**",
+      ".harness/runs/**"
+    ]
+  },
   "agent": {
     "hedera-orchestrator": {
       "description": "Hedera Harness conductor. INIT, PRD, GENERATE → EVALUATE, then RainbowKit Connect+Send in Chrome. Switch here with Tab.",
@@ -52,7 +63,8 @@
           "git diff*": "allow",
           "node dist/index.js*": "ask",
           "npm test*": "allow",
-          "yarn next:build*": "allow"
+          "yarn next:build*": "allow",
+          "yarn install*": "deny"
         },
         "task": {
           "*": "deny",

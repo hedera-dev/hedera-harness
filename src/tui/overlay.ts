@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInit } from "../initRunner.js";
 import { OPENZEPPELIN_MCP_NAME, OPENZEPPELIN_MCP_URL } from "../ozMcp.js";
+import { formatYarnInstallReport, runYarnInstallForeground } from "../yarnInstall.js";
 import type { TuiCliOptions } from "../types.js";
 
 export const HEDERA_DOCS_MCP_NAME = "hedera-docs";
@@ -21,7 +22,7 @@ This repo is a **hedera-harness** workspace. Tab to **hedera-orchestrator**. Loo
 
 Slash: \`/harness-init\` \`/harness-run\` \`/harness-status\` \`/harness-wallet\` \`/harness-local\`
 
-The orchestrator asks **what to build** first (custom idea first). A starter chip is a seed, not a skip. Interview until they confirm **Así está**. The init \`.harness/prd.md\` (“edit me”) is not a PRD. Then Automatic vs Step by step.
+The orchestrator asks **what to build** first (custom idea first). A starter chip is a seed, not a skip. Interview **one question at a time** until they confirm **Así está**. The first app’s UI is **their** dApp on the scaffold chassis (reuse components; do not ship the seed Home plus an extra route). The init \`.harness/prd.md\` (“edit me”) is not a PRD. Then Automatic vs Step by step.
 
 \`harness_wallet_gate\` must be \`gate=ok\` before PRD/GENERATE (even if INIT was skipped). GENERATE walks \`.harness/tasks.md\` one unit at a time. Final automated E2E is Playwright MCP (install/enable or skip). **Hedera docs: \`SearchHedera\` (\`hedera-docs\`) first** — \`websearch\` is forbidden for Hedera while that tool is in the session. Fallback to \`docs.hedera.com\` only if MCP is missing or the call failed. Never read \`.harness/wallet/\` private keys.
 ${AGENTS_END}
@@ -44,6 +45,7 @@ export interface TuiOverlayResult {
   removedFiles: string[];
   keepDefault: boolean;
   inited: boolean;
+  yarnInstall?: string;
   nextSteps: string[];
 }
 
@@ -55,15 +57,17 @@ export function printTuiHelp(): void {
   console.log(`hedera-harness tui
 
 Usage:
-  hedera-harness tui install [target-dir] [--keep-default]
+  hedera-harness tui install [target-dir] [--keep-default] [--no-init] [--skip-install]
   hedera-harness tui uninstall [target-dir]
 
 Copies the OpenCode overlay (opencode.json + .opencode/) into a project so
 \`opencode\` there shows hedera-orchestrator and /harness-* commands.
 
-If the target has no \`.harness/spec.yaml\`, clones/adopts the scaffold first
-(no yarn — that runs in OpenCode INIT so a slow install cannot block the TUI).
-Use --no-init to copy the overlay only.
+If the target has no \`.harness/spec.yaml\`, clones/adopts the scaffold first,
+then copies the overlay, then runs \`yarn install\` with **no timeout**
+(it takes as long as it needs). When yarn finishes, open the project in
+OpenCode. Use --no-init to copy the overlay only (yarn still runs unless
+--skip-install).
 
 Does not write ~/.config/opencode — Gentle's global overlay stays intact.
 --keep-default leaves default_agent alone so Tab still starts on Gentle.
@@ -85,12 +89,15 @@ export async function runTuiCommand(options: TuiCliOptions): Promise<void> {
         `filesWritten=${result.writtenFiles.length}`,
         result.keepDefault ? "default_agent=unchanged (Tab to hedera-orchestrator)" : "default_agent=hedera-orchestrator",
         result.inited
-          ? "init=scaffold or .harness/ ready (yarn runs in OpenCode INIT)"
+          ? "init=scaffold or .harness/ ready"
           : "init=skipped (recipe already present or --no-init)",
+        result.yarnInstall,
         "",
         "Next steps:",
         ...result.nextSteps.map(step => `  ${step}`),
-      ].join("\n"),
+      ]
+        .filter(line => line !== undefined)
+        .join("\n"),
     );
     return;
   }
@@ -130,9 +137,8 @@ export async function installTuiOverlay(options: TuiCliOptions): Promise<TuiOver
     try {
       await runInit({
         targetDir,
-        // Yarn is INIT's job inside OpenCode. A 5-minute yarn timeout used to
-        // abort tui install after the scaffold was already on disk, so the
-        // overlay never copied and the human had to pass --no-init.
+        // Overlay must copy even if yarn would be slow. Yarn runs after the
+        // overlay is on disk, in this CLI process, with no timeout.
         skipInstall: true,
         skipSkills: options.skipSkills === true,
       });
@@ -192,19 +198,40 @@ export async function installTuiOverlay(options: TuiCliOptions): Promise<TuiOver
   await writeFile(path.join(targetDir, pointerRel), `${JSON.stringify(pointer, null, 2)}\n`, "utf8");
   writtenFiles.push(pointerRel);
 
+  let yarnInstall: string | undefined;
+  if (options.skipInstall !== true) {
+    console.log("[hedera-harness] yarn install (no timeout) — wait here. Open OpenCode only after this finishes.");
+    const yarn = await runYarnInstallForeground(targetDir);
+    yarnInstall = formatYarnInstallReport(yarn);
+    if (yarn.kind === "fail") {
+      throw new Error(`yarn install failed after overlay copy.\n${yarnInstall}`);
+    }
+    console.log("[hedera-harness] yarn install finished — you can open this project in OpenCode now.");
+  }
+
+  const yarnReady = options.skipInstall !== true;
   return {
     targetDir,
     writtenFiles: uniqueSorted(writtenFiles),
     removedFiles: [],
     keepDefault: Boolean(options.keepDefault),
     inited,
-    nextSteps: [
-      `cd ${targetDir}`,
-      "opencode",
-      options.keepDefault
-        ? "Tab to hedera-orchestrator, then /harness-run (INIT installs deps if needed)"
-        : "Tab should already be hedera-orchestrator — /harness-run (INIT installs deps if needed)",
-    ],
+    yarnInstall,
+    nextSteps: yarnReady
+      ? [
+          "Dependencies are ready. You can open this project in OpenCode now.",
+          `cd ${targetDir}`,
+          "opencode",
+          options.keepDefault
+            ? "Tab to hedera-orchestrator, then /harness-run"
+            : "Tab should already be hedera-orchestrator — /harness-run",
+        ]
+      : [
+          "Do not open OpenCode yet — deps were skipped (--skip-install).",
+          `cd ${targetDir}`,
+          "yarn install",
+          "When yarn finishes, open this folder in OpenCode.",
+        ],
   };
 }
 

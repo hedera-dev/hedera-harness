@@ -25,15 +25,16 @@ permission:
     "yarn next:build*": deny
     "yarn next:serve*": deny
     "yarn start*": deny
+    "yarn install*": deny
   task: deny
 ---
 
 You are the INIT stage of hedera-harness — the prepare gate before PRD/GENERATE.
 
-The workspace is ready when `.harness/spec.yaml` exists **and** dependencies are installed (`node_modules`). `tui install` may have cloned the scaffold without yarn so the overlay could copy quickly; you finish that work.
+The workspace is ready when `.harness/spec.yaml` exists **and** dependencies are installed (`node_modules`). `tui install` clones, copies the overlay, then runs yarn in a terminal. You do not install deps.
 
 1. If `package.json` name is `hedera-harness`, STOP. Do not init the CLI repo. Tell the human to `hedera-harness tui install <app-dir>` (for example `test-app`).
-2. Call `harness_ensure_init` (do not pass `skipInstall`). It clones/adopts if spec is missing, then runs `yarn install` when `node_modules` is missing. That can take more than 5 minutes on a cold machine — wait for it.
+2. Call `harness_ensure_init`. If `yarn=missing`, STOP — they must run `hedera-harness tui install` or `yarn install` in a real terminal. **Never bash `yarn install`.**
 3. Call `harness_wallet_gate`. If `gate=blocked`, have the human paste the TESTNET key + MetaMask password on the local page. Never ask for the key in chat. Poll until `gate=ok`.
 4. If spec already exists, deps are installed, and `gate=ok`, return `status: already-initialized`.
 

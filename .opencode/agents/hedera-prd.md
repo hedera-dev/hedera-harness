@@ -32,7 +32,11 @@ You own the PRD gate for hedera-harness.
 
 If the orchestrator gave interview notes **and** the human confirmed **Así está**, overwrite `.harness/prd.md` with a real brief from those notes. If you only got a starter label (“payments”, “HCS”) with no interview notes, **stop** and return `status: interview-incomplete`. Do not author a default payments/HCS demo.
 
-Write in English (unless the user asked another language for artifacts): Goal, who, preserve existing app, feature delta, non-goals, acceptance, and **Contracts** scope (below). Only write after the orchestrator’s interview — they already got **Así está** on a restatement. Do not invent a product. Do not tell the user to paste it themselves.
+Write in English (unless the user asked another language for artifacts): Goal, who, what they see on `/`, non-goals, acceptance, and **Contracts** scope (below).
+
+**First brief (authored, source=authored):** the product **is** this idea. Scaffold-hbar is the chassis (keep RainbowKit, layout, DaisyUI, hooks). The user-facing UI must match the interview — reuse those components; do **not** write “preserve scaffold Home / Debug Contracts” or a feature-delta that only adds a side route. `/` becomes this dApp.
+
+Only write after the orchestrator’s interview — they already got **Así está** on a restatement. Do not invent a product. Do not tell the user to paste it themselves.
 
 ## Contracts scope (required)
 
@@ -44,7 +48,7 @@ Contracts: none
 
 or `Contracts: solidity`.
 
-- **none** (default) — payments (`sendTransaction` / HBAR), RainbowKit, HCS as a Hedera *service*, x402, existing tokens (USDC). No `.sol` of ours. Do **not** invent a contract to “make it Hedera”.
+- **none** (default) — payments (`sendTransaction` / HBAR), RainbowKit, HCS as a Hedera *service*, x402, existing tokens (USDC, USDT, …). No `.sol` of ours. Do **not** invent a contract to “make it Hedera”. GENERATE calls `harness_tokens` (lookup → SearchHedera → webfetch issuer if needed) and bakes `evm=` — do not write “set NEXT_PUBLIC_*” as the only address.
 - **solidity** — only if this increment needs a `.sol` we write, HTS precompile (`0x167`), Hardhat, or Foundry.
 
 When `solidity`, also set a **base** (then customize from the interview — do not generate a generic demo):

@@ -265,32 +265,7 @@ function runHarness(directory, args, timeoutMs = 120_000) {
   return redact(combined || "(no output)");
 }
 
-const YARN_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 const INIT_TIMEOUT_MS = 20 * 60 * 1000;
-
-function runYarnInstall(workspace, timeoutMs = YARN_INSTALL_TIMEOUT_MS) {
-  if (existsSync(join(workspace, "node_modules"))) {
-    return "Dependencies already installed (node_modules).";
-  }
-  if (!existsSync(join(workspace, "package.json"))) {
-    return "No package.json — skip yarn install.";
-  }
-  const result = spawnSync("yarn", ["install"], {
-    cwd: workspace,
-    encoding: "utf8",
-    timeout: timeoutMs,
-    shell: true,
-    windowsHide: true,
-  });
-  const combined = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
-  if (result.error) {
-    return `yarn install failed: ${result.error.message}`;
-  }
-  if (result.status !== 0) {
-    return redact(combined || `yarn install exited ${result.status}`);
-  }
-  return redact(combined || "yarn install finished.");
-}
 
 function collectRunDirs(root) {
   const runs = join(root, ".harness", "runs");
@@ -564,6 +539,87 @@ export const HederaHarnessPlugin = async () => {
           }
         },
       }),
+      harness_tokens: tool({
+        description:
+          "Existing HTS token facades. action=lookup (default)|convert|remember. lookup: built-in + .harness/tokens.json, or token=lookup. convert: hts_id=0.0.x → HIP-218 evm=. remember: save to .harness/tokens.json after SearchHedera/webfetch. GENERATE bakes evm=. Never invent. Never ask the human unless MCP and webfetch both failed. symbol=USDC, network=testnet|mainnet.",
+        args: {
+          action: tool.schema.string().optional().describe("lookup (default), convert, or remember"),
+          symbol: tool.schema.string().optional().describe("USDC, USDT, …"),
+          network: tool.schema.string().optional().describe("testnet (default) or mainnet"),
+          hts_id: tool.schema.string().optional().describe("0.0.x for convert/remember"),
+          evm: tool.schema.string().optional().describe("optional 0x if issuer published EVM only"),
+          decimals: tool.schema.string().optional().describe("token decimals, default 6"),
+          source: tool.schema.string().optional(),
+          workspace: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const cwd = toolWorkspace(args, context);
+          const tokens = await importDist(cwd, "tokenRegistry.js");
+          const network = String(args.network || "testnet").trim().toLowerCase();
+          if (network !== "testnet" && network !== "mainnet") {
+            return `Unknown network ${network}. Use testnet or mainnet.`;
+          }
+          const action = String(args.action || "lookup").trim().toLowerCase();
+          if (action === "convert") {
+            const htsId = String(args.hts_id || "").trim();
+            if (!htsId) return "action=convert\ntoken=fail\nnote=hts_id=0.0.x is required.";
+            return tokens.formatConvertHtsId(htsId, network);
+          }
+          if (action === "remember") {
+            return tokens.formatRememberWorkspaceToken(cwd, {
+              symbol: String(args.symbol || "").trim(),
+              network,
+              htsId: args.hts_id,
+              evm: args.evm,
+              decimals: args.decimals != null && args.decimals !== "" ? Number(args.decimals) : undefined,
+              source: args.source,
+            });
+          }
+          if (action !== "lookup") {
+            return `Unknown action ${action}. Use lookup, convert, or remember.`;
+          }
+          return tokens.formatTokenLookup(args.symbol || "USDC", network, cwd);
+        },
+      }),
+      harness_e2e_contract: tool({
+        description:
+          "The UI contract the wallet E2E drives. action=status (default)|set. GENERATE must call set after shipping a write form: route + the data-testid of destination/amount/submit/tx-hash + confirmations (2 when it is approve-then-execute). harness_wallet_e2e and EVALUATE read this instead of guessing selectors, which is what makes E2E work on any app. Missing contract falls back to the seed /payments form and will fail on a custom dApp.",
+        args: {
+          action: tool.schema.string().optional().describe("status (default) or set"),
+          route: tool.schema.string().optional().describe('route with the form, e.g. "/" or "/payments"'),
+          to_testid: tool.schema.string().optional().describe("data-testid of the destination input"),
+          amount_testid: tool.schema.string().optional().describe("data-testid of the amount input"),
+          submit_testid: tool.schema.string().optional().describe("data-testid of the button that opens MetaMask"),
+          tx_hash_testid: tool.schema.string().optional().describe("data-testid that renders the tx hash"),
+          submit_label: tool.schema.string().optional().describe("regex for the button name, e.g. send usdc|send"),
+          confirmations: tool.schema.string().optional().describe("MetaMask popups to confirm, 1 or 2"),
+          default_amount: tool.schema.string().optional().describe("amount the runner types by default"),
+          notes: tool.schema.string().optional(),
+          workspace: tool.schema.string().optional(),
+        },
+        async execute(args, context) {
+          const cwd = toolWorkspace(args, context);
+          const e2e = await importDist(cwd, "e2eContract.js");
+          const action = String(args.action || "status").trim().toLowerCase();
+          if (action === "status") return e2e.formatE2eContract(e2e.inspectE2eContract(cwd));
+          if (action !== "set") return `Unknown action ${action}. Use status or set.`;
+          const confirmations =
+            args.confirmations != null && args.confirmations !== "" ? Number(args.confirmations) : undefined;
+          return e2e.formatE2eContract(
+            e2e.writeE2eContract(cwd, {
+              route: args.route,
+              toTestId: args.to_testid,
+              amountTestId: args.amount_testid,
+              submitTestId: args.submit_testid,
+              txHashTestId: args.tx_hash_testid,
+              submitLabel: args.submit_label,
+              confirmations: Number.isFinite(confirmations) ? confirmations : undefined,
+              defaultAmount: args.default_amount,
+              notes: args.notes,
+            }),
+          );
+        },
+      }),
       harness_oz_mcp: tool({
         description:
           "OpenZeppelin Solidity MCP. Overlay ships it disabled so payments/HCS sessions do not inject those tool schemas. action=status|enable. enable flips project opencode.json only — never ~/.config/opencode. After enable, a new OpenCode session is required for solidity-erc20 / solidity-custom / … to appear. GENERATE still proceeds with @openzeppelin/contracts if tools are missing this session. HTS uses SearchHedera, not this MCP.",
@@ -655,7 +711,7 @@ export const HederaHarnessPlugin = async () => {
       }),
       harness_ensure_init: tool({
         description:
-          "Hard gate: ensure .harness/spec.yaml exists and yarn deps are installed. Clones or adopts if needed. No-op when already ready. Never inits the hedera-harness package itself.",
+          "Hard gate: ensure .harness/spec.yaml exists. Yarn is NOT installed here — tui install already ran yarn in a terminal. If yarn=missing, tell the human to run `hedera-harness tui install` (or yarn install) outside OpenCode. Never bash yarn install.",
         args: {
           workspace: tool.schema.string().optional(),
           skipInstall: tool.schema.boolean().optional(),
@@ -665,13 +721,13 @@ export const HederaHarnessPlugin = async () => {
           const spec = join(cwd, ".harness", "spec.yaml");
           const parts = [];
           if (!existsSync(spec)) {
-            const extra = args.skipInstall ? ["--skip-install"] : [];
-            parts.push(runHarness(cwd, ["init", cwd, ...extra], INIT_TIMEOUT_MS));
+            parts.push(runHarness(cwd, ["init", cwd, "--skip-install"], INIT_TIMEOUT_MS));
           } else {
             parts.push(`Already initialized: ${spec}`);
           }
           if (args.skipInstall !== true) {
-            parts.push(runYarnInstall(cwd));
+            const yarn = await importDist(cwd, "yarnInstall.js");
+            parts.push(yarn.formatYarnInstallReport(await yarn.ensureYarnInstall(cwd)));
           }
           return parts.join("\n\n");
         },

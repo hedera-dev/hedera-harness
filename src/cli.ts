@@ -171,10 +171,10 @@ Project-centric run notes:
   - Does not auto-stash, push, open a PR, merge, or delete branches.
 
 OpenCode TUI notes:
-  - \`tui install\` scaffolds the target if \`.harness/spec.yaml\` is missing (clone/adopt, no yarn), then copies the overlay. Yarn runs later in OpenCode INIT.
+  - \`tui install\` scaffolds the target if \`.harness/spec.yaml\` is missing (clone/adopt), copies the overlay, then runs \`yarn install\` with no timeout. Open OpenCode only after yarn finishes.
   - Does not write ~/.config/opencode (Gentle stays global).
   - See \`hedera-harness tui --help\`.
-  - \`wallet provision\` opens a local 127.0.0.1 page for a TESTNET MetaMask key+password. Never paste keys in chat. \`wallet browser\` loads MetaMask via dappwright into a persistent Chromium profile under .harness/wallet/ (first run imports; later runs unlock). \`wallet session start\` keeps that browser alive and exposes snapshot/click/fill on the dapp tab (not Playwright MCP vanilla Chrome). \`wallet e2e\` is the one-shot scripted send.
+  - \`wallet provision\` opens a local 127.0.0.1 page for a TESTNET MetaMask key+password. Never paste keys in chat. \`wallet browser\` loads MetaMask via dappwright into a persistent Chromium profile under .harness/wallet/ (first run imports; later runs unlock). \`wallet session start\` keeps that browser alive and exposes snapshot/click/fill on the dapp tab (not Playwright MCP vanilla Chrome). \`wallet e2e\` is the **beta** one-shot scripted send (persistent test MetaMask for token flows such as USDC), driven by .harness/e2e.json — not the human done bar.
   - \`mcp status|enable|install\` inspects Playwright MCP in project/user opencode.json. Install writes the project file only (never ~/.config/opencode unless the entry already lives there). New sessions pick up MCP tools.
   - \`tasks status\` reads .harness/tasks.md (T1, T2… work units) and \`contracts=none|solidity\` (Hardhat skip vs run).
   - \`serve start|stop|status\` tracks one \`yarn next:dev\` in \`.harness/dev-server.json\`. Reuses it if CSS is healthy; otherwise kills leftover nohup/orphan next:dev for this app before starting. Do not \`nohup yarn next:dev\`.`);

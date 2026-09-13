@@ -11,6 +11,8 @@ The overlay ships a **project** remote MCP (`hedera-docs` → `https://docs.hede
 
 For anything Hedera — SDK imports (`@hiero-ledger` vs `@hashgraph`), Hashio, HCS, HTS, HIP numbers, RainbowKit/Hedera chain 296, WalletConnect, JSON-RPC — **call `SearchHedera` first**. Live docs beat training data.
 
+**Issuer token addresses (Circle USDC, USDT, …) are often not in Hedera docs.** `SearchHedera` will give HIP-218 / long-zero conversion. Call **`harness_tokens`**. If `token=lookup`, SearchHedera for that token id; if empty/fail, **webfetch the issuer**, then convert + remember + bake. Do not leave `NEXT_PUBLIC_*` empty. Do not ask the human unless both MCP and webfetch failed.
+
 `websearch` / `webfetch` being **allowed** is not permission to skip MCP. Speed is not a reason to skip. “I already know this” is not a reason to skip.
 
 **FORBIDDEN:** `websearch` / `webfetch` for Hedera docs while `SearchHedera` or any `hedera-docs` tool is in this session’s tool list.

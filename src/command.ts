@@ -6,6 +6,7 @@ export interface ExecuteCommandOptions {
   args?: string[];
   cwd: string;
   env?: Record<string, string>;
+  /** Milliseconds. `0` means no timeout (used by tui-install yarn). */
   timeoutMs?: number;
   shell?: boolean;
   /**
@@ -110,7 +111,6 @@ export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): vo
 export function executeCommand(options: ExecuteCommandOptions): Promise<CommandExecutionResult> {
   const startedAt = Date.now();
   const args = options.args ?? [];
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const streamOutput = options.streamOutput === true;
 
   return new Promise<CommandExecutionResult>((resolve, reject) => {
@@ -131,16 +131,20 @@ export function executeCommand(options: ExecuteCommandOptions): Promise<CommandE
     let timedOut = false;
     let settled = false;
     let hardKillTimer: NodeJS.Timeout | undefined;
+    const unlimited = options.timeoutMs === 0;
+    const timeoutMs = unlimited ? 0 : (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      killProcessTree(child, "SIGTERM");
-      // A child that ignores SIGTERM would otherwise hang this promise forever.
-      hardKillTimer = setTimeout(() => killProcessTree(child, "SIGKILL"), KILL_GRACE_MS);
-    }, timeoutMs);
+    const timeout = unlimited
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          killProcessTree(child, "SIGTERM");
+          // A child that ignores SIGTERM would otherwise hang this promise forever.
+          hardKillTimer = setTimeout(() => killProcessTree(child, "SIGKILL"), KILL_GRACE_MS);
+        }, timeoutMs);
 
     const clearTimers = (): void => {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       clearTimeout(hardKillTimer);
     };
 

@@ -1,4 +1,5 @@
 import { request as httpRequest } from "node:http";
+import { fieldSelector, inspectE2eContract, type E2eContract } from "./e2eContract.js";
 import { inspectNextAssetHealth, nextAssetHealthHint } from "./nextAssetHealth.js";
 import { inspectWalletReady } from "./walletVault.js";
 import {
@@ -28,6 +29,7 @@ interface PageLike {
   getByText: (text: RegExp) => LocatorLike;
   getByTestId?: (testId: string) => LocatorLike;
   getByPlaceholder?: (text: string | RegExp) => LocatorLike;
+  locator?: (selector: string) => LocatorLike;
   keyboard?: { press: (key: string) => Promise<void> };
 }
 
@@ -57,6 +59,8 @@ export async function runWalletE2e(
   }
 
   const url = await detectLiveAppUrl(appUrl);
+  const contractStatus = inspectE2eContract(workspaceDir);
+  const contract = contractStatus.contract;
   const prepared = await launchPreparedWalletBrowser(workspaceDir);
   const lines = [
     "metamask_e2e=running",
@@ -64,6 +68,8 @@ export async function runWalletE2e(
     "wallet=metamask-extension",
     `profile=${prepared.profile}`,
     "burner_is_not_success=true",
+    `contract=${contractStatus.kind}`,
+    `contract_route=${contract.route}`,
   ];
   try {
     const ctx = prepared.context as typeof prepared.context & {
@@ -137,14 +143,16 @@ export async function runWalletE2e(
     await dismissRainbowKit(page);
     await delay(800);
 
-    const paymentsUrl = `${url.replace(/\/$/, "")}/payments`;
-    await page.goto(paymentsUrl, { waitUntil: "load", timeout: 45_000 });
-    await waitForDappReady(page);
+    const formUrl = joinRoute(url, contract.route);
+    if (formUrl !== page.url()) {
+      await page.goto(formUrl, { waitUntil: "load", timeout: 45_000 });
+      await waitForDappReady(page);
+    }
     await dismissRainbowKit(page);
-    const payFormReady = await waitForPayForm(page);
-    lines.push(`payments_nav=true`, `payments_url=${paymentsUrl}`, `pay_form_ready=${payFormReady}`);
+    const formReady = await waitForFormField(page, contract.toTestId);
+    lines.push(`form_nav=true`, `form_url=${formUrl}`, `form_ready=${formReady}`);
 
-    const amountPlan = normalizeE2eAmount(send?.amount);
+    const amountPlan = normalizeE2eAmount(send?.amount, contract.defaultAmount);
     const destPlan = normalizeE2eTo(send?.to);
     if (amountPlan.invalid) lines.push(`amount_invalid=${amountPlan.invalid}`);
     lines.push(
@@ -157,7 +165,7 @@ export async function runWalletE2e(
       ? await fillFirst(
           page,
           [
-            ...(page.getByTestId ? [() => page.getByTestId!("pay-to")] : []),
+            ...fieldLocators(page, contract.toTestId),
             ...(page.getByPlaceholder ? [() => page.getByPlaceholder!(/0x/i)] : []),
           ],
           dest,
@@ -166,18 +174,18 @@ export async function runWalletE2e(
     await fillFirst(
       page,
       [
-        ...(page.getByTestId ? [() => page.getByTestId!("pay-amount")] : []),
+        ...fieldLocators(page, contract.amountTestId),
         ...(page.getByPlaceholder ? [() => page.getByPlaceholder!(/0\.1/i)] : []),
       ],
       amountPlan.amount,
     );
-    await forceInputValue(page, "pay-amount", amountPlan.amount);
-    if (dest) await forceInputValue(page, "pay-to", dest);
-    const liveAmount = await readInputValue(page, "pay-amount");
-    const liveTo = await readInputValue(page, "pay-to");
+    await forceInputValue(page, contract.amountTestId, amountPlan.amount);
+    if (dest) await forceInputValue(page, contract.toTestId, dest);
+    const liveAmount = await readInputValue(page, contract.amountTestId);
+    const liveTo = await readInputValue(page, contract.toTestId);
     const amountOk = amountsEqual(liveAmount, amountPlan.amount);
     const amountStuck = liveAmount !== "" && !amountOk;
-    lines.push(`pay_form=${(liveTo || toFilled) && amountOk ? "filled" : "missing-fields"}`);
+    lines.push(`form=${(liveTo || toFilled) && amountOk ? "filled" : "missing-fields"}`);
     lines.push(`to_filled=${liveTo || dest || "none"}`);
     lines.push(`amount_filled=${liveAmount || "none"}`);
     if (amountStuck) lines.push("amount_mismatch=input-kept-default");
@@ -188,32 +196,51 @@ export async function runWalletE2e(
     const canSend = Boolean(liveTo || dest) && amountOk;
     const sendClicked = canSend
       ? await clickFirst(page, [
-          ...(page.getByTestId ? [() => page.getByTestId!("pay-send")] : []),
-          () => page.getByRole("button", { name: /send hbar/i }),
+          ...fieldLocators(page, contract.submitTestId),
+          () => page.getByRole("button", { name: submitLabelRe(contract) }),
           () => page.getByRole("button", { name: /send/i }),
         ])
       : false;
     lines.push(`send_click=${sendClicked}`);
 
-    const signed = sendClicked
-      ? await firstTrue([
+    // An approve-then-execute flow raises two popups; the contract says how many.
+    let signedCount = 0;
+    if (sendClicked) {
+      for (let round = 0; round < contract.confirmations; round += 1) {
+        const ok = await firstTrue([
           metamaskAction(prepared.wallet, "confirmTransaction"),
           clickExtensionDialog(ctx, "confirm"),
-        ])
-      : false;
+        ]);
+        if (!ok) break;
+        signedCount += 1;
+        if (round + 1 < contract.confirmations) await delay(1500);
+      }
+    }
+    const signed = signedCount >= contract.confirmations;
     lines.push(`metamask_sign=${signed ? "confirmed" : "no-popup-or-failed"}`);
+    if (contract.confirmations > 1) {
+      lines.push(`confirms=${signedCount}/${contract.confirmations}`);
+    }
 
-    const afterHtml = await waitForNewTxHash(page, beforeHashes);
+    const afterHtml = await waitForNewTxHash(page, beforeHashes, contract.txHashTestId);
     const afterHashes = collectTxHashes(afterHtml);
     const newHash = [...afterHashes].some(hash => !beforeHashes.has(hash));
     const hashscanVisible = HASHSCAN_RE.test(afterHtml);
     lines.push(`tx=${newHash ? "new" : afterHashes.size > 0 ? "stale" : "missing"}`);
     lines.push(`hashscan=${hashscanVisible ? "link-visible" : "none"}`);
+    const ok = approved && signed && newHash && amountOk;
     lines.push(
-      approved && signed && newHash && amountOk
+      ok
         ? "metamask_e2e=ok"
         : "metamask_e2e=incomplete — quote amount_filled from this tool, never the requested amount",
     );
+    if (!ok && !formReady) {
+      lines.push(
+        contractStatus.kind === "ready"
+          ? `reason=Route ${contract.route} never showed [data-testid="${contract.toTestId}"]. Fix the app or the contract, then rerun.`
+          : "reason=No .harness/e2e.json, so the runner tried the seed /payments form. GENERATE must call harness_e2e_contract action=set.",
+      );
+    }
     return lines.join("\n");
   } finally {
     await prepared.context.close().catch(() => undefined);
@@ -272,18 +299,21 @@ async function fillFirst(
   return false;
 }
 
-export function normalizeE2eAmount(raw?: string): {
+export function normalizeE2eAmount(
+  raw?: string,
+  fallback: string = DEFAULT_SEND_AMOUNT_HBAR,
+): {
   amount: string;
   requested: string | undefined;
   invalid?: string;
 } {
   const requested = raw?.trim();
-  if (!requested) return { amount: DEFAULT_SEND_AMOUNT_HBAR, requested: undefined };
+  if (!requested) return { amount: fallback, requested: undefined };
   const n = Number(requested.replace(",", "."));
   if (!Number.isFinite(n) || n <= 0 || n > 100) {
-    return { amount: DEFAULT_SEND_AMOUNT_HBAR, requested, invalid: requested };
+    return { amount: fallback, requested, invalid: requested };
   }
-  const amount = n.toFixed(8).replace(/\.?0+$/, "") || DEFAULT_SEND_AMOUNT_HBAR;
+  const amount = n.toFixed(8).replace(/\.?0+$/, "") || fallback;
   return { amount, requested };
 }
 
@@ -308,10 +338,10 @@ async function readInputValue(page: PageLike, testId: string): Promise<string> {
     // evaluate fallback
   }
   try {
-    const value = await page.evaluate(id => {
-      const el = document.querySelector(`[data-testid="${id}"]`);
+    const value = await page.evaluate(selector => {
+      const el = document.querySelector(selector);
       return el instanceof HTMLInputElement ? el.value : "";
-    }, testId);
+    }, fieldSelector(testId));
     return typeof value === "string" ? value.trim() : "";
   } catch {
     return "";
@@ -321,8 +351,8 @@ async function readInputValue(page: PageLike, testId: string): Promise<string> {
 async function forceInputValue(page: PageLike, testId: string, value: string): Promise<void> {
   try {
     await page.evaluate(
-      ({ id, next }) => {
-        const el = document.querySelector(`[data-testid="${id}"]`);
+      ({ selector, next }) => {
+        const el = document.querySelector(selector);
         if (!(el instanceof HTMLInputElement)) return false;
         const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
         desc?.set?.call(el, next);
@@ -330,7 +360,7 @@ async function forceInputValue(page: PageLike, testId: string, value: string): P
         el.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
       },
-      { id: testId, next: value },
+      { selector: fieldSelector(testId), next: value },
     );
   } catch {
     // locator fill already tried
@@ -465,12 +495,13 @@ async function dismissRainbowKit(page: PageLike): Promise<void> {
   await delay(300);
 }
 
-async function waitForPayForm(page: PageLike): Promise<boolean> {
+async function waitForFormField(page: PageLike, testId: string): Promise<boolean> {
   const deadline = Date.now() + 15_000;
+  const locators = fieldLocators(page, testId);
   while (Date.now() < deadline) {
-    if (page.getByTestId) {
+    for (const make of locators) {
       try {
-        if (await page.getByTestId("pay-to").first().isVisible({ timeout: 800 })) return true;
+        if (await make().first().isVisible({ timeout: 800 })) return true;
       } catch {
         // retry
       }
@@ -481,6 +512,28 @@ async function waitForPayForm(page: PageLike): Promise<boolean> {
   return false;
 }
 
+/** `data-testid` first, then the `id` / `name` fallback for forms without testids. */
+function fieldLocators(page: PageLike, testId: string): Array<() => LocatorLike> {
+  const locators: Array<() => LocatorLike> = [];
+  if (page.getByTestId) locators.push(() => page.getByTestId!(testId));
+  if (page.locator) locators.push(() => page.locator!(fieldSelector(testId)));
+  return locators;
+}
+
+export function joinRoute(baseUrl: string, route: string): string {
+  const base = baseUrl.replace(/\/$/, "");
+  const suffix = route === "/" ? "" : route.startsWith("/") ? route : `/${route}`;
+  return `${base}${suffix}` || base;
+}
+
+function submitLabelRe(contract: E2eContract): RegExp {
+  try {
+    return new RegExp(contract.submitLabel, "i");
+  } catch {
+    return /send/i;
+  }
+}
+
 function collectTxHashes(html: string): Set<string> {
   const found = new Set<string>();
   for (const match of html.matchAll(/0x[a-fA-F0-9]{64}/g)) {
@@ -489,7 +542,11 @@ function collectTxHashes(html: string): Set<string> {
   return found;
 }
 
-async function waitForNewTxHash(page: PageLike, before: Set<string>): Promise<string> {
+async function waitForNewTxHash(
+  page: PageLike,
+  before: Set<string>,
+  txHashTestId = "pay-tx-hash",
+): Promise<string> {
   const deadline = Date.now() + 20_000;
   let html = "";
   while (Date.now() < deadline) {
@@ -498,7 +555,7 @@ async function waitForNewTxHash(page: PageLike, before: Set<string>): Promise<st
     if ([...after].some(hash => !before.has(hash))) return html;
     if (page.getByTestId) {
       try {
-        if (await page.getByTestId("pay-tx-hash").first().isVisible({ timeout: 400 })) {
+        if (await page.getByTestId(txHashTestId).first().isVisible({ timeout: 400 })) {
           html = await page.content().catch(() => html);
           const afterVisible = collectTxHashes(html);
           if ([...afterVisible].some(hash => !before.has(hash))) return html;

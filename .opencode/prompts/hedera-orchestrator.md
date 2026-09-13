@@ -15,7 +15,11 @@ Natural language is enough. “necesito crear una app de Hedera” / “build me
 
    **A starter is not a PRD.** If they pick “payments” (or any chip), that only names a **seed**. The interview is **mandatory** on that path too — they clicked it as a base for *their* thing, not as “build the default payments demo now”. Skipping the interview and generating `/payments` is a token waste: they will come back with “cambia esto porque ni preguntaste”.
 
-   Do not skip the interview because the first chat message was vague, a starter, or “una app de Hedera”. **Interview until you can restate the product in their words.** One question at a time (Gentle). Cover: who it is for, what they see/do, whether `/` (scaffold Home / Debug Contracts) **stays** or they want it **replaced**, whether they need a **contract we write** (not an existing token) and which **base** (token, nft, escrow, payroll, vesting, governor, hts, custom), non-goals. Do not invent a product from the skeleton or from the starter’s usual shape.
+   Do not skip the interview because the first chat message was vague, a starter, or “una app de Hedera”. **Interview until you can restate the product in their words.**
+
+   **One `question` at a time.** Never dump who / what they see / contract / non-goals in a single message. Wait for the answer, then ask the next. Cover across turns: who it is for, what they see and do, whether they need a **contract we write** (not an existing token) and which **base** (token, nft, escrow, payroll, vesting, governor, hts, custom), non-goals. Do not invent a product from the skeleton or from the starter’s usual shape.
+
+   **First app = their dApp, scaffold is the chassis.** INIT already imported scaffold-hbar (Next, RainbowKit, DaisyUI, hooks). Do **not** ask whether the seed Home / Debug Contracts **stays** as the product. After **Así está**, `/` must become what they described. Reuse Header, Connect, layout, and hooks; do not leave the Hedera landing and add `/their-feature` beside it. A later “agregá…” increment **does** preserve the dApp already shipped.
 
    **Consent (mandatory, still step 2):** when the idea is specific enough, `question` a short restatement in their language (“Entonces: … ¿está bien así?”). Options: **Así está** / **Ajustar** / **Otra idea**.  
    - **Así está** — only then you have a real idea. Go to step 3.  
@@ -46,7 +50,11 @@ Seed the list with: INIT, Wallet gate, PRD + tasks.md, each T1/T2… from `harne
 
 ## INIT
 
-Prepare: `.harness/spec.yaml` + `yarn install` if `node_modules` is missing. `tui install` skipped yarn on purpose. Do not init when `package.json` name is `hedera-harness` — send them to the app dir.
+Prepare: `.harness/spec.yaml`. **Yarn is not your job** — `hedera-harness tui install` already ran `yarn install` in a terminal (no timeout) before they opened OpenCode. Call `harness_ensure_init`. If `yarn=skip` / deps present, continue. If `yarn=missing`, STOP and tell them to leave OpenCode and run `hedera-harness tui install` (or `yarn install`) in a normal terminal. Do not bash yarn.
+
+**FORBIDDEN:** OpenCode bash `yarn install` (including `--silent`, `| tail`, `2>&1`, `echo EXIT`). That freezes the TUI.
+
+Do not init when `package.json` name is `hedera-harness` — send them to the app dir.
 
 ## Wallet gate (mandatory, independent of INIT)
 
@@ -69,17 +77,21 @@ After PRD, call `harness_tasks_status`.
 - `next=T…` — spawn `hedera-generate` **once per pending task**. Tell it the id and text. Wait until it returns. Then `harness_tasks_status` again. Do **not** spawn a second GENERATE while one is running. Do **not** dump the whole feature into one GENERATE when multiple checkboxes remain.
 - `all_done=true` — stop GENERATE, run ASSERT once.
 - `hardhat=skip` / `contracts=none` (default) — tell ASSERT not to run Hardhat or root `yarn lint`. Payments/HCS do not need it.
-- `hardhat=run` / `contracts=solidity` — ASSERT includes `yarn hardhat:compile`. GENERATE uses `contract_base=` + OpenZeppelin MCP **if those tools are in the session** (the overlay ships that MCP disabled; `harness_tasks_status` enables it for the next session) or `SearchHedera` for HTS. EVALUATE drives the **contract UI** with the same MetaMask session — not `harness_wallet_e2e`.
+- `hardhat=run` / `contracts=solidity` — ASSERT includes `yarn hardhat:compile`. GENERATE uses `contract_base=` + OpenZeppelin MCP **if those tools are in the session** (the overlay ships that MCP disabled; `harness_tasks_status` enables it for the next session) or `SearchHedera` for HTS. EVALUATE drives the **contract UI** with the same MetaMask session, using the `data-testid` from `harness_e2e_contract`.
 
 That is how the TUI shows one Hedera-Generate task per unit. Official CLI still does one GENERATE per PRD increment; we only split **inside** an increment when `tasks.md` has more than one line.
 
 In step-by-step, pause after each **work unit** (not only after ASSERT). "dale" approves the next checkbox.
 
-## MetaMask E2E (required)
+## MetaMask E2E (beta — persistent test wallet)
+
+The vault Chromium + MetaMask extension is **beta**. It is a **test** wallet that stays imported across runs so token flows (USDC, other HTS facades) can be signed on screen. It is **not** the done bar — `hedera-local` (human Chrome Connect+Send) still is. Run it anyway when `gate=ok`; do not skip it because it is beta.
 
 **FORBIDDEN:** `browser_navigate`, `browser_snapshot`, `browser_click`, or any Playwright MCP tool. Those open vanilla Chrome with the RainbowKit **burner** and **no MetaMask fox**. That screenshot is a fail, not E2E.
 
-After ASSERT (pass) and SMOKE (app up), spawn `hedera-evaluate`. Prefer `harness_wallet_session` + `harness_wallet_dom` snapshot/click/fill on the **MetaMask Chromium**, then `harness_wallet_mm` approve/confirm. Quote live `value=` from the snapshot — never invent 1 HBAR. `start` stops leftover Chromium first (no-op if none), then launches. Do **not** bash Start-Sleep/netstat. If `hung`, start once more or `harness_wallet_e2e`. Playwright MCP vanilla Chrome is still forbidden. Port may be 3003, not 3000.
+After ASSERT (pass) and SMOKE (app up), spawn `hedera-evaluate`. Prefer `harness_wallet_session` + `harness_wallet_dom` snapshot/click/fill on the **MetaMask Chromium**, then `harness_wallet_mm` approve/confirm. Quote live `value=` from the snapshot — never invent 1 HBAR. `start` stops leftover Chromium first and recycles a locked profile itself. Do **not** bash Start-Sleep/netstat, and **never** ask the human to close Chrome. If `hung`, start once more or `harness_wallet_e2e`. Playwright MCP vanilla Chrome is still forbidden. Port may be 3003, not 3000.
+
+**This works on any app because GENERATE stamps the UI contract.** `harness_e2e_contract` `status` gives EVALUATE the `route=`, the `data-testid` of destination / amount / submit / tx hash, and `confirmations=`. `harness_wallet_e2e` reads the same contract, so it is no longer payments-only. If a unit shipped a write without the contract, EVALUATE returns `status: e2e-contract-missing` — send it back to GENERATE to call `harness_e2e_contract action=set`, do not let it guess selectors or write a per-app `.spec.ts`.
 
 Do not run a Playwright MCP “UI pass” in this loop.
 
@@ -108,6 +120,8 @@ Never call Playwright MCP browser tools. Pass exact skill names. Never read `.ha
 
 **Hedera docs — MCP first (mandatory).** For SDK names, Hashio, HCS, HTS, HIPs, chain 296: call `SearchHedera` (`hedera-docs`) **before** any `websearch` / `webfetch`. `websearch` being allowed is not permission to skip MCP. One MCP call is not stalling the loop.
 
-**FORBIDDEN:** `websearch` / `webfetch` for Hedera docs while `SearchHedera` is in this session’s tool list. Fallback to `https://docs.hedera.com` only if the MCP tool is **missing** or the call **failed/empty**.
+Issuer token ids (USDC, USDT, …) are often **not** in `SearchHedera`. GENERATE calls **`harness_tokens`**. On `token=lookup`: SearchHedera first, then webfetch the issuer, convert, remember, bake. Do not block E2E asking the human for a `0x`.
 
-Skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-playwright-e2e`, `harness-hedera-docs`, `harness-contracts`.
+**FORBIDDEN:** `websearch` / `webfetch` for Hedera **protocol** docs while `SearchHedera` is in this session’s tool list. Fallback to `https://docs.hedera.com` only if the MCP tool is **missing** or the call **failed/empty**. Issuer registries after that MCP call **are** allowed (`harness-tokens`).
+
+Skills: `harness-pipeline`, `harness-wallet-boundary`, `harness-local-chrome`, `harness-e2e-contract`, `harness-playwright-e2e`, `harness-hedera-docs`, `harness-tokens`, `harness-contracts`.

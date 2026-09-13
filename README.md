@@ -4,13 +4,68 @@ TypeScript CLI that builds features into [scaffold-hbar](https://github.com/hede
 
 **The harness decides whether a run passed, not the agent.**
 
+This branch keeps that CLI loop and adds an **OpenCode TUI overlay**: you describe the dApp in natural language; the orchestrator interviews, writes the PRD, generates one work unit at a time, lints, boots `next:dev`, and walks you to Connect+Send in Chrome. You do not have to author `.harness/prd.md` or a recipe by hand to get a working testnet transaction.
+
 ```bash
-npx hedera-harness init my-app     # or run `init` inside a project you already have
+# CLI path (unchanged)
+npx hedera-harness init my-app
 cd my-app
-$EDITOR .harness/prd.md            # describe the feature
-npx hedera-harness doctor          # check the setup before a long run
+$EDITOR .harness/prd.md
+npx hedera-harness doctor
 npx hedera-harness run
 ```
+
+## OpenCode TUI (this branch)
+
+### Problem
+
+The published harness is a long, recipe-driven CLI run. Getting from “I want a USDC sender” to a signed testnet transfer still meant writing a PRD, waiting on GENERATE, then proving the wallet in a browser **without** MetaMask (Playwright MCP is vanilla Chrome). A second dApp whose send form was not `/payments` could not reuse that E2E at all.
+
+### How to run
+
+Requires Node ≥ 20, [OpenCode](https://opencode.ai), and this repo built once:
+
+```bash
+git clone https://github.com/hallzyx/hedera-harness.git
+cd hedera-harness
+git checkout feat/hedera-harness-tui
+npm install
+npm run build
+
+# empty folder → clone scaffold-hbar, copy the overlay, yarn install (no timeout)
+node dist/index.js tui install ../my-dapp
+# wait until: "yarn install finished — you can open this project in OpenCode now."
+cd ../my-dapp
+opencode
+```
+
+Tab to **hedera-orchestrator**. `/harness-run` (or just say what to build). One question at a time; confirm **Así está** on the restatement; then Automatic vs Step by step.
+
+Do **not** paste a private key into chat. `/harness-wallet` opens `http://127.0.0.1:17373/` for a **testnet** key + MetaMask password. Never read `.harness/wallet/`.
+
+**Done bar:** RainbowKit Connect + Send in **your** Chrome (`/harness-local`) on the same `next:dev` URL.
+
+### Before / after
+
+| | Published CLI | This overlay |
+|---|---|---|
+| What you write | `.harness/prd.md` + recipe | the idea, in the TUI |
+| Wallet proof | Playwright MCP Chrome, no extension | your Chrome Connect+Send; optional beta vault below |
+| Existing tokens (USDC, …) | bake the `0x` yourself | `harness_tokens` lookup → convert HIP-218 → remember → bake |
+| Second app’s send form | E2E hardcoded to `/payments` | `.harness/e2e.json` UI contract (beta vault path) |
+
+### Beta: persistent test wallet (tokens like USDC)
+
+The **MetaMask vault E2E** (`harness_wallet_session` / `harness_wallet_e2e`) is a **beta** extra, not the release done bar.
+
+It opens a visible Chromium with the MetaMask extension and a **persistent** profile (`.harness/wallet/chrome-profile`). You provision a testnet key once; later runs unlock the same vault. That is how the harness can drive a real HTS facade transfer (Circle testnet USDC today, any listed token tomorrow) and **show the fox, the password, and the Confirm** on screen — a repeatable test wallet, not your personal MetaMask.
+
+- Beta on purpose: profile locks on Windows, first-run extension import, and approve-then-execute flows are still being hardened.
+- Playwright MCP stays **off** for this path (no extension → stuck on the password).
+- GENERATE stamps `.harness/e2e.json` (route + `data-testid`) so the same runner works on any app, not only the seed `/payments` page.
+- Your own Chrome + MetaMask remains `/harness-local`.
+
+See [CHANGELOG.md](CHANGELOG.md) (Unreleased) and [docs/plans/2026-09-06-opencode-hedera-tui.md](docs/plans/2026-09-06-opencode-hedera-tui.md).
 
 ## How a run works
 
@@ -126,7 +181,13 @@ hedera-harness doctor [spec] [--workspace <path>] [--recipe-only]
 hedera-harness migrate [spec] [--dry-run]
 hedera-harness validate [spec] [--workspace <path>]
 hedera-harness validate-semantic [spec] [--workspace <path>]
+hedera-harness tui install|uninstall [dir] [--keep-default] [--skip-install]
+hedera-harness wallet status|provision|session|e2e
 ```
+
+**`tui install`** (this branch) clones or adopts scaffold-hbar, copies the OpenCode overlay, then runs `yarn install` with **no timeout**. Open OpenCode only after it finishes.
+
+**`wallet provision` / `wallet e2e`** — beta persistent **test** MetaMask (see above). Never paste keys in chat.
 
 **`init`** decides what to do from the target:
 

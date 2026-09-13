@@ -41,4 +41,5 @@ playwright-report/
 # Local nested dApp / scratch (not part of this repo)
 demo-app/
 test-app/
+h-app/
 .tmp-ui-test/

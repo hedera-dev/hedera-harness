@@ -78,7 +78,7 @@ cd test-app
 opencode
 ```
 
-Empty `test-app` (or a folder without `.harness/spec.yaml`) is **scaffolded automatically** by `tui install` (clone/adopt, no yarn). Inside OpenCode, `hedera-orchestrator` runs INIT as the prepare gate: spec.yaml + `yarn install` if `node_modules` is missing (`/harness-init`, `harness_ensure_init`).
+Empty `test-app` (or a folder without `.harness/spec.yaml`) is **scaffolded automatically** by `tui install` (clone/adopt, then `yarn install` with no timeout). Open OpenCode only after yarn finishes. INIT does not install deps.
 
 `--keep-default` leaves Tab on Gentle; switch to `hedera-orchestrator` manually.
 

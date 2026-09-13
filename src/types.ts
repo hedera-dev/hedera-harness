@@ -92,7 +92,7 @@ export interface TuiCliOptions {
   keepDefault?: boolean;
   /** Overlay-only: skip auto scaffold when `.harness/spec.yaml` is missing. */
   skipInit?: boolean;
-  /** Accepted for compatibility; `tui install` always skips yarn (INIT installs deps). */
+  /** Skip post-overlay yarn install (tests / overlay-only). Default runs yarn with no timeout. */
   skipInstall?: boolean;
   /** Test seam: skip skill vendoring during auto-init. */
   skipSkills?: boolean;

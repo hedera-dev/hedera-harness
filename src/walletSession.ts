@@ -4,6 +4,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveAppWorkspace } from "./appWorkspace.js";
+import { fieldSelector } from "./e2eContract.js";
 import { inspectNextAssetHealth, nextAssetHealthHint } from "./nextAssetHealth.js";
 import type { WalletSessionAction } from "./types.js";
 import { detectLiveAppUrl, waitForDappReady } from "./walletE2e.js";
@@ -19,6 +20,8 @@ import { chromeProfilePath, inspectWalletReady } from "./walletVault.js";
 const STATE_REL = [".harness", "wallet-session.json"] as const;
 export const DEFAULT_SESSION_PORT = 17374;
 export const START_TIMEOUT_MS = 180_000;
+/** start recycles the profile itself before reporting hung. */
+export const SESSION_START_ATTEMPTS = 2;
 export const BROWSER_HANDSHAKE_HUNG_MS = METAMASK_HANDSHAKE_TIMEOUT_MS;
 const ARIA_MAX = 20_000;
 const HARNESS_ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), "index.js");
@@ -127,14 +130,19 @@ export function sessionPhaseIsHung(state: WalletSessionState, now = Date.now()):
   return now - at >= limit;
 }
 
-export function formatHungSessionReport(state: Pick<WalletSessionState, "pid" | "port" | "phase">): string {
+export function formatHungSessionReport(
+  state: Pick<WalletSessionState, "pid" | "port" | "phase">,
+  attempts = 1,
+): string {
   return formatSessionReport([
     "session=hung",
     `pid=${state.pid}`,
     `port=${state.port}`,
     `phase=${state.phase}`,
+    `attempts=${attempts}`,
     "reason=Chromium was up but dappwright never finished (locked chrome-profile or leftover chrome on :17374).",
-    "repair=session torn down; call start again or harness_wallet_e2e",
+    `repair=start already killed the profile holders and relaunched ${attempts}x`,
+    "next=call start once more — never ask the human to close Chrome, never switch to Playwright MCP",
     "do_not_sleep=true",
   ]);
 }
@@ -183,6 +191,30 @@ async function startSession(workspace: string, params: WalletSessionParams): Pro
   await delay(800);
   const appUrl = await detectLiveAppUrl(params.url);
   const listenPort = params.port && params.port > 0 ? params.port : DEFAULT_SESSION_PORT;
+  // A locked chrome-profile is the usual first failure. Recycle it ourselves
+  // instead of returning "hung" and letting the agent ask the human to close
+  // Chrome (that is how one run piled up five dead launches on :17374).
+  let lastState: WalletSessionState | undefined;
+  for (let attempt = 1; attempt <= SESSION_START_ATTEMPTS; attempt += 1) {
+    const outcome = await launchSessionProcess(workspace, appUrl, listenPort);
+    if (outcome.kind === "up") {
+      return formatUpReport(outcome.state, { reused: false, cleaned: true, attempts: attempt });
+    }
+    lastState = outcome.state;
+    teardownSession(workspace, outcome.state);
+    if (attempt < SESSION_START_ATTEMPTS) await delay(1500);
+  }
+  return formatHungSessionReport(
+    lastState ?? { pid: 0, port: listenPort, phase: "launching" },
+    SESSION_START_ATTEMPTS,
+  );
+}
+
+async function launchSessionProcess(
+  workspace: string,
+  appUrl: string,
+  listenPort: number,
+): Promise<{ kind: "up" | "down"; state: WalletSessionState }> {
   const child = spawn(
     nodeBin(),
     [
@@ -206,24 +238,23 @@ async function startSession(workspace: string, params: WalletSessionParams): Pro
   );
   const pid = child.pid ?? 0;
   child.unref();
-  if (!pid) return formatSessionReport(["session=down", "reason=failed to spawn session process"]);
-
-  const waited = await waitUntilUp(workspace, pid, Date.now() + START_TIMEOUT_MS);
-  const state = readSessionState(workspace) ?? {
+  const fallback: WalletSessionState = {
     pid,
     port: listenPort,
     url: appUrl,
     workspace,
-    phase: "launching" as const,
+    phase: "launching",
   };
-  if (waited === "up") return formatUpReport(state, { reused: false, cleaned: true });
-  teardownSession(workspace, state);
-  return formatHungSessionReport(state);
+  if (!pid) return { kind: "down", state: fallback };
+
+  const waited = await waitUntilUp(workspace, pid, Date.now() + START_TIMEOUT_MS);
+  const state = readSessionState(workspace) ?? fallback;
+  return { kind: waited === "up" ? "up" : "down", state };
 }
 
 function formatUpReport(
   state: WalletSessionState,
-  flags: { reused: boolean; cleaned: boolean },
+  flags: { reused: boolean; cleaned: boolean; attempts?: number },
 ): string {
   return formatSessionReport([
     "session=up",
@@ -233,6 +264,7 @@ function formatUpReport(
     "wallet=metamask-extension",
     `reused=${flags.reused}`,
     `cleaned=${flags.cleaned}`,
+    flags.attempts && flags.attempts > 1 ? `attempts=${flags.attempts}` : "",
     "dom=use harness_wallet_dom snapshot — not Playwright MCP vanilla Chrome",
     "mm=use harness_wallet_mm approve|confirm",
   ]);
@@ -605,6 +637,11 @@ async function clickTarget(page: DappPage, target: Record<string, unknown>): Pro
       await page.getByTestId(testId).first().click({ timeout: 5_000 });
       return true;
     });
+    // Forms that only carry id / name are still driveable.
+    tries.push(async () => {
+      await page.locator(fieldSelector(testId)).first().click({ timeout: 5_000 });
+      return true;
+    });
   }
   if (name) {
     tries.push(async () => {
@@ -649,6 +686,12 @@ async function fillTarget(page: DappPage, target: Record<string, unknown>, value
       await loc.fill(value, { timeout: 5_000 });
       return true;
     });
+    tries.push(async () => {
+      const loc = page.locator(fieldSelector(testId)).first();
+      await loc.fill("", { timeout: 5_000 }).catch(() => undefined);
+      await loc.fill(value, { timeout: 5_000 });
+      return true;
+    });
   }
   if (name) {
     tries.push(async () => {
@@ -674,7 +717,9 @@ async function readFields(page: DappPage): Promise<Array<{ testid: string; type:
       const nodes = [...document.querySelectorAll("input, textarea, select")];
       return nodes.map(node => {
         const el = node as HTMLInputElement;
-        const id = el.getAttribute("data-testid") || "";
+        // id / name so a form without data-testid is still addressable.
+        const id =
+          el.getAttribute("data-testid") || el.getAttribute("id") || el.getAttribute("name") || "";
         const type = (el.type || el.tagName).toLowerCase();
         const label =
           (el.labels && el.labels[0]?.innerText) ||
@@ -694,8 +739,8 @@ async function readFields(page: DappPage): Promise<Array<{ testid: string; type:
 async function forceInputValue(page: DappPage, testId: string, value: string): Promise<void> {
   try {
     await page.evaluate(
-      (({ id, next }: { id: string; next: string }) => {
-        const el = document.querySelector(`[data-testid="${id}"]`);
+      (({ selector, next }: { selector: string; next: string }) => {
+        const el = document.querySelector(selector);
         if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return false;
         const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
         desc?.set?.call(el, next);
@@ -703,7 +748,7 @@ async function forceInputValue(page: DappPage, testId: string, value: string): P
         el.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
       }) as never,
-      { id: testId, next: value } as never,
+      { selector: fieldSelector(testId), next: value } as never,
     );
   } catch {
     // locator fill already tried
