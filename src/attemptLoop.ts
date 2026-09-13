@@ -2,14 +2,24 @@ import path from "node:path";
 import { CommandAgentProvider } from "./providers/commandAgentProvider.js";
 import { selectModel, withModel } from "./modelSelection.js";
 import { AGENT_PRESETS } from "./specDefaults.js";
-import { envAgentTimeoutMs } from "./env.js";
+import { envAgentTimeoutMs, envDisableConsoleBaseline } from "./env.js";
 import {
   buildSessionContinuePrompt,
   buildSessionPrompt,
   buildSessionRepairPrompt,
 } from "./promptBuilder.js";
 import { appendHarnessNote, type RunLayout } from "./runArtifacts.js";
-import { runGenerateStage, runValidationStages, type AttemptStageContext } from "./attemptStages.js";
+import {
+  captureConsoleBaseline,
+  runGenerateStage,
+  runValidationStages,
+  type AttemptStageContext,
+} from "./attemptStages.js";
+import {
+  readConsoleBaseline,
+  writeConsoleBaseline,
+  type ConsoleBaseline,
+} from "./validation/consoleBaseline.js";
 import {
   announceAttempt,
   attemptKind,
@@ -141,6 +151,30 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
   let previousFindings: ValidationFinding[] = [];
   let delta: FindingDelta = { open: openFindingIds, fixed: [], introduced: [] };
 
+  // Before the first generation: what does the untouched app already log to the
+  // browser console? Whatever is recorded here is not charged to the agent.
+  let consoleBaseline: ConsoleBaseline | undefined = await readConsoleBaseline(
+    layout.cacheDirectory,
+  );
+  if (!consoleBaseline && !isContinue && !envDisableConsoleBaseline()) {
+    try {
+      consoleBaseline = await captureConsoleBaseline({ spec, workspacePath });
+      if (consoleBaseline) {
+        await writeConsoleBaseline(layout.cacheDirectory, consoleBaseline);
+        logPhase(
+          "Console baseline recorded",
+          `${consoleBaseline.anyRoute.length} pre-existing console error(s)`,
+        );
+      }
+    } catch (error) {
+      // Never fail a run over the probe; SMOKE boots the same server anyway.
+      logPhase(
+        "Console baseline skipped",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
   while (attemptsThisCycle < maxAttempts) {
     attempts += 1;
     attemptsThisCycle += 1;
@@ -152,6 +186,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       layout,
       chainSigner,
       evalRelativePath: vendoredContext.evalRelativePath,
+      consoleBaseline,
     };
 
     const kind = attemptKind(isContinue, attempts, attemptsThisCycle);

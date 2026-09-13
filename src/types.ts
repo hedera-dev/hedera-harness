@@ -227,6 +227,8 @@ export interface PlaywrightGateRouteResult {
   statusCode: number | null;
   rendered: boolean;
   consoleErrors: string[];
+  /** How many of `consoleErrors` the app already logged before the run began. */
+  preExistingConsoleErrors?: number;
   forbiddenTextFound: string[];
   durationMs: number;
 }

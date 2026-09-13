@@ -43,6 +43,10 @@ export function envDisableModelEscalation(): boolean {
   return readString("HARNESS_NO_MODEL_SWITCH") === "1";
 }
 
+export function envDisableConsoleBaseline(): boolean {
+  return readString("HARNESS_NO_CONSOLE_BASELINE") === "1";
+}
+
 export function envSkillsRepo(): string | undefined {
   return readString("HARNESS_SKILLS_REPO");
 }

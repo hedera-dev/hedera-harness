@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added
+
+- **Pre-existing browser console errors no longer fail SMOKE.** The gate fails a
+  route on any console error, which read every piece of noise the app already
+  logged as something this attempt broke: a stock scaffold logs plenty with no
+  agent involved, so a run could spend its whole budget repairing a condition no
+  prompt can fix. Before the first GENERATE the harness now boots the dev server
+  once, walks the configured routes against the untouched app, and keeps those
+  errors; later attempts are failed only by errors that were not already there.
+  Texts are normalized so a fresh port, request id or timestamp does not read as
+  new, and app-wide noise also clears on routes the agent creates, which have no
+  baseline of their own. Recorded once per run directory and reused by
+  `--continue`, which must not re-read a workspace the agent has already
+  changed; disabled with `HARNESS_NO_CONSOLE_BASELINE=1`.
+
+### Fixed
+
+- **The gate no longer drops console errors it was about to record.** Console
+  messages arrive over the devtools protocol after the call that produced them,
+  and a small page hydrates instantly, so detaching the listener could beat the
+  message. The same page reported its error when measured alone and silently
+  reported none inside a full suite, which is a false pass for SMOKE. The gate
+  now flushes what the browser already queued before detaching.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.

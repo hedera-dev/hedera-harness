@@ -17,6 +17,7 @@ import { runDeterministicValidation, isReadyForPlaywrightSmoke } from "./validat
 import { buildDeployEnv } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { specHasEval } from "./sliceSelection.js";
+import { buildConsoleBaseline, type ConsoleBaseline } from "./validation/consoleBaseline.js";
 import {
   createDevServerSession,
   loadDevServerConfig,
@@ -46,6 +47,8 @@ export interface AttemptStageContext {
   chainSigner?: ChainSigner;
   /** Vendored eval checklist path, relative to the workspace. */
   evalRelativePath?: string;
+  /** Console noise the app logged before this run touched it. */
+  consoleBaseline?: ConsoleBaseline;
 }
 
 export interface GenerateStageResult {
@@ -180,6 +183,35 @@ export async function runAssertStage(context: AttemptStageContext): Promise<Vali
 }
 
 /**
+ * Record what the untouched app already logs to the browser console.
+ *
+ * Costs one dev-server boot and a route walk, once per run. A repair attempt
+ * costs 15-40 minutes and a paid agent session, and without this every one of
+ * them can be spent on noise the agent did not cause and cannot fix: a stock
+ * scaffold logs plenty with no agent involved.
+ *
+ * Routes that do not load yet (the agent has still to create them) contribute
+ * nothing; see buildConsoleBaseline.
+ */
+export async function captureConsoleBaseline(input: {
+  spec: TemplateSpec;
+  workspacePath: string;
+}): Promise<ConsoleBaseline | undefined> {
+  const playwrightPath = input.spec.validators.playwrightPath;
+  if (!playwrightPath) return undefined;
+
+  const serverConfig = await loadDevServerConfig(playwrightPath);
+  let devServer: DevServerSession | null = null;
+  try {
+    devServer = await createDevServerSession(input.workspacePath, serverConfig, "baseline");
+    const gate = await runPlaywrightGate(input.workspacePath, playwrightPath, devServer);
+    return buildConsoleBaseline(gate.result.routes);
+  } finally {
+    await devServer?.stop();
+  }
+}
+
+/**
  * SMOKE — prove the app actually runs: optional on-chain deploy, then boot the dev
  * server and walk the configured routes.
  */
@@ -188,7 +220,12 @@ export async function runSmokeStage(
   devServer: DevServerSession,
 ): Promise<{ findings: ValidationFinding[]; playwrightGate?: PlaywrightGateResult }> {
   const playwrightPath = context.spec.validators.playwrightPath!;
-  const gate = await runPlaywrightGate(context.workspacePath, playwrightPath, devServer);
+  const gate = await runPlaywrightGate(
+    context.workspacePath,
+    playwrightPath,
+    devServer,
+    context.consoleBaseline,
+  );
   return { findings: gate.findings, playwrightGate: gate.result };
 }
 

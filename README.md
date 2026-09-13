@@ -111,6 +111,15 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 
 Start at the bottom. Add a stage when the one below stops catching your failures.
 
+**SMOKE fails a route on any console error, so the run first records what the app already logs.**
+Before the first GENERATE the harness boots the dev server once, walks the same routes against the
+untouched app, and keeps those errors. Later attempts are only failed by errors that were not already
+there. Without it a stock scaffold — an unset WalletConnect id, a price feed that needs network — fails
+every attempt for a condition no repair prompt can fix. App-wide noise also carries onto routes the
+agent creates, which have no baseline of their own. Costs one dev server boot; skip it with
+`HARNESS_NO_CONSOLE_BASELINE=1`. It is recorded once per run directory, so a `--continue` reuses what was
+captured before the first attempt rather than re-reading a workspace the agent has already changed.
+
 The EVALUATE validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
 
 ## Branch behaviour
@@ -161,6 +170,7 @@ Operational knobs live in the environment, not the recipe. Editing a recipe to s
 | `HARNESS_AGENT_IDLE_TIMEOUT_MS` | kill an agent that stops producing output (default 90000) |
 | `HARNESS_MODEL` / `HARNESS_FIX_MODEL` | override the preset's models |
 | `HARNESS_NO_MODEL_SWITCH` | disable dropping to a cheaper model on repairs |
+| `HARNESS_NO_CONSOLE_BASELINE` | skip the pre-run console baseline (saves one dev server boot) |
 
 Precedence: CLI flag > environment > recipe > harness default.
 
