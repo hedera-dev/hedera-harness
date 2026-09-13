@@ -31,6 +31,12 @@ export function envAgentTimeoutMs(): number | undefined {
   return seconds === undefined ? undefined : seconds * 1_000;
 }
 
+/** CHAIN: how long to wait for a scheduled transaction to execute and be indexed. */
+export function envScheduleTimeoutMs(): number | undefined {
+  const seconds = readPositiveInt("HARNESS_SCHEDULE_TIMEOUT_S");
+  return seconds === undefined ? undefined : seconds * 1_000;
+}
+
 export function envModel(): string | undefined {
   return readString("HARNESS_MODEL");
 }

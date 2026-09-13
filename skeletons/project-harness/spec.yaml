@@ -90,5 +90,12 @@ baseline:
 #   operator:
 #     accountIdEnv: HEDERA_OPERATOR_ID
 #     privateKeyEnv: HEDERA_OPERATOR_KEY
+#   deploy:
+#     commands:
+#       - name: deploy-testnet
+#         command: yarn hardhat:deploy --network hederaTestnet
+# A deploy command that prints HARNESS_SCHEDULE_ID=0.0.x (or the 0x… address that
+# HIP-1215 scheduleCall returns) hands that schedule to CHAIN, which fails the
+# attempt unless it executed and its transaction succeeded.
 #
 # Note: harness logs always live under .harness/runs/ and are not configurable.
