@@ -30,7 +30,9 @@ export interface DeterministicValidationOptions {
 export function isReadyForPlaywrightSmoke(
   validation: Pick<ValidationResult, "findings">,
 ): boolean {
-  return validation.findings.every(finding => finding.category === "agent");
+  return validation.findings.every(
+    finding => finding.category === "agent" || finding.status === "waived",
+  );
 }
 
 interface StaticValidatorConfig {

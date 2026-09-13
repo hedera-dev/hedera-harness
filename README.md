@@ -111,6 +111,8 @@ One large PRD with three repair attempts is a poor fit for a real feature: the w
 
 Start at the bottom. Add a stage when the one below stops catching your failures.
 
+**Accepting a finding.** When a gate reports something a person has decided to live with for now, record it in `.harness/waivers.yaml` (`waivers:` in the recipe) with a reason and an end date instead of weakening the validator or paying an agent to repair it on every attempt. The finding is still reported, as `waived`, but fails nothing and never reaches the agent; expired waivers are enforced again and `doctor` warns; secret findings cannot be waived. See [Accepting a finding](docs/authoring-a-recipe.md#accepting-a-finding).
+
 The EVALUATE validator is told to **fail on uncertainty**. If it cannot reach the browser it says so and fails the assertion rather than guessing, so a passing verdict means something.
 
 ## Branch behaviour

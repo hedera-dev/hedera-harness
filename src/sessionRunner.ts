@@ -9,6 +9,7 @@ import { logPhase, runAttemptLoop } from "./attemptLoop.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { envMaxAttempts } from "./env.js";
 import type { ChainSigner, CliOptions, RunReport, SliceReport } from "./types.js";
+import { expiredWaivers, loadWaivers } from "./waivers.js";
 import { vendorHarnessContext } from "./contextVendor.js";
 import { selectActiveSlice } from "./sliceSelection.js";
 import { provideSkills } from "./skillProvider.js";
@@ -222,6 +223,20 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
     // budget. A continue resumes at the increment that stopped rather than redoing
     // work already committed; a failure stops the sequence, because later increments
     // are written assuming the earlier ones landed.
+    // Accepted findings are read once per run so every attempt applies the same set.
+    const waivers = spec.waiversPath ? await loadWaivers(spec.waiversPath) : [];
+    if (spec.waiversPath) {
+      const expired = expiredWaivers(waivers);
+      logPhase(
+        "Waivers",
+        `${waivers.length} accepted finding(s) from ${path.relative(projectRoot, spec.waiversPath)}${
+          expired.length > 0
+            ? `; ${expired.length} expired and enforced again: ${expired.map(w => w.finding).join(", ")}`
+            : ""
+        }`,
+      );
+    }
+
     const sliceCount = spec.prdPaths.length;
     const firstSlice = isContinue ? Math.min(session.sliceIndex ?? 0, sliceCount - 1) : 0;
     const slices: SliceReport[] = [];
@@ -265,6 +280,7 @@ export async function runSession(options: RunSessionOptions): Promise<SessionRun
         vendoredSkills,
         vendoredContext,
         chainSigner,
+        waivers,
         slice,
         previousOpenFindingIds: sliceIndex === firstSlice ? session.openFindingIds : [],
         commitAttempt: makeCheckpoint,

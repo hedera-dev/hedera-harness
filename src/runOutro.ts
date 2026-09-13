@@ -1,6 +1,7 @@
 import type { CleanupResult } from "./runCleanup.js";
 import type { SessionMetadata } from "./session.js";
 import type { RunReport } from "./types.js";
+import { describeWaiver } from "./waivers.js";
 
 export interface OutroInput {
   report: RunReport;
@@ -85,7 +86,9 @@ export function formatRunOutro(input: OutroInput): string[] {
     );
   }
 
-  const openFindings = report.validation.findings.filter(finding => finding.status !== "fixed");
+  const openFindings = report.validation.findings.filter(
+    finding => finding.status !== "fixed" && finding.status !== "waived",
+  );
   if (!report.passed && openFindings.length > 0) {
     lines.push("", "Open findings:");
     lines.push(
@@ -102,6 +105,14 @@ export function formatRunOutro(input: OutroInput): string[] {
   if (fixedFindings.length > 0) {
     lines.push("", `Closed by the last attempt (${fixedFindings.length}):`);
     lines.push(...fixedFindings.slice(0, 10).map(finding => `- ${finding.id}`));
+  }
+
+  const waivedFindings = report.validation.findings.filter(finding => finding.status === "waived");
+  if (waivedFindings.length > 0) {
+    lines.push("", `Waived, still present (${waivedFindings.length}):`);
+    lines.push(
+      ...waivedFindings.slice(0, 10).map(finding => `- ${finding.id}: ${describeWaiver(finding)}`),
+    );
   }
 
   return lines;

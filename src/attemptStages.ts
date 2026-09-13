@@ -7,6 +7,7 @@ import type {
   ChainSigner,
   CommandExecutionResult,
   EvaluationResult,
+  FindingWaiver,
   PlaywrightGateResult,
   TemplateSpec,
   ValidationFinding,
@@ -24,6 +25,7 @@ import {
 } from "./validation/devServer.js";
 import { runPlaywrightGate } from "./validation/playwrightGate.js";
 import { withValidatorMcp } from "./validatorMcp.js";
+import { applyWaivers, isBlockingFinding, waiveValidation } from "./waivers.js";
 import { WorkspaceWatcher } from "./workspaceWatcher.js";
 
 /**
@@ -46,6 +48,8 @@ export interface AttemptStageContext {
   chainSigner?: ChainSigner;
   /** Vendored eval checklist path, relative to the workspace. */
   evalRelativePath?: string;
+  /** Accepted findings from `waivers:`; applied to every stage's findings. */
+  waivers?: FindingWaiver[];
 }
 
 export interface GenerateStageResult {
@@ -293,12 +297,14 @@ export async function runValidationStages(
   const runEvaluate =
     hasPlaywright && isValidatorEnabled(context.spec) && specHasEval(context.spec);
 
+  const waivers = context.waivers ?? [];
   logStage("ASSERT");
   const deterministic = await runAssertStage(context);
 
   // Generator exit/timeout findings are recorded but must not fail ASSERT or skip
   // SMOKE/EVALUATE — Cursor often hangs after finishing work; the gates decide pass.
-  const validation = mergeGenerateFinding(deterministic, generateFinding);
+  // Waived findings are reported but do not fail the stage either.
+  const validation = waiveValidation(mergeGenerateFinding(deterministic, generateFinding), waivers);
 
   if (!isReadyForPlaywrightSmoke(validation)) {
     logStage("SMOKE", "skipped — deterministic gates are not clean");
@@ -327,11 +333,10 @@ export async function runValidationStages(
     const smoke = await runSmokeStage(context, devServer);
     const afterSmoke: ValidationResult = {
       ...validation,
-      findings: [...validation.findings, ...smoke.findings],
+      findings: [...validation.findings, ...applyWaivers(smoke.findings, waivers).findings],
       playwrightGate: smoke.playwrightGate,
     };
-    afterSmoke.passed =
-      afterSmoke.findings.filter(finding => finding.category !== "agent").length === 0;
+    afterSmoke.passed = afterSmoke.findings.every(finding => !isBlockingFinding(finding));
 
     if (!afterSmoke.passed) {
       logStage("EVALUATE", "skipped — smoke gate failed");
@@ -352,7 +357,10 @@ export async function runValidationStages(
         artifactsDirectory: context.layout.runDirectory,
       },
       async mcpArgs => {
-        const evaluation = await runEvaluateStage(context, devServer!, mcpArgs);
+        const evaluation = waiveEvaluation(
+          await runEvaluateStage(context, devServer!, mcpArgs),
+          waivers,
+        );
         return evaluation.passed
           ? { ...afterSmoke, evaluation }
           : {
@@ -366,6 +374,23 @@ export async function runValidationStages(
   } finally {
     await devServer?.stop();
   }
+}
+
+/**
+ * Waived evaluate findings do not fail EVALUATE. An infrastructure failure is
+ * never waived away: the verdict was not about the app.
+ */
+export function waiveEvaluation(
+  evaluation: EvaluationResult,
+  waivers: FindingWaiver[],
+): EvaluationResult {
+  if (waivers.length === 0 || evaluation.infrastructureFailure) return evaluation;
+  const applied = applyWaivers(evaluation.findings, waivers);
+  return {
+    ...evaluation,
+    findings: applied.findings,
+    passed: evaluation.passed || applied.findings.every(finding => !isBlockingFinding(finding)),
+  };
 }
 
 /**

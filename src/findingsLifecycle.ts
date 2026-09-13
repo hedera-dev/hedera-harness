@@ -5,6 +5,8 @@ export interface FindingDelta {
   open: string[];
   fixed: string[];
   introduced: string[];
+  /** Ids a waiver accepted this attempt. Not open, not fixed: a human's call, not the agent's. */
+  waived: string[];
 }
 
 export function findingIds(findings: ValidationFinding[]): string[] {
@@ -16,13 +18,18 @@ export function computeFindingDelta(
   findings: ValidationFinding[],
 ): FindingDelta {
   const previous = new Set(previousOpenIds);
-  const open = findingIds(findings);
+  const waived = findingIds(findings.filter(finding => finding.status === "waived"));
+  const waivedSet = new Set(waived);
+  const open = findingIds(findings).filter(id => !waivedSet.has(id));
   const current = new Set(open);
 
   return {
     open,
-    fixed: previousOpenIds.filter(id => !current.has(id)),
+    // A finding that was open last attempt and is waived now is not "fixed":
+    // nothing in the app changed, a person accepted it.
+    fixed: previousOpenIds.filter(id => !current.has(id) && !waivedSet.has(id)),
     introduced: open.filter(id => !previous.has(id)),
+    waived,
   };
 }
 
@@ -32,7 +39,10 @@ export function applyFindingStatus(
   delta: FindingDelta,
   previousFindings: ValidationFinding[] = [],
 ): ValidationFinding[] {
-  const open: ValidationFinding[] = findings.map(finding => ({ ...finding, status: "open" }));
+  const open: ValidationFinding[] = findings.map(finding => ({
+    ...finding,
+    status: finding.status === "waived" ? "waived" : "open",
+  }));
 
   const fixed = new Set(delta.fixed);
   const carried = previousFindings
@@ -50,11 +60,14 @@ export function applyFindingStatus(
 }
 
 export function formatFindingDelta(delta: FindingDelta): string {
+  // Deltas read back from reports written before waivers existed have no `waived`.
+  const waived = delta.waived ?? [];
   if (delta.open.length === 0 && delta.fixed.length === 0) {
-    return "no findings";
+    return waived.length > 0 ? `no findings, ${waived.length} waived` : "no findings";
   }
   const parts = [`${delta.open.length} open`];
   if (delta.fixed.length > 0) parts.push(`${delta.fixed.length} fixed`);
   if (delta.introduced.length > 0) parts.push(`${delta.introduced.length} new`);
+  if (waived.length > 0) parts.push(`${waived.length} waived`);
   return parts.join(", ");
 }

@@ -1,4 +1,5 @@
 import { runInit } from "./initRunner.js";
+import { describeWaiver } from "./waivers.js";
 import { formatDoctorReport, runDoctor } from "./doctor.js";
 import { validateSemanticWorkspace, validateWorkspace } from "./runner.js";
 import { runSession } from "./sessionRunner.js";
@@ -114,7 +115,15 @@ export async function runCli(parsed: ParsedCli): Promise<void> {
         validation.playwrightGate
           ? `playwrightGate=${validation.playwrightGate.passed} routes=${validation.playwrightGate.routes.length}`
           : undefined,
-        ...validation.findings.map(finding => `- ${finding.message}`),
+        validation.findings.some(finding => finding.status === "waived")
+          ? `waived=${validation.findings.filter(finding => finding.status === "waived").length}`
+          : undefined,
+        ...validation.findings
+          .filter(finding => finding.status !== "waived")
+          .map(finding => `- ${finding.message}`),
+        ...validation.findings
+          .filter(finding => finding.status === "waived")
+          .map(finding => `~ waived: ${finding.message} (${describeWaiver(finding)})`),
         ...validation.commandResults.map(
           result => `command ${result.command} exit=${result.exitCode} durationMs=${result.durationMs}`,
         ),

@@ -123,7 +123,9 @@ export async function buildRepairPrompt(
   attempt: number,
   vendoredContext?: VendoredContext,
 ): Promise<string> {
-  const actionable = findings.filter(finding => finding.category !== "eval-infra");
+  const actionable = findings.filter(
+    finding => finding.category !== "eval-infra" && finding.status !== "waived",
+  );
   const scope = classifyRepairScope(actionable);
   const evalPath = vendoredContext?.evalRelativePath ?? VENDORED_EVAL_PATH;
   const prdPath = vendoredContext?.prdRelativePath ?? VENDORED_PRD_PATH;

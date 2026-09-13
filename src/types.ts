@@ -214,6 +214,8 @@ export interface TemplateSpec {
   chainValidation?: ChainValidationConfig;
   /** Host-app health commands run once before generation. */
   baseline?: BaselineConfig;
+  /** Absolute path of the accepted-findings file (`waivers:`), when the recipe has one. */
+  waiversPath?: string;
   maxAttempts: number;
   logging: {
     jsonlPath: string;
@@ -266,6 +268,19 @@ export interface EvaluationResult {
   infrastructureFailureReason?: string;
 }
 
+/**
+ * A human's decision to accept a finding for now. Lives in `.harness/waivers.yaml`;
+ * every waiver names what it accepts, why, and until when.
+ */
+export interface FindingWaiver {
+  /** Exact finding id, or a prefix pattern ending in `*` (e.g. `playwright:route:home:*`). */
+  finding: string;
+  reason: string;
+  /** Last day the waiver applies, YYYY-MM-DD. */
+  expires: string;
+  by?: string;
+}
+
 export interface ValidationFinding {
   id: string;
   category:
@@ -281,9 +296,13 @@ export interface ValidationFinding {
   details?: string;
   /**
    * Lifecycle across attempts. `fixed` findings are carried forward from a prior
-   * attempt to show what the last repair closed; they are not failures.
+   * attempt to show what the last repair closed; they are not failures. `waived`
+   * findings matched an accepted-findings entry: reported, not failing, never
+   * sent to the agent.
    */
-  status?: "open" | "fixed";
+  status?: "open" | "fixed" | "waived";
+  /** The waiver that accepted this finding, when status is `waived`. */
+  waiver?: FindingWaiver;
   /** Evaluate-checklist assertion id when category is eval (e.g. E7). */
   assertion?: string;
   /** Route associated with an eval finding, when known. */
@@ -328,6 +347,8 @@ export interface RunReport {
   openFindingIds: string[];
   /** Finding ids the final attempt closed. */
   fixedFindingIds: string[];
+  /** Finding ids accepted by a waiver on the final attempt. Absent on reports written before waivers. */
+  waivedFindingIds?: string[];
   /** One entry per increment attempted this kick. Single-PRD recipes have one. */
   slices?: SliceReport[];
   startedAt: string;
@@ -426,6 +447,7 @@ export type HarnessLogEvent =
       openFindingIds?: string[];
       fixedFindingIds?: string[];
       introducedFindingIds?: string[];
+      waivedFindingIds?: string[];
     }
   | {
       type: "validator_started";

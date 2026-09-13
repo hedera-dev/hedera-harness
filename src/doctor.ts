@@ -1,5 +1,6 @@
 import path from "node:path";
 import { commandExists, readGitRepoSnapshot } from "./harnessGit.js";
+import { pathExists } from "./fsUtils.js";
 import { loadTemplateSpec } from "./specLoader.js";
 import { isValidatorEnabled } from "./evaluation.js";
 import {
@@ -84,6 +85,7 @@ export async function runDoctor(
   checks.push(recipe.check);
   checks.push(...mid.map(toDoctorCheck));
   checks.push(await checkPromptOverrides(recipe.spec.projectRoot));
+  checks.push(...(await checkWaivers(recipe.spec)));
   checks.push(...(await checkOptionalDeps(recipe.spec, workspacePath)));
   checks.push(...evaluate.map(toDoctorCheck));
   checks.push(...checkChainEnv(recipe.spec));
@@ -252,6 +254,54 @@ async function checkPromptOverrides(projectRoot: string): Promise<DoctorCheck> {
     detail: `${overridden.length} override(s): ${overridden.join(", ")}`,
     fix: `Overrides in ${PROJECT_PROMPTS_DIR}/ do not track harness updates — re-check them after upgrading.`,
   };
+}
+
+/**
+ * Accepted findings: the file must parse, and an expired waiver is worth a
+ * warning before a run, because the finding it covered is enforced again and
+ * will cost repair attempts.
+ */
+async function checkWaivers(spec: TemplateSpec): Promise<DoctorCheck[]> {
+  if (!spec.waiversPath) return [];
+  // A missing file is already a recipe-file failure in the shared preflight.
+  if (!(await pathExists(spec.waiversPath))) return [];
+  const { loadWaivers, expiredWaivers } = await import("./waivers.js");
+  const relative = path.relative(spec.projectRoot, spec.waiversPath);
+  try {
+    const waivers = await loadWaivers(spec.waiversPath);
+    const expired = expiredWaivers(waivers);
+    if (expired.length > 0) {
+      return [
+        {
+          name: "accepted findings",
+          status: "warn",
+          detail: `${waivers.length} accepted finding(s), ${expired.length} expired`,
+          fix: `Expired waivers are enforced again. Extend or remove in ${relative}: ${expired
+            .map(waiver => `${waiver.finding} (${waiver.expires})`)
+            .join(", ")}`,
+        },
+      ];
+    }
+    return [
+      {
+        name: "accepted findings",
+        status: "ok",
+        detail:
+          waivers.length === 0
+            ? `${relative} lists no accepted findings`
+            : `${waivers.length} accepted finding(s), none expired`,
+      },
+    ];
+  } catch (error) {
+    return [
+      {
+        name: "accepted findings",
+        status: "fail",
+        detail: error instanceof Error ? error.message : String(error),
+        fix: `Fix ${relative}: every entry needs finding, reason and expires (YYYY-MM-DD); secret findings cannot be waived.`,
+      },
+    ];
+  }
 }
 
 /**

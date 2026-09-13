@@ -286,6 +286,7 @@ async function checkRecipeFiles(spec: TemplateSpec): Promise<PreflightVerdict[]>
     ["validators.static", spec.validators.staticPath],
     ["validators.commands", spec.validators.commandsPath],
     ["validators.playwright", spec.validators.playwrightPath],
+    ["waivers", spec.waiversPath],
     ...evalTargets.map((evalPath, i): [string, string] => [
       evalTargets.length > 1 ? `eval[${i}]` : "eval",
       evalPath,

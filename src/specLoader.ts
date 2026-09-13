@@ -68,6 +68,7 @@ export async function loadTemplateSpec(specPath: string): Promise<LoadedTemplate
     secretScan: readSecretScan(parsed, workspaces),
     chainValidation: readChainValidation(parsed),
     baseline: readBaseline(parsed),
+    waiversPath: readOptionalProjectPath(parsed, projectRoot, "waivers"),
     maxAttempts: readOptionalNumber(parsed, "maxAttempts") ?? DEFAULT_MAX_ATTEMPTS,
     logging: {
       jsonlPath: resolveProjectPath(projectRoot, HARNESS_JSONL_LOG_PATH),
@@ -248,6 +249,20 @@ function readValidators(
     ),
     playwrightPath: readOptionalValidatorPath(projectRoot, validators, "playwright"),
   };
+}
+
+/** Optional top-level path key, resolved against the project root. */
+function readOptionalProjectPath(
+  parsed: Record<string, unknown>,
+  projectRoot: string,
+  key: string,
+): string | undefined {
+  const candidate = parsed[key];
+  if (candidate === undefined) return undefined;
+  if (typeof candidate !== "string" || !candidate.trim()) {
+    throw new Error(`Expected optional non-empty string "${key}" in template spec.`);
+  }
+  return resolveProjectPath(projectRoot, candidate);
 }
 
 function resolveProjectPath(projectRoot: string, value: string): string {

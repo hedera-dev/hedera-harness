@@ -24,6 +24,7 @@ import {
 } from "./validation/chainSigner.js";
 import { isValidatorEnabled, runEvaluation } from "./evaluation.js";
 import { withValidatorMcp } from "./validatorMcp.js";
+import { applyWaivers, isBlockingFinding, loadWaivers, waiveValidation } from "./waivers.js";
 
 export async function validateWorkspace(options: CliOptions): Promise<ValidationResult> {
   // Project-centric default: validate the current project (cwd), like `run`.
@@ -34,7 +35,11 @@ export async function validateWorkspace(options: CliOptions): Promise<Validation
   // plus an optional Playwright SMOKE owned by createDevServerSession.
   const loaded = await loadTemplateSpec(options.specPath);
   const { spec } = loaded;
-  const deterministic = await runDeterministicValidation(workspacePath, spec);
+  const waivers = spec.waiversPath ? await loadWaivers(spec.waiversPath) : [];
+  const deterministic = waiveValidation(
+    await runDeterministicValidation(workspacePath, spec),
+    waivers,
+  );
 
   const playwrightPath = spec.validators.playwrightPath;
   if (!playwrightPath) {
@@ -52,9 +57,9 @@ export async function validateWorkspace(options: CliOptions): Promise<Validation
     console.log("[hedera-harness] Running thin Playwright gate...");
     devServer = await createDevServerSession(workspacePath, serverConfig, "validate");
     const gate = await runPlaywrightGate(workspacePath, playwrightPath, devServer);
-    const findings = [...deterministic.findings, ...gate.findings];
+    const findings = [...deterministic.findings, ...applyWaivers(gate.findings, waivers).findings];
     return {
-      passed: findings.length === 0,
+      passed: findings.every(finding => !isBlockingFinding(finding)),
       findings,
       commandResults: deterministic.commandResults,
       playwrightGate: gate.result,

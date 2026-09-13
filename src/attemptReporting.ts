@@ -112,6 +112,7 @@ export async function recordAttemptResult(input: {
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
     introducedFindingIds: delta.introduced,
+    waivedFindingIds: delta.waived,
   });
 
   await writeStatusFile(layout.runDirectory, {
@@ -121,6 +122,7 @@ export async function recordAttemptResult(input: {
     findingCount: delta.open.length,
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
+    waivedFindingIds: delta.waived,
     evaluationPassed: validation.evaluation?.passed,
     infrastructureFailure: validation.evaluation?.infrastructureFailure ?? false,
   });
@@ -134,12 +136,18 @@ export async function recordAttemptResult(input: {
     : validation.passed
       ? (validation.playwrightGate
           ? `playwright gate passed (${validation.playwrightGate.routes.length} routes)`
-          : "deterministic gates passed")
+          : "deterministic gates passed") + waivedSuffix(delta)
       : formatFindingDelta(delta);
 
   console.log(
     `[hedera-harness] Attempt ${attempt} ${validation.passed ? "PASSED" : "FAILED"} — ${summary}`,
   );
+}
+
+/** A green attempt still says what a person accepted to get there. */
+function waivedSuffix(delta: FindingDelta): string {
+  const waived = delta.waived ?? [];
+  return waived.length > 0 ? `, ${waived.length} waived` : "";
 }
 
 export async function abortOnInfrastructureFailure(input: {
@@ -230,6 +238,7 @@ export async function finishRun(input: {
     passed: validation.passed,
     openFindingIds: delta.open,
     fixedFindingIds: delta.fixed,
+    waivedFindingIds: delta.waived,
     startedAt: input.startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - input.startedAt.getTime(),

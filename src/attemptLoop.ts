@@ -31,12 +31,14 @@ import type { VendoredContext } from "./contextVendor.js";
 import type { VendoredSkill } from "./skillProvider.js";
 import type {
   ChainSigner,
+  FindingWaiver,
   RunReport,
   TemplateSpec,
   ValidationFinding,
   ValidationResult,
 } from "./types.js";
 import type { CheckpointCommitResult } from "./harnessGit.js";
+import { describeWaiver } from "./waivers.js";
 
 /** Shared per-run session metadata passed through the attempt loop. */
 export interface SessionContext {
@@ -81,6 +83,8 @@ export interface AttemptLoopInput {
   vendoredSkills: VendoredSkill[];
   vendoredContext: VendoredContext;
   chainSigner?: ChainSigner;
+  /** Accepted findings from `waivers:`, loaded once per run. */
+  waivers?: FindingWaiver[];
   /** Which increment of an ordered `prd:` list this loop is delivering. */
   slice?: SliceContext;
   /** Finding ids still open when the previous cycle stopped, for delta reporting. */
@@ -139,7 +143,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
   let latestPrompt = await promptStrategy.buildInitialPrompt(isContinue, cycle);
   let openFindingIds = input.previousOpenFindingIds ?? [];
   let previousFindings: ValidationFinding[] = [];
-  let delta: FindingDelta = { open: openFindingIds, fixed: [], introduced: [] };
+  let delta: FindingDelta = { open: openFindingIds, fixed: [], introduced: [], waived: [] };
 
   while (attemptsThisCycle < maxAttempts) {
     attempts += 1;
@@ -152,6 +156,7 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
       layout,
       chainSigner,
       evalRelativePath: vendoredContext.evalRelativePath,
+      waivers: input.waivers,
     };
 
     const kind = attemptKind(isContinue, attempts, attemptsThisCycle);
@@ -216,8 +221,11 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
         : [
             formatFindingDelta(delta),
             ...validation.findings
-              .filter(f => f.status !== "fixed")
+              .filter(f => f.status !== "fixed" && f.status !== "waived")
               .map(f => `- [${f.category}] ${f.message}`),
+            ...validation.findings
+              .filter(f => f.status === "waived")
+              .map(f => `- [waived] ${f.id}: ${describeWaiver(f)}`),
           ].join("\n"),
     );
 
@@ -226,8 +234,11 @@ export async function runAttemptLoop(input: AttemptLoopInput): Promise<RunReport
     if (validation.passed) break;
 
     if (attemptsThisCycle < maxAttempts) {
+      // Waived findings never reach the agent: a person accepted them.
       latestPrompt = await promptStrategy.buildRepairPrompt(
-        validation.findings.filter(finding => finding.status !== "fixed"),
+        validation.findings.filter(
+          finding => finding.status !== "fixed" && finding.status !== "waived",
+        ),
         attempts + 1,
       );
     }

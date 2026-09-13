@@ -70,6 +70,19 @@ baseline:
 # requiredFiles:
 #   - packages/nextjs/app/my-feature/page.tsx
 #
+# Findings a person has accepted for now. Each entry names the finding id (or
+# a prefix pattern ending in *), why, and the last day it applies; a waived
+# finding is reported but fails nothing and never reaches the agent. Secret
+# findings cannot be waived.
+# waivers: .harness/waivers.yaml
+#
+# # .harness/waivers.yaml
+# waivers:
+#   - finding: playwright:route:home:console
+#     reason: Vendor analytics logs a CSP warning; accepted until their fix ships.
+#     expires: 2026-10-31
+#     by: <YOUR_NAME>
+#
 # ── Higher stages (opt-in) ───────────────────────────────────────────────────
 #
 # SMOKE boots the app and walks its routes.

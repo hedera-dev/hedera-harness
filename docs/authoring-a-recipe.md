@@ -217,6 +217,53 @@ real features: the work is too big for the budget, and a failure discards
 everything. Start with the credential-free read path, then layer wallet and
 on-chain behaviour as separate increments.
 
+## Accepting a finding
+
+```yaml
+waivers: .harness/waivers.yaml
+```
+
+```yaml
+# .harness/waivers.yaml
+waivers:
+  - finding: playwright:route:home:console      # exact id, or a prefix pattern ending in *
+    reason: Vendor analytics logs a CSP warning; accepted until their fix ships.
+    expires: 2026-10-31                         # last day the waiver applies, YYYY-MM-DD
+    by: <YOUR_NAME>                             # optional
+  - finding: static-required:docs/*
+    reason: The docs land in the next increment; this one is the API only.
+    expires: 2026-10-15
+```
+
+Sometimes a gate is right and you still do not want the agent to act on it
+today: a console warning from a script you do not control, a lint rule the
+team disagrees with, a file the PRD leaves for a later increment. Without a
+place to record that decision, every attempt of every run pays an agent to
+"repair" it, and the only escape is to weaken the validator for everyone.
+
+A waiver is that place. It is deliberately small:
+
+- **It names the finding.** The `finding` is the id you see in
+  `reports/report.json` and the attempt notes, or a prefix pattern ending in
+  `*` for one waiver across the routes of a gate. A pattern cannot start with
+  `*`.
+- **It says why and until when.** `reason` and `expires` are required. A
+  waiver past its date is enforced again on the next attempt, and `doctor`
+  warns about it before the run.
+- **It changes reporting, not the gate.** A matching finding is still
+  produced and still shows in the attempt line (`1 open, 1 waived`), in
+  `report.json` (`status: "waived"` with the waiver attached, and
+  `waivedFindingIds`), in the run notes, the outro and `validate`. It fails no
+  stage and is never written into a repair prompt. It is not counted as
+  "fixed" either: nothing in the app changed.
+- **Secrets cannot be waived.** A `secret-*` pattern fails at load, and a
+  pattern that reaches a `[secret]` finding by accident is ignored with a
+  message. `[agent]` and `[eval-infra]` findings are not waivable because they
+  are not app defects to begin with.
+
+Waivers apply to every stage: ASSERT, SMOKE and EVALUATE. Keep the file in
+git; it is part of the recipe, and the reasons are the review trail.
+
 ## Before a full run
 
 A real run costs 40 minutes to two hours, so check cheaply first:

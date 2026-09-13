@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **Accepted findings** (`waivers: .harness/waivers.yaml`). A gate sometimes
+  reports something a person has looked at and accepted for now: a console
+  warning from a vendor script, a lint rule the team disagrees with, a route
+  the PRD leaves for a later increment. Until now every attempt of every run
+  paid an agent to "repair" it, and the only escape was to weaken the validator
+  for everyone. A waiver names the finding id (or a prefix pattern such as
+  `playwright:route:home:*`), the reason, who accepted it and the last day it
+  applies. A matching finding is still reported, as `waived`, but it fails no
+  stage, is never written into a repair prompt, and never counts as "fixed".
+  Every waiver must expire; an expired one is enforced again and `doctor`
+  warns. Secret findings cannot be waived, whatever the file says. Attempt
+  lines, `report.json`, `status.json`, the outro and `validate` all show what
+  was waived and why.
+
 ## 2.0.0-rc.4 — 2026-09-03
 
 SMOKE works from the harness package alone. npm `latest` remains **1.2.2**.
