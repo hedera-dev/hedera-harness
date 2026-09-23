@@ -22,6 +22,21 @@ import { emit } from "./events.js";
 const ATTEMPTS = 3;
 const SPACING_MS = 2_000;
 
+/** A page, and then the thing on it. Client-rendered values arrive after the paint. */
+const PAGE_MS = 20_000;
+const ELEMENT_MS = 10_000;
+
+/**
+ * After the element exists, before it is read.
+ *
+ * `waitForSelector` returns the moment the element is in the DOM, which for a
+ * client-rendered page is while it still shows its placeholder — so reading
+ * there gets the em dash rather than the balance. Network idle covers a value
+ * fetched on mount; this covers one written by a timer, which is how anything
+ * that polls behaves, including specs we have already written.
+ */
+const SETTLE_MS = 700;
+
 /**
  * Deliberately small: enough to express a claim, too little to express a
  * program. No conditionals, and no check may refer to another — the moment one
@@ -49,7 +64,7 @@ export interface Check {
    * can say which, so it is reported and never overrides.
    */
   source: "declared" | "derived";
-  kind: "chain" | "http";
+  kind: "chain" | "http" | "dom";
   /** Mirror node path below `/api/v1/`, e.g. `accounts/0.0.2`. */
   path: string;
   /** Dotted path into the response, e.g. `balance.balance`. Values are in the units the mirror node reports. */
@@ -88,7 +103,7 @@ export interface CheckResult {
  * fixed check and a broken one as the same thing.
  */
 export function locate(
-  kind: "chain" | "http",
+  kind: "chain" | "http" | "dom",
   path: string,
   field: string,
   expect: Expectation,
@@ -102,6 +117,19 @@ export interface Where {
   mirrorNode: string;
   appUrl: string;
 }
+
+/**
+ * Reads what a selector actually shows, in a real browser.
+ *
+ * The only kind that needs one. `http` sees the served HTML, which for anything
+ * rendered on the client is an empty shell — a spec that says `#balance` shows a
+ * number is unanswerable from the response body of a Next.js app. That is the
+ * whole reason this exists, and the reason it is worth a browser launch.
+ *
+ * A page that will not load is unreadable and warns. A page that loads without
+ * the element has failed the claim: the spec said it would be there.
+ */
+export type Look = (route: string, selector: string) => Promise<{ value: unknown } | { error: string }>;
 
 /** Reads `field` out of the app's own answer for a route: `status`, or `body`. */
 export async function reach(
@@ -143,13 +171,17 @@ export async function read(
  * claim made the instant after a transaction can be true and not yet visible;
  * an unreadable path is not retried, because that is not going to change.
  */
-export async function settle(where: Where, check: Check): Promise<CheckResult> {
+export async function settle(where: Where, check: Check, look?: Look): Promise<CheckResult> {
   let last: CheckResult | null = null;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     const found =
-      check.kind === "http"
-        ? await reach(where.appUrl, check.path, check.field)
-        : await read(where.mirrorNode, check.path, check.field);
+      check.kind === "dom"
+        ? look === undefined
+          ? { error: "no browser was open to look with" }
+          : await look(check.path, check.field)
+        : check.kind === "http"
+          ? await reach(where.appUrl, check.path, check.field)
+          : await read(where.mirrorNode, check.path, check.field);
     if ("error" in found) return { check, state: "errored", detail: found.error };
 
     last = compare(check, found.value);
@@ -232,8 +264,13 @@ export async function settleAll(
   attempt: number,
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
-  for (const check of checks) {
-    const result = await settle(where, check);
+  // One browser for every selector, opened only if something needs it: a launch
+  // costs a second or two, and most runs have nothing to look at.
+  const looking = checks.some((check) => check.kind === "dom") ? await opens(where.appUrl) : null;
+
+  try {
+    for (const check of checks) {
+      const result = await settle(where, check, looking?.look);
     emit({
       type: "check:settled",
       id: result.check.id,
@@ -243,7 +280,41 @@ export async function settleAll(
       because: result.check.because,
       attempt,
     });
-    results.push(result);
+      results.push(result);
+    }
+  } finally {
+    await looking?.close();
   }
   return results;
+}
+
+/**
+ * A browser, and a way to read one element with it. Waits for the selector
+ * rather than for the page, because the values a spec cares about arrive after
+ * the first paint.
+ */
+async function opens(appUrl: string): Promise<{ look: Look; close: () => Promise<void> }> {
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ headless: true });
+
+  const look: Look = async (route, selector) => {
+    const url = `${appUrl.replace(/\/$/, "")}/${route.replace(/^\//, "")}`;
+    const page = await browser.newPage();
+    try {
+      const response = await page
+        .goto(url, { timeout: PAGE_MS, waitUntil: "networkidle" })
+        .catch(() => null);
+      if (response === null) return { error: `${url} would not load` };
+
+      const element = await page.waitForSelector(selector, { timeout: ELEMENT_MS }).catch(() => null);
+      // Not an error: the spec said this would be here, and it is not.
+      if (element === null) return { value: null };
+
+      await page.waitForTimeout(SETTLE_MS);
+      return { value: (await element.textContent())?.trim() ?? "" };
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  };
+  return { look, close: () => browser.close().catch(() => undefined) };
 }
