@@ -8,7 +8,7 @@ import { z } from "zod";
 import { type Check, type CheckResult, baseline, locate, settleAll } from "./checks.js";
 import { emit } from "./events.js";
 import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
-import { describeMessage, endingOf } from "./messages.js";
+import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
 /** See PLAN-V2 § Bounds — shorter than GENERATE: judging is cheaper than building. */
@@ -286,6 +286,10 @@ async function pass(
   // so the target repo does not have to depend on it.
   const previousPath = process.env["PATH"] ?? "";
   process.env["PATH"] = `${join(HARNESS_ROOT, "node_modules", ".bin")}:${previousPath}`;
+
+  // The brief carries the wallet key, so this is the one recording that must
+  // never be written verbatim.
+  await said(transcript, turn.resume === undefined ? "prompt" : "nudge", turn.prompt, signer?.key);
 
   try {
     const conversation = query({

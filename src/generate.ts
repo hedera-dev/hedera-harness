@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { readdir } from "node:fs/promises";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { emit } from "./events.js";
-import { describeMessage, endingOf } from "./messages.js";
+import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
 /** See PLAN-V2 § Bounds. Starting points, to be tuned once there are real runs. */
@@ -61,6 +61,8 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   const plugins = await discoverPlugins();
 
   const startedAt = Date.now();
+  // Both halves, in order: what the agent was asked, before what it did.
+  await said(transcript, "prompt", options.prompt);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), WALL_CLOCK_MS);
 

@@ -1,9 +1,10 @@
 /**
- * Reading the SDK's message stream.
+ * The conversation with an agent: reading its half, and recording ours.
  *
  * Parsing only — what a tool call *was*. How it looks on a terminal belongs to
  * a renderer, and lives in `render/terminal.ts`.
  */
+import { appendFile } from "node:fs/promises";
 
 /**
  * Pulls the one line worth reporting out of an SDK message, or null when there
@@ -64,12 +65,16 @@ export function endingOf(message: unknown, maxTurns: number): Ending | null {
     total_cost_usd?: number;
     is_error?: boolean;
     subtype?: string;
+    result?: string;
   };
   if (candidate.type !== "result") return null;
   return {
     turns: candidate.num_turns ?? 0,
     costUsd: candidate.total_cost_usd,
-    failure: candidate.is_error === true ? describeStop(candidate.subtype, maxTurns) : null,
+    failure:
+      candidate.is_error === true
+        ? describeStop(candidate.subtype, maxTurns, candidate.result)
+        : null,
   };
 }
 
@@ -85,6 +90,7 @@ export function endingOf(message: unknown, maxTurns: number): Ending | null {
 function describeStop(
   subtype: string | undefined,
   maxTurns: number,
+  said: string | undefined,
 ): { reason: string; recoverable: boolean } {
   if (subtype === "error_max_turns") {
     return { reason: `it used all ${maxTurns} of its turns`, recoverable: true };
@@ -92,5 +98,47 @@ function describeStop(
   if (subtype === "error_max_budget_usd") {
     return { reason: "it reached its spend limit", recoverable: false };
   }
-  return { reason: `it stopped early (${subtype ?? "error"})`, recoverable: false };
+  // Everything else: the subtype is a label and the payload is the reason. A
+  // usage limit arrives as `subtype: "success"` with `is_error: true`, and
+  // reporting the label alone produced "it stopped early (success)" while
+  // "You've hit your session limit · resets 4:50pm" sat unread in the same
+  // message.
+  const told = said?.trim();
+  return {
+    reason: told !== undefined && told !== "" ? told : `it stopped early (${subtype ?? "error"})`,
+    recoverable: false,
+  };
+}
+
+/**
+ * Records what the harness said, so a transcript is both halves.
+ *
+ * The SDK streams the agent's messages but not the prompt that started them,
+ * so `generate.jsonl` and `evaluate.jsonl` held everything an agent did and
+ * nothing it was asked. That gap is not academic: verifying that a corrected
+ * nudge actually reached the model was impossible from the artifacts, leaving
+ * only the model's behaviour to infer it from — in a tool whose claim is that
+ * you need not infer.
+ *
+ * Marked with a `harness:` type so it cannot be mistaken for something the
+ * agent said, and redacted, because a brief now carries a live key.
+ */
+export async function said(
+  transcript: string,
+  what: "prompt" | "nudge",
+  text: string,
+  secret?: string | undefined,
+): Promise<void> {
+  const entry = { type: `harness:${what}`, at: new Date().toISOString(), text: redact(text, secret) };
+  await appendFile(transcript, `${JSON.stringify(entry)}\n`);
+}
+
+/**
+ * Kept here rather than imported from `wallet.ts` so that recording a message
+ * cannot depend on the thing it is protecting against. A value too short to be
+ * a key would match half a transcript, so it is refused.
+ */
+function redact(text: string, secret: string | undefined): string {
+  if (secret === undefined || secret.length < 8) return text;
+  return text.split(secret).join("«redacted»");
 }

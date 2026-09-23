@@ -181,3 +181,27 @@ test("a verdict's findings are compared by where, not by how they are evidenced"
   assert.notEqual(locators(one), locators(dropped), "dropping a finding is");
   assert.equal(locators(null), "");
 });
+
+/**
+ * A usage limit arrives as `subtype: "success"` with `is_error: true`, and the
+ * only useful part is the payload. Reporting the label alone produced "the
+ * evaluator stopped because it stopped early (success)" while "You've hit your
+ * session limit · resets 4:50pm" sat unread in the same message.
+ */
+test("when the SDK stops for a reason it states, that reason is what is reported", () => {
+  const limited = endingOf(
+    {
+      type: "result",
+      is_error: true,
+      subtype: "success",
+      result: "You've hit your session limit · resets 4:50pm (Europe/Bucharest)",
+    },
+    300,
+  );
+  assert.match(limited?.failure?.reason ?? "", /session limit · resets 4:50pm/);
+  assert.equal(limited?.failure?.recoverable, false);
+
+  // A bound the harness set is named by the harness, not by the payload.
+  const capped = endingOf({ type: "result", is_error: true, subtype: "error_max_turns" }, 300);
+  assert.equal(capped?.failure?.reason, "it used all 300 of its turns");
+});
