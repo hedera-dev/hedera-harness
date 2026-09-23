@@ -294,6 +294,10 @@ export async function settleAll(
  * the first paint.
  */
 async function opens(appUrl: string): Promise<{ look: Look; close: () => Promise<void> }> {
+  // Declared rather than borrowed. It arrives under `@playwright/cli` anyway,
+  // so naming it adds no install weight — but importing a transitive dependency
+  // means a minor bump in the package above could move it and break this at
+  // runtime, on a path that only runs when a spec names an element.
   const { chromium } = await import("playwright-core");
   const browser = await chromium.launch({ headless: true });
 
