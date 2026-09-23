@@ -90,6 +90,7 @@ harness report [run]        read a finished run (default: the latest)
   --yes                     skip the first-run command confirmation
   --json                    one JSON object per line, for CI
   --review                  stop to confirm the checks read from your spec
+  --continue                carry on from the last run rather than starting over
   --full                    report: include both agents' tool feeds
 ```
 
@@ -152,6 +153,8 @@ evaluator checked rather than taking its word.
                        history is one entry per attempt, with the failures it
                        produced and the id each hashes to
 ```
+
+If a run stops before it finishes — you interrupt it, or it runs out of budget — every attempt it completed is already committed to its branch. `harness run --spec <path> --continue` picks up from there: it branches from that work rather than from yours, and the first attempt starts by repairing what the last one failed on instead of reading the spec against code that already exists. A run that *passed* is equally continuable; that is how a second spec builds on the first.
 
 `.harness/` is added to `.git/info/exclude`, so it never appears in your diffs and never needs a `.gitignore` entry.
 
