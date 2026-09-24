@@ -240,6 +240,7 @@ export async function settleAll(
       source: result.check.source,
       state: result.state,
       detail: result.detail,
+      because: result.check.because,
       attempt,
     });
     results.push(result);

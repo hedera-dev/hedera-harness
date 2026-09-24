@@ -77,6 +77,13 @@ export type HarnessEvent =
       source: "declared" | "derived";
       state: "held" | "failed" | "errored";
       detail: string;
+      /**
+       * The spec line a derived check was read from. A derived failure appears
+       * only in the report, so the quote has to travel with the event — it is
+       * how a reader tells "my app is wrong" from "my spec said something I
+       * did not mean".
+       */
+      because?: string | undefined;
       attempt: number;
     }
   | {

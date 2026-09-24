@@ -223,6 +223,11 @@ function settled(mine: HarnessEvent[]): void {
   for (const event of results) {
     if (!shown(event)) continue;
     console.log(`    ${yellow("!")} ${dim(`${event.id} — ${event.detail}`)}`);
+    // A derived failure exists only here, so the reading has to be here too:
+    // the quoted line is how a reader tells a wrong app from a misread spec.
+    if (event.because !== undefined) {
+      console.log(`      ${dim(`— "${clip(event.because)}"`)}`);
+    }
   }
 }
 

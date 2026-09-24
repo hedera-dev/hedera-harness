@@ -119,6 +119,11 @@ export function renderToTerminal(): () => void {
         const failed = event.state === "failed" && event.source === "declared";
         const mark = event.state === "held" ? tick("") : failed ? red("✗") : warn("");
         console.log(`  ${mark.trim()} ${dim(`${event.id} — ${event.detail}`)}`);
+        // The reading earns a line only when it disagreed or could not be read;
+        // one that held was already shown, with its quote, at DOCTOR.
+        if (event.because !== undefined && event.state !== "held") {
+          console.log(`    ${dim(`— "${clip(event.because)}"`)}`);
+        }
         return;
       }
 
