@@ -173,7 +173,7 @@ Four rules, each guarding a specific way this could lie to you.
     http:/status:status:equals=200  — "The page at `/status` must return HTTP 200."
 ```
 
-Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
+Those checks read the page in a real browser where the spec names an element, so a value your app fetches after the first paint is seen rather than missed. Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
 
 **And its claims are checked, not taken.** The evaluator declares what should be true on chain; the harness reads the mirror node itself and decides. A claim it declared and the harness found untrue turns a pass into a fail — never the reverse, and a claim the harness cannot read is a warning rather than a failure. `verdict.json` keeps what the evaluator answered; `checks.json` keeps what was actually there.
 

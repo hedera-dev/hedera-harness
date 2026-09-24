@@ -47,19 +47,19 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
           checks: z
             .array(
               z.object({
-                kind: z.enum(["chain", "http"]),
+                kind: z.enum(["chain", "http", "dom"]),
                 path: z
                   .string()
                   .min(1)
                   .describe(
                     "For chain: a mirror node path below /api/v1/, e.g. `accounts/0.0.2`. " +
-                      "For http: a route on the app, e.g. `/send`.",
+                      "For http and dom: a route on the app, e.g. `/send`.",
                   ),
                 field: z
                   .string()
                   .describe(
                     "For chain: a dotted path into the response, e.g. `balance.balance`. " +
-                      "For http: `status` or `body`.",
+                      "For http: `status` or `body`. For dom: a CSS selector, e.g. `#send-error`.",
                   ),
                 expect: z.object({
                   equals: z.union([z.string(), z.number()]).optional(),
@@ -135,10 +135,14 @@ function brief(spec: string, appUrl: string): string {
     "Read it and state which of its claims a machine could settle on its own,",
     "with no judgement and no browser.",
     "",
-    "You have two kinds available:",
+    "You have three kinds available:",
     "",
-    `- **http** — the app will run at ${appUrl}. \`path\` is a route like \`/send\`,`,
-    "  `field` is `status` or `body`. Use this for routes the spec says exist.",
+    `- **dom** — what an element shows in a real browser. \`path\` is a route like`,
+    "  `/send`, `field` is a CSS selector like `#send-error`. Prefer this for anything",
+    "  the spec says a user sees: it waits for the page to render, so it works where",
+    "  reading the raw HTML does not.",
+    `- **http** — the app will run at ${appUrl}. \`path\` is a route, \`field\` is`,
+    "  `status` or `body`. Use it for whether a route exists, not for what it shows.",
     "- **chain** — a read from the Hedera mirror node. `path` is below `/api/v1/`,",
     "  like `accounts/0.0.2`, and `field` is a dotted path such as `balance.balance`.",
     "  Use this only where the spec names a specific account, topic or contract.",
@@ -152,6 +156,10 @@ function brief(spec: string, appUrl: string): string {
     "- **Nothing that depends on what the run creates.** You cannot name an account",
     "  the app will make, a contract it will deploy, or a transaction it will send;",
     "  none of them exist yet. Those are checked later by someone who watched it happen.",
+    "- **A dom check reads text, not state.** It gets what the element shows. A",
+    "  spec saying a control is disabled, a field hidden, a row highlighted is",
+    "  describing state, and matching the word `disabled` against `Send` fails an",
+    "  app that is doing exactly what was asked.",
     "- **Nothing conditional.** \"Once a send completes the id appears\" and \"before",
     "  a send neither element exists\" each describe a moment. A check has no way to",
     "  know which moment it is looking at, so it asserts the condition always held.",

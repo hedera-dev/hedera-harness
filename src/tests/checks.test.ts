@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type Check, baseline, locate, read, settle } from "../checks.js";
+import { type Check, baseline, locate, read, settle, settleAll } from "../checks.js";
 import { type Outcome, override } from "../evaluate.js";
 import { describeFailure, fromCheck } from "../failure.js";
 
@@ -298,4 +298,71 @@ test("what was found is quoted, not archived", async () => {
   } finally {
     page.stop();
   }
+});
+
+/**
+ * The kind that needs a browser, and the reason it earns one: `http` sees the
+ * served HTML, which for anything rendered on the client is an empty shell. A
+ * spec that says `#balance` shows a number is unanswerable from the response
+ * body of a Next.js app.
+ */
+test("a dom check reads what the page renders, not what it served", async () => {
+  const { createServer } = await import("node:http");
+  const app = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html" });
+    // The value is not in the HTML. It arrives after the paint, like a real app's.
+    response.end(
+      `<html><body><span id="balance">—</span>
+       <script>setTimeout(() => { document.getElementById('balance').textContent = '42' }, 50)</script>
+       </body></html>`,
+    );
+  });
+  await new Promise<void>((ready) => app.listen(0, "127.0.0.1", ready));
+  const appUrl = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+
+  const check = (selector: string, expect: Check["expect"]): Check => ({
+    id: locate("dom", "/", selector, expect),
+    source: "declared",
+    kind: "dom",
+    path: "/",
+    field: selector,
+    expect,
+  });
+
+  try {
+    const where = { mirrorNode: appUrl, appUrl };
+    const [rendered, served, absent] = await settleAll(
+      where,
+      [
+        check("#balance", { equals: "42" }),
+        check("#balance", { equals: "—" }),
+        check("#nowhere", { equals: "anything" }),
+      ],
+      1,
+    );
+
+    assert.equal(rendered?.state, "held", "it waits for what the client renders");
+    assert.equal(served?.state, "failed", "and does not see the placeholder it replaced");
+    assert.equal(
+      absent?.state,
+      "failed",
+      "an element the spec promised and the app lacks is a failure, not an unreadable check",
+    );
+  } finally {
+    app.close();
+  }
+});
+
+test("a dom check with no browser open says so rather than guessing", async () => {
+  const check: Check = {
+    id: locate("dom", "/", "#x", { equals: "1" }),
+    source: "declared",
+    kind: "dom",
+    path: "/",
+    field: "#x",
+    expect: { equals: "1" },
+  };
+  const result = await settle({ mirrorNode: "http://x", appUrl: "http://x" }, check);
+  assert.equal(result.state, "errored");
+  assert.match(result.detail, /no browser/);
 });
