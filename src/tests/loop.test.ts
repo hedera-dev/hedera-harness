@@ -13,6 +13,15 @@ import { Run } from "../run.js";
 afterEach(() => reset());
 
 /**
+ * A port nobody else is on. These tests used a fixed one, so a dev server left
+ * behind by an unrelated run made every one of them fail at once, for a reason
+ * that looked nothing like the cause.
+ */
+function freePort(): number {
+  return 20_000 + Math.floor(Math.random() * 20_000);
+}
+
+/**
  * Drives the loop across scripted attempts.
  *
  * Seven live runs have all passed on the first attempt, so everything the loop
@@ -75,13 +84,14 @@ async function drive(verdicts: Outcome[], maxAttempts = 3): Promise<Driven> {
       verdicts[options.attempt - 1] ?? PASSES) as Agents["evaluate"],
   };
 
+  const port = freePort();
   const { events } = collect();
   const result = await runLoop({
     config: {
       install: { run: "true" },
       build: { run: "true" },
       test: { run: "true" },
-      serve: { run: `echo "http://127.0.0.1:8799" && python3 -m http.server 8799` },
+      serve: { run: `echo "http://127.0.0.1:${port}" && python3 -m http.server ${port}` },
     },
     repoRoot: repo,
     run,
@@ -91,6 +101,7 @@ async function drive(verdicts: Outcome[], maxAttempts = 3): Promise<Driven> {
     maxAttempts,
     model: "stub",
     judgeModel: "stub-judge",
+    checks: [],
     agents,
   });
 
@@ -214,13 +225,14 @@ test("the judge is asked with its own model", async () => {
   await writeFile(join(repo, "spec.md"), "# Spec\n");
   await runCommand({ run: "git add -A && git commit -qm init" }, repo, 10_000);
   const run = await Run.create(repo, "stamp");
+  const port = freePort();
 
   await runLoop({
     config: {
       install: { run: "true" },
       build: { run: "true" },
       test: { run: "true" },
-      serve: { run: `echo "http://127.0.0.1:8797" && python3 -m http.server 8797` },
+      serve: { run: `echo "http://127.0.0.1:${port}" && python3 -m http.server ${port}` },
     },
     repoRoot: repo,
     run,
@@ -230,6 +242,7 @@ test("the judge is asked with its own model", async () => {
     maxAttempts: 1,
     model: "the-writer",
     judgeModel: "the-judge",
+    checks: [],
     agents: {
       generate: (async (options) => {
         seen.push(`generate:${options.model}`);

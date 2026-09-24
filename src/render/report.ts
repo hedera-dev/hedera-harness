@@ -191,25 +191,43 @@ async function section(
  * Claims the harness settled itself.
  *
  * The ones that held are a count, not a list — by the tenth run nobody rereads
- * what was fine. What earns a line is a claim that could not be read at all:
- * those are warnings rather than failures, so they appear nowhere else, and an
- * unreadable check usually means the check was wrong rather than the app.
+ * what was fine. What earns a line is a claim that did not fail the run but
+ * ought to be seen: one that could not be read at all, and one read out of the
+ * spec that the app disagreed with. Both usually mean the check was wrong, and
+ * neither appears anywhere else.
  */
 function settled(mine: HarnessEvent[]): void {
   const results = mine.filter((event) => event.type === "check:settled");
   if (results.length === 0) return;
 
-  const counted = (state: string) => results.filter((event) => event.state === state).length;
+  const shown = (event: HarnessEvent) =>
+    event.type === "check:settled" &&
+    (event.state === "errored" || (event.state === "failed" && event.source === "derived"));
+  const counted = (state: string, source?: string) =>
+    results.filter(
+      (event) =>
+        event.type === "check:settled" &&
+        event.state === state &&
+        (source === undefined || event.source === source),
+    ).length;
   const parts = [
     `${counted("held")} held`,
-    ...(counted("failed") > 0 ? [`${counted("failed")} failed`] : []),
+    ...(counted("failed", "declared") > 0 ? [`${counted("failed", "declared")} failed`] : []),
+    ...(counted("failed", "derived") > 0
+      ? [`${counted("failed", "derived")} read from the spec did not hold`]
+      : []),
     ...(counted("errored") > 0 ? [`${counted("errored")} unreadable`] : []),
   ];
   console.log(`  ${"checks".padEnd(9)} ${dim("      ")}  ${dim(parts.join(" · "))}`);
 
   for (const event of results) {
-    if (event.state !== "errored") continue;
+    if (!shown(event)) continue;
     console.log(`    ${yellow("!")} ${dim(`${event.id} — ${event.detail}`)}`);
+    // A derived failure exists only here, so the reading has to be here too:
+    // the quoted line is how a reader tells a wrong app from a misread spec.
+    if (event.because !== undefined) {
+      console.log(`      ${dim(`— "${clip(event.because)}"`)}`);
+    }
   }
 }
 

@@ -74,6 +74,8 @@ export type Unanswered =
 
 export interface EvaluateOptions {
   repoRoot: string;
+  /** Read from the spec at DOCTOR, before the app existed. Settled alongside the judge's own. */
+  checks: Check[];
   run: Run;
   specPath: string;
   attempt: number;
@@ -195,7 +197,11 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
   // has contradicted itself, which is the strongest reason there is to reject.
   // An unreadable check is a warning — the mechanical layer must never
   // manufacture failures out of its own bugs.
-  const settled = await settleAll(chain.mirrorNode, captured.checks, attempt);
+  const settled = await settleAll(
+    { mirrorNode: chain.mirrorNode, appUrl },
+    [...options.checks, ...captured.checks],
+    attempt,
+  );
   await writeFile(
     await run.path(`attempt-${attempt}`, "checks.json"),
     `${JSON.stringify(settled, null, 2)}\n`,
@@ -234,7 +240,15 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
  */
 export function override(outcome: Outcome, settled: CheckResult[]): Outcome {
   if (outcome.type !== "verdict") return outcome;
-  const untrue = settled.some((result) => result.state === "failed");
+  // Only a claim the judge made itself. A derived check that fails is one
+  // reading of a spec disagreeing with an app, and nothing present can say
+  // which of the two is wrong — across four real specs, roughly one derived
+  // check in ten would have failed a working app. Those are reported instead,
+  // which costs the point of them nothing: a derived check failing while the
+  // judge passed is still the leniency showing, whether or not it fails the run.
+  const untrue = settled.some(
+    (result) => result.state === "failed" && result.check.source === "declared",
+  );
   return {
     type: "verdict",
     verdict: { ...outcome.verdict, pass: outcome.verdict.pass && !untrue },
@@ -391,7 +405,8 @@ function verdictServer(
             return { content: [{ type: "text", text: "Give exactly one expectation." }] };
           }
           const check = await baseline(mirrorNode, {
-            id: locate(args.path, args.field),
+            id: locate("chain", args.path, args.field, expect as Check["expect"]),
+            source: "declared",
             kind: "chain",
             path: args.path,
             field: args.field,

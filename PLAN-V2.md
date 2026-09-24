@@ -279,16 +279,20 @@ Chain checks are the ones that carry the weight. When the harness re-reads a sel
 
 That division is not two flavours of the same idea. The halves are disjoint and predictable, and **the half derivation cannot reach is the half worth the most**: runtime entities on chain, where verification is strongest. Neither tier makes the other redundant.
 
-Provenance does not grade authority. A failing check fails the run whoever wrote it — a judge that passes over its own failed check has contradicted itself, which is the strongest available reason to reject. What provenance predicts is the *direction* each source gets things wrong, and each gets the guard its own failure mode needs:
+**Override power follows from what a check can establish, not from who blessed it.** An earlier draft here said provenance does not grade authority — that a failing check fails the run whoever wrote it. Measurement says otherwise, and the two halves are not symmetric:
 
-- a derived check is one agent's reading of prose, with no way to test its own interpretation, so a misreading fails a correct app — LLM judgement smuggled into the mechanical layer with override power, which is the rule exactly inverted.
-- a discovered check shares a mind with the verdict. **The override rule is the mitigation.**
+- a **discovered** check that fails means the judge contradicted itself about something it watched happen. Nothing is a better reason to reject. **It overrides.**
+- a **derived** check that fails means one reading of prose disagrees with an app. Either could be wrong and nothing present can say which — it is LLM judgement smuggled into the mechanical layer, which is the rule exactly inverted. **It reports.**
+
+Running derivation over four real specs produced 29 checks, of which three would have failed a correct app: an attribute asserted as text, a conditional made unconditional, and `(?i)not.?found`, a pattern `new RegExp` refuses. Roughly one in ten — small enough to be worth keeping, far too large to hand a veto.
+
+Reporting costs the point of them nothing. The reason these exist is that a lenient judge cannot be caught with an instrument it controls, and a derived check failing while the judge passes *is* that catch — visible in the report either way. What it loses is the power to fail a run over a misreading, which was never the part doing the work.
 
 **The mitigation for a misread spec is not a prompt.** DOCTOR shows the checks it derived and continues; `--review` stops for approval, for anyone who wants it. Confirming by default would put an interaction on the main path *per spec*, where the existing command prompt is per project and never seen again — and reviewing `#block-number matches ^\d+$` in the abstract is low-information, because whether a check says what you meant is usually only visible once it runs. An approval screen asks for attention before there is a reason to give it.
 
 Three things make that safe, and they are worth more than the prompt would have been:
 
-- **a check is only committed after a run it was part of passed.** It has then held against a working app — validated by evidence rather than by someone clicking yes. A misderived check can cost a run; it can never become permanent.
+- **a check is only committed after a run it was part of passed.** It has then held against a working app — validated by evidence rather than by someone clicking yes. A misderived check costs a line in the report; it can neither fail a run nor become permanent.
 - **every mechanical failure quotes what produced it** — the spec line for a derived check, the evidence file for a judged one. That is how a reader tells "my app is wrong" from "my spec said something I did not mean", which need different fixes.
 - **the harness says when it suspects itself.** A check failing alone, with the judge finding nothing wrong, is the signature of a misreading rather than a defect, and the report says so. That reaches the reader when the check is finally falsifiable, which an approval screen cannot.
 

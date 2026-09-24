@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { type Command, runCommand } from "./commands.js";
 import { CONFIG_FILE, type HarnessConfig, readConfig, writeConfig } from "./config.js";
+import type { Check } from "./checks.js";
+import { derive } from "./derive.js";
 import { emit } from "./events.js";
 import { funding, mirrorNode, wallet } from "./wallet.js";
 import { describeFailure, fromStage } from "./failure.js";
@@ -26,6 +28,12 @@ export class DoctorError extends Error {
 
 export interface DoctorOptions {
   repoRoot: string;
+  /** The spec's text, so checks can be read from it before anything is built. */
+  spec?: string | undefined;
+  /** Where the app will run, for the routes a derived check names. */
+  appUrlHint: string;
+  /** Stop and confirm the derived checks rather than showing them and going on. */
+  review: boolean;
   run: Run;
   model: string;
   /** Repo-relative path of the spec, when it lives inside the repo. Not treated as dirt. */
@@ -39,7 +47,13 @@ export interface DoctorOptions {
  * A check belongs here only if failing it would abort a run rather than fail a
  * test — the point is to spend four seconds instead of forty minutes.
  */
-export async function doctor(options: DoctorOptions): Promise<HarnessConfig> {
+export interface Examined {
+  config: HarnessConfig;
+  /** What the spec itself says can be settled, before the app exists. */
+  checks: Check[];
+}
+
+export async function doctor(options: DoctorOptions): Promise<Examined> {
   const { repoRoot, run } = options;
 
   emit({ type: "phase:started", phase: "doctor" });
@@ -79,7 +93,27 @@ export async function doctor(options: DoctorOptions): Promise<HarnessConfig> {
     emit({ type: "check", name: `wrote and committed ${CONFIG_FILE}`, ok: true });
   }
 
-  return config;
+  return { config, checks: await deriveChecks(options) };
+}
+
+/**
+ * What the spec says can be settled, read before anything is built.
+ *
+ * Shown rather than asked about. Confirming by default would put an
+ * interaction on the main path *per spec*, where the command prompt is per
+ * project and never seen again — and whether a check says what you meant is
+ * usually only visible once it has run. `--review` is there for anyone who
+ * disagrees.
+ */
+async function deriveChecks(options: DoctorOptions): Promise<Check[]> {
+  if (options.spec === undefined) return [];
+
+  const checks = await derive(options.spec, options.appUrlHint, options.model);
+  if (checks.length === 0) return [];
+
+  emit({ type: "derived", checks });
+  if (options.review) await confirm(options);
+  return checks;
 }
 
 /**

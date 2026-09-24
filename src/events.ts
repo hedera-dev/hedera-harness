@@ -74,8 +74,16 @@ export type HarnessEvent =
   | {
       type: "check:settled";
       id: string;
+      source: "declared" | "derived";
       state: "held" | "failed" | "errored";
       detail: string;
+      /**
+       * The spec line a derived check was read from. A derived failure appears
+       * only in the report, so the quote has to travel with the event — it is
+       * how a reader tells "my app is wrong" from "my spec said something I
+       * did not mean".
+       */
+      because?: string | undefined;
       attempt: number;
     }
   | {
@@ -90,6 +98,8 @@ export type HarnessEvent =
       failures: AttemptFailure[];
     }
   | { type: "branch"; branch: string }
+  /** What DOCTOR read out of the spec, before the app existed. */
+  | { type: "derived"; checks: Array<{ id: string; because?: string | undefined }> }
   /** DOCTOR's proposed commands, before the operator confirms them. */
   | {
       type: "proposal";

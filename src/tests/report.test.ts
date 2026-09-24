@@ -157,9 +157,9 @@ const OVERRIDDEN: HarnessEvent[] = [
   ...RUN.slice(0, 3),
   { type: "phase:started", phase: "evaluate", attempt: 1, detail: "blind" },
   { type: "evaluate:finished", attempt: 1, verdict: "pass", findings: 0, costUsd: 0.2, durationMs: 1000 },
-  { type: "check:settled", id: "chain:blocks:blocks.0.number", state: "held", attempt: 1, detail: "found 40802567" },
-  { type: "check:settled", id: "chain:accounts/0.0.2:balance.balance", state: "failed", attempt: 1, detail: "expected at least 100, found 50" },
-  { type: "check:settled", id: "chain:accounts/0.0.9:balance.balance", state: "errored", attempt: 1, detail: "answered 404" },
+  { type: "check:settled", source: "declared", id: "chain:blocks:blocks.0.number", state: "held", attempt: 1, detail: "found 40802567" },
+  { type: "check:settled", source: "declared", id: "chain:accounts/0.0.2:balance.balance", state: "failed", attempt: 1, detail: "expected at least 100, found 50" },
+  { type: "check:settled", source: "declared", id: "chain:accounts/0.0.9:balance.balance", state: "errored", attempt: 1, detail: "answered 404" },
   {
     type: "attempt:finished",
     attempt: 1,
@@ -197,6 +197,35 @@ test("held checks are counted, unreadable ones are named", async () => {
     output,
     /chain:blocks:blocks\.0\.number/,
     "a check that held needs no line of its own",
+  );
+});
+
+/**
+ * A check read out of the spec no longer fails the run, so the report is the
+ * only place it appears — the quoted reading has to be there with it, or a
+ * reader cannot tell "my app is wrong" from "my spec said something I did not
+ * mean".
+ */
+test("a check read from the spec that did not hold quotes the line it came from", async () => {
+  const stream: HarnessEvent[] = [
+    ...RUN.slice(0, 11),
+    {
+      type: "check:settled",
+      source: "derived",
+      id: "http:/status:body:contains=Hedera Testnet",
+      state: "failed",
+      detail: "found a page without it",
+      because: "`#network-name` — the display name, `Hedera Testnet`",
+      attempt: 1,
+    },
+    ...RUN.slice(11),
+  ];
+  const output = await renderStream(stream);
+  assert.match(output, /1 read from the spec did not hold/);
+  assert.match(
+    output,
+    /#network-name/,
+    "the reading itself, which the id does not carry",
   );
 });
 

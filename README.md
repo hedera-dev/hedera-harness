@@ -89,6 +89,7 @@ harness report [run]        read a finished run (default: the latest)
   --judge-model NAME        model for EVALUATE only (default: the same as --model)
   --yes                     skip the first-run command confirmation
   --json                    one JSON object per line, for CI
+  --review                  stop to confirm the checks read from your spec
   --full                    report: include both agents' tool feeds
 ```
 
@@ -161,6 +162,15 @@ Four rules, each guarding a specific way this could lie to you.
 **The evaluator cannot see your code.** It runs in a directory containing only the spec, with the repo denied at the sandbox. Judging the code instead of the app is the failure that makes a passing run worthless.
 
 **A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict. A finding it cannot see is not a finding.
+
+**Some of it is checked before anything is built.** DOCTOR reads your spec — and only your spec, never the code — and states what it can settle mechanically. Those checks exist before the app does, so nothing about the app can shape them, and they are shown rather than asked about:
+
+```
+  I will also verify, from this spec:
+    http:/status:status:equals=200  — "The page at `/status` must return HTTP 200."
+```
+
+Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
 
 **And its claims are checked, not taken.** The evaluator declares what should be true on chain; the harness reads the mirror node itself and decides. A claim it declared and the harness found untrue turns a pass into a fail — never the reverse, and a claim the harness cannot read is a warning rather than a failure. `verdict.json` keeps what the evaluator answered; `checks.json` keeps what was actually there.
 

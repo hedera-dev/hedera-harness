@@ -35,6 +35,7 @@ Run from inside the target repository.
   --judge-model NAME  model for EVALUATE only (default: the same as --model)
   --yes               skip the first-run command confirmation
   --json              one JSON object per line instead of the watchable output
+  --review            stop to confirm the checks read from the spec
   --full              report: include both agents' full tool feeds`;
 
 class UsageError extends Error {}
@@ -117,6 +118,7 @@ interface Options {
   judgeModel: string;
   assumeYes: boolean;
   json: boolean;
+  review: boolean;
   full: boolean;
 }
 
@@ -140,6 +142,13 @@ const DEFAULT_MODEL = process.env["HARNESS_MODEL"] ?? "sonnet";
  */
 const DEFAULT_JUDGE = process.env["HARNESS_JUDGE_MODEL"];
 
+/**
+ * Where a derived check should expect the app. The real URL is only known once
+ * `serve` has answered, which is after the spec has been read — so a route
+ * check is written against this and resolved against the live one.
+ */
+const APP_URL_HINT = "http://localhost:3000";
+
 function parse(argv: string[]): Options {
   const [command, ...rest] = argv;
   if (command === undefined || command === "--help" || command === "-h") throw new UsageError(USAGE);
@@ -160,6 +169,7 @@ function parse(argv: string[]): Options {
         "judge-model": { type: "string", ...(DEFAULT_JUDGE === undefined ? {} : { default: DEFAULT_JUDGE }) },
         yes: { type: "boolean", default: false },
         json: { type: "boolean", default: false },
+        review: { type: "boolean", default: false },
         full: { type: "boolean", default: false },
       },
       strict: true,
@@ -186,6 +196,7 @@ function parse(argv: string[]): Options {
     judgeModel: values["judge-model"] ?? values.model,
     assumeYes: values.yes,
     json: values.json,
+    review: values.review,
     full: values.full,
   };
 }
@@ -253,10 +264,16 @@ async function main(argv: string[]): Promise<number> {
   const specInRepo = specInRepoPath;
   context.specInRepo = specInRepo;
 
-  await doctor({
+  // The spec is read before anything is built, which is the point: a check
+  // derived from it cannot have been shaped by what the app turned out to do.
+  const specText = options.command === "run" ? await readFile(options.spec, "utf8") : undefined;
+  const examined = await doctor({
     repoRoot: root,
     run,
     model: options.model,
+    spec: specText,
+    appUrlHint: APP_URL_HINT,
+    review: options.review,
     specPath: specInRepo,
     assumeYes: options.assumeYes,
   });
@@ -286,6 +303,7 @@ async function main(argv: string[]): Promise<number> {
       maxAttempts: options.maxAttempts,
       model: options.model,
       judgeModel: options.judgeModel,
+      checks: examined.checks,
       specInRepo,
     });
   } finally {

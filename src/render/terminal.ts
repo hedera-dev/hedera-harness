@@ -114,8 +114,16 @@ export function renderToTerminal(): () => void {
       case "check:settled": {
         // A settled claim reads as a check because that is what it is: the
         // harness looked, rather than the evaluator saying so.
-        const mark = event.state === "held" ? tick("") : event.state === "failed" ? red("✗") : warn("");
+        // A derived check that fails did not fail the run, so it does not get
+        // the mark that means it did.
+        const failed = event.state === "failed" && event.source === "declared";
+        const mark = event.state === "held" ? tick("") : failed ? red("✗") : warn("");
         console.log(`  ${mark.trim()} ${dim(`${event.id} — ${event.detail}`)}`);
+        // The reading earns a line only when it disagreed or could not be read;
+        // one that held was already shown, with its quote, at DOCTOR.
+        if (event.because !== undefined && event.state !== "held") {
+          console.log(`    ${dim(`— "${clip(event.because)}"`)}`);
+        }
         return;
       }
 
@@ -153,6 +161,15 @@ export function renderToTerminal(): () => void {
         }
         console.log("");
         return;
+
+      case "derived": {
+        console.log(`\n  ${dim("I will also verify, from this spec:")}`);
+        for (const check of event.checks) {
+          const source = check.because === undefined ? "" : dim(`  — "${clip(check.because)}"`);
+          console.log(`    ${check.id}${source}`);
+        }
+        return;
+      }
 
       case "branch":
         console.log(dim(`\nworking on ${event.branch}`));
