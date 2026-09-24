@@ -308,6 +308,14 @@ async function pass(
           // downgrade to an unsandboxed evaluator.
           failIfUnavailable: true,
           filesystem: contained(workspace, repoRoot),
+          // The evaluator has to reach the app it is judging, and the app is on
+          // a loopback port. Without this the sandbox refuses the connection —
+          // both families, so it is not a localhost-resolves-to-IPv6 problem —
+          // and the agent's own recovery is to rerun the command with its
+          // sandbox switched off. Granting the one thing it needs is better
+          // than a containment the agent routes around. External egress was
+          // never blocked; it reads the mirror node in the same session.
+          network: { allowLocalBinding: true },
         },
         maxTurns: MAX_TURNS,
         maxBudgetUsd: MAX_BUDGET_USD,
