@@ -4,6 +4,8 @@ import test from "node:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { homedir } from "node:os";
+import { contained } from "../evaluate.js";
 import { said } from "../messages.js";
 import { funding, redact } from "../wallet.js";
 
@@ -105,4 +107,34 @@ test("a transcript records both halves, with the key removed", async () => {
   assert.doesNotMatch(lines[0].text, /feedface/, "a brief carries a live key");
   assert.match(lines[0].text, /«redacted»/);
   assert.equal(lines[1].text, "finish what you had not reached");
+});
+
+/**
+ * The shape of containment, which is all a unit test can reach — whether the
+ * sandbox honours it needs a live evaluation, and this has not had one.
+ *
+ * `allowRead` is not an allowlist. The SDK defines it as paths re-allowed
+ * *within* denied regions, so "everything outside the workspace" can only be
+ * expressed as a denied region with holes. Home is the region because that is
+ * where secrets live; `/usr/bin` is not denied because an agent that cannot
+ * read it cannot run anything, and it hides nothing.
+ */
+test("the evaluator is denied home, and given back only what it needs", () => {
+  const rules = contained("/tmp/harness-eval-x", "/repo");
+
+  assert.ok(rules.denyRead.includes(homedir()), "a person's secrets live in home");
+  assert.ok(rules.denyRead.includes("/repo"), "and the code it must not see");
+  assert.ok(rules.allowRead.includes("/tmp/harness-eval-x"), "its own workspace");
+  assert.ok(
+    rules.allowRead.some((path) => path.endsWith(".claude")),
+    "its credentials — denying these logs the evaluator out of itself",
+  );
+  assert.ok(
+    rules.allowRead.some((path) => path.includes("ms-playwright")),
+    "the browser it drives",
+  );
+  assert.ok(
+    !rules.denyRead.some((path) => path === "/" || path === "/usr"),
+    "denying the system would stop it running anything, and hides nothing",
+  );
 });

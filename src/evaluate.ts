@@ -1,6 +1,6 @@
 import { appendFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
@@ -307,7 +307,7 @@ async function pass(
           // A missing seatbelt or bubblewrap must abort, never silently
           // downgrade to an unsandboxed evaluator.
           failIfUnavailable: true,
-          filesystem: { denyRead: [repoRoot, HARNESS_ROOT] },
+          filesystem: contained(workspace, repoRoot),
         },
         maxTurns: MAX_TURNS,
         maxBudgetUsd: MAX_BUDGET_USD,
@@ -629,6 +629,50 @@ function brief(appUrl: string, chain: Hedera): string {
   ]
     .filter((line) => line !== "")
     .join("\n");
+}
+
+/**
+ * What the evaluator may read, and everything it may not.
+ *
+ * The plan has always said "deny rules for everything outside that directory".
+ * The code denied two of them — the repo and the harness — which made the
+ * blindness that matters real and left the claim wider than the code. `allowRead`
+ * is not a standalone allowlist: the SDK defines it as paths re-allowed *within*
+ * denied regions, so the only way to express "everything else" is to deny a
+ * region and punch holes in it.
+ *
+ * The region is the home directory, because that is where a person's secrets
+ * live — keys, tokens, other clients' repositories. System paths are not denied:
+ * an agent that cannot read `/usr/bin` cannot run anything, and `/usr/bin` holds
+ * nothing worth hiding.
+ *
+ * The holes are the three things an evaluator genuinely needs from home: its own
+ * credentials, the browser it drives, and the CLI that drives it. Each is here
+ * because removing it breaks evaluation, not because it seemed harmless.
+ */
+/** Exported for tests: the rules themselves, since the sandbox cannot be asserted on. */
+export function contained(workspace: string, repoRoot: string) {
+  return {
+    denyRead: [homedir(), repoRoot, HARNESS_ROOT],
+    allowRead: [
+      workspace,
+      // Authentication. Denying this logs the evaluator out of itself.
+      join(homedir(), ".claude"),
+      // The browser, and the binary that launches it.
+      browserCache(),
+      join(HARNESS_ROOT, "node_modules", ".bin"),
+      join(HARNESS_ROOT, "node_modules", "playwright-core"),
+    ],
+  };
+}
+
+/** Playwright's documented cache locations, and the variable that overrides them. */
+export function browserCache(): string {
+  const override = process.env["PLAYWRIGHT_BROWSERS_PATH"];
+  if (override !== undefined) return override;
+  if (process.platform === "darwin") return join(homedir(), "Library", "Caches", "ms-playwright");
+  if (process.platform === "win32") return join(homedir(), "AppData", "Local", "ms-playwright");
+  return join(homedir(), ".cache", "ms-playwright");
 }
 
 /** The Playwright CLI ships its own agent skill; loading it beats explaining the CLI. */

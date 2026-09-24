@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { type Command, runCommand } from "./commands.js";
 import { CONFIG_FILE, type HarnessConfig, readConfig, writeConfig } from "./config.js";
 import type { Check } from "./checks.js";
+import { browserCache } from "./evaluate.js";
 import { derive } from "./derive.js";
 import { emit } from "./events.js";
 import { funding, mirrorNode, wallet } from "./wallet.js";
@@ -169,14 +169,6 @@ async function checkBrowser(): Promise<void> {
   });
 }
 
-/** Playwright's documented cache locations, and the variable that overrides them. */
-function browserCache(): string {
-  const override = process.env["PLAYWRIGHT_BROWSERS_PATH"];
-  if (override !== undefined) return override;
-  if (process.platform === "darwin") return join(homedir(), "Library", "Caches", "ms-playwright");
-  if (process.platform === "win32") return join(homedir(), "AppData", "Local", "ms-playwright");
-  return join(homedir(), ".cache", "ms-playwright");
-}
 
 /**
  * The account the app will sign with, if one was given. Absent is fine — most
