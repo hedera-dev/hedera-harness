@@ -322,6 +322,7 @@ test("a dom check reads what the page renders, not what it served", async () => 
 
   const check = (selector: string, expect: Check["expect"]): Check => ({
     id: locate("dom", "/", selector, expect),
+    source: "declared",
     kind: "dom",
     path: "/",
     field: selector,
@@ -355,6 +356,7 @@ test("a dom check reads what the page renders, not what it served", async () => 
 test("a dom check with no browser open says so rather than guessing", async () => {
   const check: Check = {
     id: locate("dom", "/", "#x", { equals: "1" }),
+    source: "declared",
     kind: "dom",
     path: "/",
     field: "#x",
