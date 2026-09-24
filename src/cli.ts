@@ -9,6 +9,7 @@ import { initialise } from "./init.js";
 import { runLoop } from "./loop.js";
 import { killTrackedChildren } from "./commands.js";
 import { commitWork, createBranch, currentBranch, headCommit, repoRoot, switchBranch } from "./git.js";
+import { lastRun } from "./resume.js";
 import { Run, ensureExcluded, timestamp } from "./run.js";
 import { type Timings, emit, subscribe } from "./events.js";
 import { renderToFile, renderToJson } from "./render/json.js";
@@ -36,6 +37,8 @@ Run from inside the target repository.
   --yes               skip the first-run command confirmation
   --json              one JSON object per line instead of the watchable output
   --review            stop to confirm the checks read from the spec
+  --continue          carry on from the last run: its branch, and what it
+                      ended up failing on
   --full              report: include both agents' full tool feeds`;
 
 class UsageError extends Error {}
@@ -119,6 +122,7 @@ interface Options {
   assumeYes: boolean;
   json: boolean;
   review: boolean;
+  continue: boolean;
   full: boolean;
 }
 
@@ -170,6 +174,7 @@ function parse(argv: string[]): Options {
         yes: { type: "boolean", default: false },
         json: { type: "boolean", default: false },
         review: { type: "boolean", default: false },
+        continue: { type: "boolean", default: false },
         full: { type: "boolean", default: false },
       },
       strict: true,
@@ -197,6 +202,7 @@ function parse(argv: string[]): Options {
     assumeYes: values.yes,
     json: values.json,
     review: values.review,
+    continue: values.continue,
     full: values.full,
   };
 }
@@ -283,6 +289,23 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  // Continuing branches from the previous run's work rather than from your
+  // branch, so a run that stopped at its last attempt is not started over.
+  // `startedOn` was recorded before this, so the run still returns you home.
+  const resuming = options.continue ? await lastRun(root, stamp) : null;
+  if (resuming !== null) {
+    await switchBranch(resuming.branch, root);
+    emit({
+      type: "note",
+      level: "info",
+      text:
+        resuming.failures.length === 0
+          ? `continuing ${resuming.stamp} from ${resuming.branch}`
+          : `continuing ${resuming.stamp} — attempt ${resuming.attempt} ended on ` +
+            `${resuming.failures.length} failure(s), which the next attempt starts from`,
+    });
+  }
+
   const config = await readConfig(root);
   if (config === null) throw new Error(`${CONFIG_FILE} went missing between checks`);
   const archivedSpec = await run.archiveSpec(options.spec);
@@ -304,6 +327,7 @@ async function main(argv: string[]): Promise<number> {
       model: options.model,
       judgeModel: options.judgeModel,
       checks: examined.checks,
+      continuing: resuming === null ? undefined : resuming,
       specInRepo,
     });
   } finally {

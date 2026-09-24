@@ -27,6 +27,12 @@ export interface LoopOptions {
   judgeModel: string;
   /** Read from the spec at DOCTOR, pinned for the run, settled every attempt. */
   checks: Check[];
+  /**
+   * Failures a previous run ended on. The first attempt starts as a repair of
+   * those rather than as a fresh reading of the spec — the code is already on
+   * the branch, so asking for it again would be asking for work that exists.
+   */
+  continuing?: { failures: AttemptFailure[]; artifacts: string } | undefined;
   /** Repo-relative spec path, when it lives in the repo. Never committed as work. */
   specInRepo?: string | undefined;
   /**
@@ -87,7 +93,10 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   // Recorded once: what the agent could reach. A run that behaves differently
   // from another is usually a different skill set, and this is the record of it.
   let skills: string[] = [];
-  let prompt = options.spec;
+  let prompt =
+    options.continuing !== undefined && options.continuing.failures.length > 0
+      ? repairPrompt({ ok: false, failures: options.continuing.failures }, options.continuing.artifacts)
+      : options.spec;
   let session: string | undefined;
   let previous: Set<string> = new Set();
   // Kept for `result.json`: which failures each attempt produced, so a finished
