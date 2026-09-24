@@ -131,7 +131,8 @@ export function renderToTerminal(): () => void {
 
       case "attempt:finished": {
         if (event.passed) {
-          console.log(`\nattempt ${event.attempt} ${green("PASSED")}`);
+          const resolved = event.fixed > 0 ? dim(` — ${event.fixed} fixed`) : "";
+          console.log(`\nattempt ${event.attempt} ${green("PASSED")}${resolved}`);
           return;
         }
         const tally = `${event.open} open, ${event.fixed} fixed, ${event.fresh} new`;

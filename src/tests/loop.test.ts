@@ -245,3 +245,23 @@ test("the judge is asked with its own model", async () => {
 
   assert.deepEqual(seen, ["generate:the-writer", "evaluate:the-judge"]);
 });
+
+/**
+ * The attempt that resolves everything is the one worth reporting on, and it
+ * was the only one that said nothing. A passing attempt took a shortcut that
+ * emitted zeros rather than comparing against what the previous attempt had
+ * failed on, so a run that fixed three bugs finished claiming it had fixed
+ * none — the convergence story missing its ending.
+ */
+test("the attempt that passes says what it fixed", async () => {
+  const driven = await drive([fails("/a"), PASSES]);
+  assert.deepEqual(tallies(driven.events), [
+    [0, 0, 1],
+    [0, 1, 0],
+  ]);
+});
+
+test("a pass with nothing before it has nothing to have fixed", async () => {
+  const driven = await drive([PASSES]);
+  assert.deepEqual(tallies(driven.events), [[0, 0, 0]]);
+});

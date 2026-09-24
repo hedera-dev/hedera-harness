@@ -170,7 +170,7 @@ async function section(
     console.log(`  ${yellow("!")} ${dim(note.text)}`);
   }
 
-  if (outcome !== undefined && !outcome.passed) {
+  if (outcome !== undefined && (!outcome.passed || outcome.fixed > 0)) {
     const earlier = seenBefore(events, attempt);
     console.log(
       `\n  ${dim(`${outcome.open} open · ${outcome.fixed} fixed · ${outcome.fresh} new`)}`,

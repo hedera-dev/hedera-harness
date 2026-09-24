@@ -202,11 +202,10 @@ function verdictFeedback(outcome: Outcome): Feedback {
  * an agent converging from one trading one failure for another.
  */
 function report(attempt: number, feedback: Feedback, previous: Set<string>): boolean {
-  if (feedback.ok) {
-    emit({ type: "attempt:finished", attempt, passed: true, open: 0, fixed: 0, fresh: 0, failures: [] });
-    return false;
-  }
-
+  // A passing attempt goes through the same arithmetic as any other. It used to
+  // take a shortcut that reported zeros, which meant the one attempt that
+  // actually resolved everything was the only one that never said what it had
+  // fixed — the convergence story missing its ending.
   const now = feedback.failures.map((failure) => failure.id);
   const open = now.filter((id) => previous.has(id));
   const fixed = [...previous].filter((id) => !now.includes(id));
@@ -214,7 +213,7 @@ function report(attempt: number, feedback: Feedback, previous: Set<string>): boo
   emit({
     type: "attempt:finished",
     attempt,
-    passed: false,
+    passed: feedback.ok,
     open: open.length,
     fixed: fixed.length,
     fresh: now.length - open.length,
