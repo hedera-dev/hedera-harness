@@ -6,9 +6,28 @@ Give it a spec and a Hedera dApp repo. It loops a coding agent until the spec is
 
 An agent that reports its own success is worth nothing, so nothing here takes the agent's word for it. Tests are run by the harness. The app is judged by a second agent that is never allowed to see the source. Evidence for any claimed failure has to exist on disk before the verdict is accepted.
 
+## Install
+
+Not on npm — the name belongs to v2. Install from source:
+
+```bash
+git clone https://github.com/web3buidlerz/hedera-harness.git
+cd hedera-harness
+npm install
+npm run build
+npm link                          # puts `harness` on your PATH
+npx playwright install chromium   # EVALUATE drives a real browser
+```
+
+Without `npm link`, call the built entry point by path from inside your project — the harness reads the repo you run it in, so it has to be your project's directory either way:
+
+```bash
+node /path/to/hedera-harness/dist/cli.js run --spec specs/payment-flow.md
+```
+
 ## Quick start
 
-From inside the project you want to build in:
+Then, from inside the project you want to build in:
 
 ```bash
 harness init payment-flow      # works out how to build this project, drafts a spec
@@ -137,6 +156,8 @@ evaluator checked rather than taking its word.
 .harness/runs/<timestamp>/
   events.jsonl         every event of the run, one JSON object per line
   spec.md              what the run was asked to build
+  install-fingerprint.txt  manifests as they were, so later attempts skip a
+                       reinstall nothing has invalidated
   baseline/            install.txt, build.txt, test.txt, serve.txt — from before
                        the agent touched anything
   attempt-N/
@@ -160,7 +181,7 @@ If a run stops before it finishes — you interrupt it, or it runs out of budget
 
 ## How it decides
 
-Four rules, each guarding a specific way this could lie to you.
+Each rule guards a specific way this could lie to you.
 
 **The evaluator cannot see your code.** It runs in a directory containing only the spec, with the repo denied at the sandbox. Judging the code instead of the app is the failure that makes a passing run worthless.
 
@@ -175,7 +196,9 @@ Four rules, each guarding a specific way this could lie to you.
 
 Those checks read the page in a real browser where the spec names an element, so a value your app fetches after the first paint is seen rather than missed. Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
 
-**And its claims are checked, not taken.** The evaluator declares what should be true on chain; the harness reads the mirror node itself and decides. A claim it declared and the harness found untrue turns a pass into a fail — never the reverse, and a claim the harness cannot read is a warning rather than a failure. `verdict.json` keeps what the evaluator answered; `checks.json` keeps what was actually there.
+**These report; they never fail a run on their own.** A check read out of prose is one agent's interpretation, and when it disagrees with your app either of the two could be wrong. Measured across four real specs, about one in ten would have failed an app that was doing exactly what was asked. So a failure here is a line in the report — including the useful case, where it disagrees with a judge that passed.
+
+**And the evaluator's own claims are checked, not taken.** It declares what should be true on chain; the harness reads the mirror node itself and decides. That one *does* turn a pass into a fail — never the reverse — because a judge passing over a claim it made itself has contradicted itself, and nothing is a better reason to reject. A claim the harness cannot read at all is a warning, never a failure. `verdict.json` keeps what the evaluator answered; `checks.json` keeps what was actually there.
 
 **A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, or evidence that is not there — earns a second look, once.
 
@@ -187,7 +210,7 @@ Those checks read the page in a real browser where the spec names an element, so
 - git, and a repo with at least one commit and a clean tree
 - A `package.json` at the repo root
 - Claude Code credentials — a subscription login or `ANTHROPIC_API_KEY`
-- `@playwright/cli` browsers installed, for EVALUATE
+- Chromium for EVALUATE — `npx playwright install chromium`. DOCTOR checks for it and says this if it is missing.
 
 ## Configuration
 
@@ -204,21 +227,20 @@ Machine-level settings are environment variables, deliberately kept out of `harn
 | `HEDERA_OPERATOR_KEY` | Its private key. Passed to the evaluator to import into the app, and scrubbed from every artifact. The harness never signs with it. |
 | `NO_COLOR` | Turns off colour. Already off when stdout is not a terminal, so piping or redirecting needs nothing. |
 
-Every stage is bounded: 60 minutes for generation, 20 for evaluation, 20 per command, 2 minutes for the dev server to answer.
+Every stage is bounded — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The current numbers, and what measurement set them, are in [PLAN-V2 § Bounds](./PLAN-V2.md#bounds).
 
 ## What it does not do yet
 
 - **Transactions need a wallet you supply, and an app that accepts one.** Export `HEDERA_OPERATOR_ID` and `HEDERA_OPERATOR_KEY` for a funded testnet account, and the evaluator imports it into the app — most often through a burner wallet's browser storage. Where an app only supports a browser extension there is no way in, because a headless browser has no extension, and the evaluator reports that rather than working around it. The harness creates no accounts and transfers nothing.
-- **One spec at a time.** No sequencing of multiple specs into a larger feature.
+- **One spec at a time,** and nothing re-checks an earlier one. A second run inherits the first run's code but not its checks, so a feature built last week can regress without the run that broke it noticing. Carrying proven checks forward as a floor is planned and unbuilt.
 - **Claude only.** No provider abstraction.
 - **It does not scaffold projects.** Use `create-scaffold-hbar`; the harness works on a repo that already exists.
 
 ## Development
 
 ```bash
-npm install
-npm run build
-npm link          # puts `harness` on your PATH
+npm test          # builds, then runs the suite
+npm run typecheck
 ```
 
-Design notes and parked work are in [PLAN-V2.md](./PLAN-V2.md).
+Design notes, measurements and parked work are in [PLAN-V2.md](./PLAN-V2.md).
