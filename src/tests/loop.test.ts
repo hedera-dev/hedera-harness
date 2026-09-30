@@ -278,3 +278,4 @@ test("a pass with nothing before it has nothing to have fixed", async () => {
   const driven = await drive([PASSES]);
   assert.deepEqual(tallies(driven.events), [[0, 0, 0]]);
 });
+

@@ -104,6 +104,7 @@ harness run --spec <path>   build the feature described by a spec
 harness report [run]        read a finished run (default: the latest)
 
   --max-attempts N          repair attempts before giving up (default 3)
+  --max-spend USD           stop an agent that spends more than this (unset by default)
   --model NAME              sonnet (default), opus, haiku, or a full model id
   --judge-model NAME        model for EVALUATE only (default: the same as --model)
   --yes                     skip the first-run command confirmation
@@ -227,7 +228,9 @@ Machine-level settings are environment variables, deliberately kept out of `harn
 | `HEDERA_OPERATOR_KEY` | Its private key. Passed to the evaluator to import into the app, and scrubbed from every artifact. The harness never signs with it. |
 | `NO_COLOR` | Turns off colour. Already off when stdout is not a terminal, so piping or redirecting needs nothing. |
 
-Every stage is bounded — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The numbers live beside the code they bound, in `src/`, each with what measurement set it.
+Every stage is bounded by a clock — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The numbers live beside the code they bound, in `src/`, each with what measurement set it.
+
+There is deliberately **no spend limit by default**. What a run is worth is yours to decide, and a figure we picked would only ever be wrong for somebody. Time still bounds it: an evaluation cannot exceed 45 minutes, which at measured rates is around $8.50 of tokens. Pass `--max-spend` if you want a harder ceiling than that.
 
 ## What it does not do yet
 

@@ -18,8 +18,8 @@ import { renderToTerminal } from "./render/terminal.js";
 import { red } from "./style.js";
 
 const USAGE = `usage: harness init [name] [--model NAME] [--yes]
-       harness run --spec <path> [--max-attempts N] [--model NAME]
-                          [--judge-model NAME] [--yes] [--json]
+       harness run --spec <path> [--max-attempts N] [--max-spend USD]
+                          [--model NAME] [--judge-model NAME] [--yes] [--json]
        harness report [run] [--full]
 
 Run from inside the target repository.
@@ -32,6 +32,8 @@ Run from inside the target repository.
 
   --spec <path>        the feature to build
   --max-attempts N    repair attempts before giving up (default 3)
+  --max-spend USD     stop an agent that spends more than this. Unset by
+                      default: every stage is already bounded by a clock
   --model NAME        agent model: sonnet (default), opus, haiku, or a full id
   --judge-model NAME  model for EVALUATE only (default: the same as --model)
   --yes               skip the first-run command confirmation
@@ -119,6 +121,7 @@ interface Options {
   maxAttempts: number;
   model: string;
   judgeModel: string;
+  maxSpendUsd: number | undefined;
   assumeYes: boolean;
   json: boolean;
   review: boolean;
@@ -169,6 +172,7 @@ function parse(argv: string[]): Options {
       options: {
         spec: { type: "string" },
         "max-attempts": { type: "string", default: "3" },
+        "max-spend": { type: "string" },
         model: { type: "string", default: DEFAULT_MODEL },
         "judge-model": { type: "string", ...(DEFAULT_JUDGE === undefined ? {} : { default: DEFAULT_JUDGE }) },
         yes: { type: "boolean", default: false },
@@ -192,6 +196,18 @@ function parse(argv: string[]): Options {
     throw new UsageError(`--max-attempts must be a positive integer`);
   }
 
+  // Deliberately no default. What a run is worth is the operator's call, and a
+  // number we invented would only ever be wrong for somebody.
+  //
+  // The undefined check has to come first: `Number(undefined)` is NaN but
+  // `Number("")` is 0, and a zero ceiling stops an agent before its first turn.
+  // A bare `--max-spend -1` never reaches here — parseArgs reads the -1 as
+  // another flag and refuses it first, with its own wording.
+  const maxSpendUsd = values["max-spend"] === undefined ? undefined : Number(values["max-spend"]);
+  if (maxSpendUsd !== undefined && !(maxSpendUsd > 0)) {
+    throw new UsageError(`--max-spend must be a positive number of dollars`);
+  }
+
   return {
     command,
     name: positionals[0] ?? "feature",
@@ -199,6 +215,7 @@ function parse(argv: string[]): Options {
     maxAttempts,
     model: values.model,
     judgeModel: values["judge-model"] ?? values.model,
+    maxSpendUsd,
     assumeYes: values.yes,
     json: values.json,
     review: values.review,
@@ -326,6 +343,7 @@ async function main(argv: string[]): Promise<number> {
       maxAttempts: options.maxAttempts,
       model: options.model,
       judgeModel: options.judgeModel,
+      maxSpendUsd: options.maxSpendUsd,
       checks: examined.checks,
       continuing: resuming === null ? undefined : resuming,
       specInRepo,

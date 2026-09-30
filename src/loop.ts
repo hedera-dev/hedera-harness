@@ -25,6 +25,8 @@ export interface LoopOptions {
   model: string;
   /** Who judges. The same as `model` unless asked otherwise. */
   judgeModel: string;
+  /** Unset means no spend ceiling. Bounds each agent call, not the run. */
+  maxSpendUsd?: number | undefined;
   /** Read from the spec at DOCTOR, pinned for the run, settled every attempt. */
   checks: Check[];
   /**
@@ -104,7 +106,15 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const history: Attempt[] = [];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const generated = await build({ repoRoot, run, prompt, attempt, resume: session, model: options.model });
+    const generated = await build({
+      repoRoot,
+      run,
+      prompt,
+      attempt,
+      resume: session,
+      model: options.model,
+      maxSpendUsd: options.maxSpendUsd,
+    });
     session = generated.sessionId;
     timings.generateMs += generated.durationMs;
     if (skills.length === 0) skills = generated.skills;
@@ -183,6 +193,7 @@ async function assess(options: LoopOptions, attempt: number, timings: Timings): 
         attempt,
         appUrl: server.url,
         model: options.judgeModel,
+        maxSpendUsd: options.maxSpendUsd,
       }),
     );
   } finally {

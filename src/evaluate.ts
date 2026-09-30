@@ -11,22 +11,28 @@ import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
 import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
-/** Shorter than GENERATE — though the measurement disputes that; see PR #35. */
-const WALL_CLOCK_MS = 20 * 60_000;
 /**
- * A turn is one round-trip to the model, and real evaluations cost about
- * $0.012 of them — so this bound is also a spend bound, whether or not it is
- * named like one. At 120 it bites around $1.68, well clear of MAX_BUDGET_USD
- * and roughly twice the busiest evaluation yet measured (57 turns).
+ * How long judging one spec may take. The bound that is actually ours to set:
+ * a run has to end, and this is the only number here that is about the harness
+ * rather than about the operator's wallet.
  *
- * It was briefly 300, which works out at ~$4.20 — within 15% of the budget cap,
- * so the two would have fired at almost the same moment and one of them would
- * have stopped being a bound at all. Move this only when it has actually
- * stopped legitimate work, not because it is the tightest number here; something
- * always is. Breaching it now costs a pause rather than the run.
+ * Nine runs measured the rest. A `send-hbar` evaluation ended at
+ * `error_max_turns` on turn 121 having spent $2.51 of its $5 in 13 of its 20
+ * minutes — so the bound that fired was a turn count nobody had chosen for any
+ * reason, while the two picked deliberately sat unused. It cost a verdict.
  */
-const MAX_TURNS = 120;
-const MAX_BUDGET_USD = 5;
+const WALL_CLOCK_MS = 45 * 60_000;
+
+/** Measured: 13.4 minutes across the 121 turns of a real evaluation. */
+const SECONDS_PER_TURN = 6.7;
+
+/**
+ * Turns exist to end a loop that is going nowhere *cheaply* — one that spends
+ * nothing and takes no time per turn would otherwise run to the wall clock. So
+ * it is derived to expire just after the clock rather than before it, which is
+ * the mistake the measurement caught.
+ */
+const MAX_TURNS = Math.ceil(WALL_CLOCK_MS / 1_000 / SECONDS_PER_TURN);
 
 const TOOL = "submit_verdict";
 const DECLARE = "declare_check";
@@ -81,6 +87,8 @@ export interface EvaluateOptions {
   attempt: number;
   model: string;
   appUrl: string;
+  /** Unset means no spend ceiling — the wall clock is what bounds a run. */
+  maxSpendUsd?: number | undefined;
 }
 
 const failureShape = z.object({
@@ -325,7 +333,8 @@ async function pass(
           network: { allowLocalBinding: true },
         },
         maxTurns: MAX_TURNS,
-        maxBudgetUsd: MAX_BUDGET_USD,
+        // Only when asked for. See `--max-spend`.
+        ...(options.maxSpendUsd === undefined ? {} : { maxBudgetUsd: options.maxSpendUsd }),
         abortController: controller,
       },
     });
