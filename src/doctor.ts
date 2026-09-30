@@ -16,7 +16,7 @@ import type { Run } from "./run.js";
 import { ServeError, startServer } from "./serve.js";
 import { runStages } from "./test.js";
 
-/** See PLAN-V2 § Bounds. Starting points, to be tuned once there are real runs. */
+/** Starting points, to be tuned once there are real runs. */
 const RESOLVE_TIMEOUT_MS = 5 * 60_000;
 
 export class DoctorError extends Error {

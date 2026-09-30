@@ -8,7 +8,7 @@ import type { Run } from "./run.js";
 /** Where specs live. A convention, not a requirement — `run` takes any path. */
 export const SPECS_DIR = "specs";
 
-/** See PLAN-V2 § Bounds. Reading a repo to draft one document. */
+/** Bounded: reading a repo to draft one document. */
 const DRAFT_TIMEOUT_MS = 5 * 60_000;
 const MAX_TURNS = 30;
 

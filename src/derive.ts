@@ -22,7 +22,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { type Check, locate } from "./checks.js";
 
-/** See PLAN-V2 § Bounds. Reading one document and answering once. */
+/** Bounded: reading one document and answering once. */
 const TIMEOUT_MS = 3 * 60_000;
 const MAX_TURNS = 8;
 

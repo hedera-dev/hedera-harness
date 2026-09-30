@@ -227,7 +227,7 @@ Machine-level settings are environment variables, deliberately kept out of `harn
 | `HEDERA_OPERATOR_KEY` | Its private key. Passed to the evaluator to import into the app, and scrubbed from every artifact. The harness never signs with it. |
 | `NO_COLOR` | Turns off colour. Already off when stdout is not a terminal, so piping or redirecting needs nothing. |
 
-Every stage is bounded — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The current numbers, and what measurement set them, are in [PLAN-V2 § Bounds](./PLAN-V2.md#bounds).
+Every stage is bounded — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The numbers live beside the code they bound, in `src/`, each with what measurement set it.
 
 ## What it does not do yet
 
@@ -243,4 +243,3 @@ npm test          # builds, then runs the suite
 npm run typecheck
 ```
 
-Design notes, measurements and parked work are in [PLAN-V2.md](./PLAN-V2.md).

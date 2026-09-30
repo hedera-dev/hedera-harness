@@ -6,7 +6,7 @@ import { emit } from "./events.js";
 import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
-/** See PLAN-V2 § Bounds. Starting points, to be tuned once there are real runs. */
+/** Starting points, to be tuned once there are real runs. */
 const WALL_CLOCK_MS = 60 * 60_000;
 const MAX_TURNS = 300;
 const MAX_BUDGET_USD = 10;

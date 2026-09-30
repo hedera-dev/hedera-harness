@@ -11,7 +11,7 @@ import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
 import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
-/** See PLAN-V2 § Bounds — shorter than GENERATE: judging is cheaper than building. */
+/** Shorter than GENERATE — though the measurement disputes that; see PR #35. */
 const WALL_CLOCK_MS = 20 * 60_000;
 /**
  * A turn is one round-trip to the model, and real evaluations cost about
