@@ -1,8 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import { emit } from "./events.js";
 import type { Run } from "./run.js";
 
@@ -12,8 +11,6 @@ export const SPECS_DIR = "specs";
 /** See PLAN-V2 § Bounds. Reading a repo to draft one document. */
 const DRAFT_TIMEOUT_MS = 5 * 60_000;
 const MAX_TURNS = 30;
-
-const TOOL = "submit_spec";
 
 export class InitError extends Error {
   constructor(message: string) {
@@ -54,56 +51,40 @@ export async function initialise(options: InitOptions): Promise<InitResult> {
     throw new InitError(`${relative} already exists. Pick another name, or edit that one.`);
   }
 
-  const drafted = await draft(options).catch((error: Error) => {
+  await mkdir(dirname(target), { recursive: true });
+
+  const tailored = await draft(options, target).catch((error: Error) => {
     emit({
       type: "note",
       level: "warn",
       text: `could not draft a tailored spec (${error.message}) — writing the skeleton`,
     });
-    return null;
+    return false;
   });
 
-  await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, drafted ?? SKELETON);
-  emit({ type: "spec:written", path: relative, tailored: drafted !== null });
-  return { path: relative, tailored: drafted !== null };
+  if (!tailored) await writeFile(target, SKELETON);
+  emit({ type: "spec:written", path: relative, tailored });
+  return { path: relative, tailored };
 }
 
-async function draft(options: InitOptions): Promise<string> {
-  const captured: { markdown: string | null } = { markdown: null };
-
-  const server = createSdkMcpServer({
-    name: "harness",
-    tools: [
-      tool(
-        TOOL,
-        "Submit the spec skeleton, as markdown.",
-        {
-          markdown: z
-            .string()
-            .min(1)
-            .describe("The complete spec file contents, ready to be written to disk"),
-        },
-        async (args) => {
-          captured.markdown = args.markdown;
-          return { content: [{ type: "text", text: "Written." }] };
-        },
-      ),
-    ],
-  });
-
+/**
+ * Lets the agent write the file itself. There was an MCP tool here that took
+ * the markdown as an argument and put it in a variable — a schema that enforced
+ * nothing, wrapping a capability the agent already ships.
+ */
+async function draft(options: InitOptions, target: string): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DRAFT_TIMEOUT_MS);
 
   try {
     const conversation = query({
-      prompt: brief(options.name),
+      prompt: brief(options.name, target),
       options: {
         cwd: options.repoRoot,
         model: options.model,
-        mcpServers: { harness: server },
-        // Read-only: it is here to understand the project, not to change it.
-        allowedTools: ["Read", "Glob", "Grep", `mcp__harness__${TOOL}`],
+        // One file, named in the prompt. Everything else is read-only: this is
+        // here to understand the project, not to change it.
+        allowedTools: ["Read", "Glob", "Grep", "Write"],
         permissionMode: "bypassPermissions",
         settingSources: ["project"],
         maxTurns: MAX_TURNS,
@@ -111,17 +92,18 @@ async function draft(options: InitOptions): Promise<string> {
       },
     });
     for await (const _ of conversation) {
-      // Drained for the tool call; the draft arrives through the handler.
+      // Drained; the draft arrives on disk.
     }
   } finally {
     clearTimeout(timer);
   }
 
-  if (captured.markdown === null) throw new InitError(`the agent finished without calling ${TOOL}`);
-  return captured.markdown.endsWith("\n") ? captured.markdown : `${captured.markdown}\n`;
+  // The file is the answer, so nothing needs parsing — but an agent that talked
+  // about writing it without writing it must still fall back to the skeleton.
+  return existsSync(target);
 }
 
-function brief(name: string): string {
+function brief(name: string, target: string): string {
   return [
     "Read enough of this project to understand what it is and how it is organised:",
     "its routes or pages, where components, hooks and utilities live, and the",
@@ -146,7 +128,8 @@ function brief(name: string): string {
     "Do not invent a feature and do not write requirements. The developer supplies",
     "the intent; you supply the shape and the local detail.",
     "",
-    `Call ${TOOL} with the finished markdown.`,
+    `Write the finished markdown to ${target} and nothing else. Do not create or`,
+    "modify any other file.",
   ].join("\n");
 }
 

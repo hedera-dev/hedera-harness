@@ -1,7 +1,7 @@
 import { appendFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
@@ -299,6 +299,13 @@ async function pass(
         model: options.model,
         ...(turn.resume === undefined ? {} : { resume: turn.resume }),
         plugins: [{ type: "local", path: playwrightSkills() }],
+        // `settingSources: []` blocks the operator's own skills and plugins but
+        // not the ones Claude Code bundles, which arrive regardless: measured at
+        // fifteen reaching the evaluator, of which one is wanted. Bloat is the
+        // lesser half. Several of the rest — code-review, security-review,
+        // simplify, run, init — point a judge at the code, which is the one
+        // thing this stage may never look at.
+        skills: [driving()],
         mcpServers: { harness: server },
         settingSources: [],
         permissionMode: "bypassPermissions",
@@ -683,7 +690,25 @@ export function browserCache(): string {
   return join(homedir(), ".cache", "ms-playwright");
 }
 
-/** The Playwright CLI ships its own agent skill; loading it beats explaining the CLI. */
+/**
+ * The Playwright CLI ships its own agent skill; loading it beats explaining the
+ * CLI. A local plugin is the only way the SDK takes a skill directory — the
+ * `skills` option filters what was found, it does not find anything.
+ */
 function playwrightSkills(): string {
   return join(HARNESS_ROOT, "node_modules", "playwright-core", "lib", "tools");
+}
+
+/**
+ * The one skill the evaluator should have, qualified by plugin name. That name
+ * comes from the directory, so it is read from the path rather than written out
+ * twice — the alternative is a literal that stops matching if Playwright moves
+ * the folder, and a filter that matches nothing leaves the evaluator with no
+ * browser skill and no complaint.
+ *
+ * The same directory also ships `playwright-component-testing` and
+ * `playwright-trace`, which have nothing to do with judging a running app.
+ */
+function driving(): string {
+  return `${basename(playwrightSkills())}:playwright-cli`;
 }

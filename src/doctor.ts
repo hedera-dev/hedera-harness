@@ -138,11 +138,16 @@ async function checkSkills(repoRoot: string): Promise<void> {
     emit({ type: "check", name: "skills from HEDERA_SKILLS_DIR", ok: true });
     return;
   }
+  // The remedy has to populate the directory this check reads. The previous one
+  // — `claude plugin marketplace add` — installs *plugins*, which land in
+  // settings rather than in .claude/skills, so following it left this check
+  // still failing. `npx skills add` is the form hedera-skills documents for
+  // exactly this.
   emit({
     type: "check",
-    name: "no project skills — the agent works without Hedera-specific knowledge",
+    name: "no project skills — the agent works without Hedera knowledge, which is fine",
     ok: false,
-    remedy: "add them with: claude plugin marketplace add hedera-dev/hedera-skills",
+    remedy: "for better output: npx skills add hedera-dev/hedera-skills",
   });
 }
 
@@ -208,14 +213,10 @@ async function checkWallet(): Promise<void> {
 }
 
 async function checkTooling(repoRoot: string): Promise<void> {
-  const missing: string[] = [];
-  for (const binary of ["node", "git"]) {
-    if (!(await exists(binary, repoRoot))) missing.push(binary);
-  }
-  if (missing.length > 0) {
-    throw new DoctorError(`not on PATH: ${missing.join(", ")}`);
-  }
-  emit({ type: "check", name: "tooling", ok: true });
+  // Git only. This ran inside a Node process and asked whether Node was
+  // installed, which cannot come back false.
+  if (!(await exists("git", repoRoot))) throw new DoctorError("not on PATH: git");
+  emit({ type: "check", name: "git", ok: true });
 }
 
 async function exists(binary: string, cwd: string): Promise<boolean> {
