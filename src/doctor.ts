@@ -107,16 +107,24 @@ async function checkSkills(repoRoot: string): Promise<void> {
     emit({ type: "check", name: "skills from HEDERA_SKILLS_DIR", ok: true });
     return;
   }
-  // The remedy has to populate the directory this check reads. The previous one
-  // — `claude plugin marketplace add` — installs *plugins*, which land in
-  // settings rather than in .claude/skills, so following it left this check
-  // still failing. `npx skills add` is the form hedera-skills documents for
-  // exactly this.
+  // Two install paths are documented and only one of them reaches the
+  // generator. `npx skills add` writes into the project's .claude/skills, which
+  // GENERATE loads through `settingSources: ["project"]`. The Claude Code flow
+  // — `/plugin marketplace add` then `/plugin install` — installs at *user*
+  // level, which that setting deliberately excludes: measured on this machine
+  // at 40 skills reaching the generator against 74 the operator can see, three
+  // of them Hedera ones. So someone who installed the plugin way has the skills
+  // in their own session and none of them here, which is worth saying rather
+  // than leaving them to wonder.
   emit({
     type: "check",
     name: "no project skills — the agent works without Hedera knowledge, which is fine",
     ok: false,
-    remedy: "for better output: npx skills add hedera-dev/hedera-skills",
+    remedy:
+      "for better output: npx skills add hedera-dev/hedera-skills\n" +
+      "installing them as a Claude Code plugin instead puts them in your own settings, " +
+      "which a run cannot read — it only loads what the project carries, so every " +
+      "teammate gets the same ones.",
   });
 }
 

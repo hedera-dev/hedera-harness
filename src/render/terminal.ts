@@ -70,7 +70,11 @@ export function renderToTerminal(): () => void {
 
       case "check": {
         console.log(event.ok ? tick(event.name) : warn(event.name));
-        if (event.remedy !== undefined) console.log(`  ${dim(event.remedy)}`);
+        // A remedy may need more than one line: the shortest form of "do this"
+        // is sometimes not the one people already tried.
+        if (event.remedy !== undefined) {
+          for (const line of event.remedy.split("\n")) console.log(`  ${dim(line)}`);
+        }
         return;
       }
 
