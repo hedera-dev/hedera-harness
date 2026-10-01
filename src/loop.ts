@@ -14,6 +14,16 @@ import { type StageFailure, runStages } from "./test.js";
 /** How much of a failing command's output the repair prompt carries. */
 const OUTPUT_TAIL = 4_000;
 
+/**
+ * How long a whole run may take before it stops starting new attempts.
+ *
+ * Every stage was bounded and the run was not, so the bounds multiplied: three
+ * attempts of generation (60), commands (62) and evaluation (45 plus a nudge)
+ * is over ten hours, with nothing but Ctrl-C in the way. Nobody chose ten
+ * hours; it was the product of five numbers each chosen for its own reasons.
+ */
+const RUN_BUDGET_MS = 4 * 60 * 60_000;
+
 export interface LoopOptions {
   config: HarnessConfig;
   repoRoot: string;
@@ -92,6 +102,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const build = options.agents?.generate ?? generate;
 
   const timings: Timings = { generateMs: 0, testMs: 0, evaluateMs: 0 };
+  const startedAt = Date.now();
   // Recorded once: what the agent could reach. A run that behaves differently
   // from another is usually a different skill set, and this is the record of it.
   let skills: string[] = [];
@@ -106,6 +117,23 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const history: Attempt[] = [];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    // Checked between attempts, never inside one: a deadline that killed work
+    // in flight would throw away a generation already paid for. So the real
+    // ceiling is this plus one attempt, which is the point — it stops the next
+    // one starting rather than interrupting this one.
+    const spent = Date.now() - startedAt;
+    if (attempt > 1 && spent > RUN_BUDGET_MS) {
+      emit({
+        type: "note",
+        level: "warn",
+        text:
+          `stopping after ${attempt - 1} attempt(s): ${Math.round(spent / 60_000)} minutes is ` +
+          `past the ${RUN_BUDGET_MS / 60_000}-minute budget for a run. The branch has the work so far, ` +
+          `and --continue picks it up.`,
+      });
+      break;
+    }
+
     const generated = await build({
       repoRoot,
       run,

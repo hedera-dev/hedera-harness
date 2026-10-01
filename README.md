@@ -228,6 +228,8 @@ Machine-level settings are environment variables, deliberately kept out of `harn
 
 Every stage is bounded by a clock — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The numbers live beside the code they bound, in `src/`, each with what measurement set it.
 
+A run stops starting new attempts after four hours. Each stage is bounded too, and the two together put the worst case at about seven hours — a number worth knowing before leaving one unattended, and one you can cut with `--max-attempts`.
+
 There is deliberately **no spend limit by default**. What a run is worth is yours to decide, and a figure we picked would only ever be wrong for somebody. Time still bounds it: an evaluation cannot exceed 45 minutes, which at measured rates is around $8.50 of tokens. Pass `--max-spend` if you want a harder ceiling than that.
 
 ## What it does not do yet

@@ -26,12 +26,23 @@ const WALL_CLOCK_MS = 45 * 60_000;
 const SECONDS_PER_TURN = 6.7;
 
 /**
- * Turns exist to end a loop that is going nowhere *cheaply* — one that spends
- * nothing and takes no time per turn would otherwise run to the wall clock. So
- * it is derived to expire just after the clock rather than before it, which is
- * the mistake the measurement caught.
+ * Derived so that each bound catches the pathology it exists for.
+ *
+ * At the measured rate the two expire together, which looks like the mistake
+ * the old comment warned about — two bounds firing at once means one of them is
+ * not a bound. It is the opposite. Turns are spent without time passing when a
+ * loop errors instantly, and time passes without turns being spent when a
+ * command hangs; so a fast loop runs out of turns first and a stuck one runs out
+ * of clock first. They tie only in the healthy middle, where neither was needed.
  */
 const MAX_TURNS = Math.ceil(WALL_CLOCK_MS / 1_000 / SECONDS_PER_TURN);
+
+/**
+ * The nudge is a turn to finish with, not a second evaluation. It was getting a
+ * fresh `WALL_CLOCK_MS` because each pass builds its own timer — so a stage
+ * documented as 45 minutes could take 90, by accident rather than by decision.
+ */
+const NUDGE_MS = Math.round(WALL_CLOCK_MS / 3);
 
 /** What the evaluator writes, in its own workspace, and the harness reads back. */
 const VERDICT_FILE = "verdict.json";
@@ -239,10 +250,12 @@ async function pass(
 ): Promise<{ outcome: Outcome; sessionId: string | undefined }> {
   const { repoRoot, attempt } = options;
   const signer = wallet();
+  const budgetMs = turn.resume === undefined ? WALL_CLOCK_MS : NUDGE_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WALL_CLOCK_MS);
+  const timer = setTimeout(() => controller.abort(), budgetMs);
   const startedAt = Date.now();
   let costUsd: number | undefined;
+  let turns: number | undefined;
   let sessionId: string | undefined;
 
   // The agent's Bash resolves `playwright-cli` from the harness's own install,
@@ -322,6 +335,7 @@ async function pass(
       const ending = endingOf(message, MAX_TURNS);
       if (ending !== null) {
         costUsd = ending.costUsd;
+        turns = ending.turns;
         if (ending.failure !== null) {
           const stopped = `the evaluator stopped because ${ending.failure.reason}`;
           // A bound another turn could satisfy earns the retry the bounds table
@@ -335,7 +349,7 @@ async function pass(
   } catch (error) {
     if (error instanceof EvaluateError) throw error;
     if (controller.signal.aborted) {
-      turn.captured.malformed = `the evaluator did not finish within ${WALL_CLOCK_MS / 60_000} minutes`;
+      turn.captured.malformed = `the evaluator did not finish within ${budgetMs / 60_000} minutes`;
     } else if (turn.captured.malformed === null) {
       throw error;
     }
@@ -358,6 +372,7 @@ async function pass(
     verdict: outcome.type === "no-verdict" ? "none" : outcome.verdict.pass ? "pass" : "fail",
     findings: outcome.type === "no-verdict" ? 0 : outcome.verdict.failures.length,
     costUsd,
+    turns,
     durationMs: Date.now() - startedAt,
   });
   return { outcome, sessionId };

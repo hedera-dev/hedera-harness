@@ -65,6 +65,8 @@ export type HarnessEvent =
       attempt: number;
       verdict: "pass" | "fail" | "none";
       findings: number;
+      /** What MAX_TURNS is derived from. Recorded so the rate can be measured, not assumed. */
+      turns?: number | undefined;
       /** Same caveat as generation's: a list-price equivalent, not money. */
       costUsd?: number | undefined;
       durationMs: number;
