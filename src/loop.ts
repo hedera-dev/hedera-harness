@@ -2,11 +2,12 @@ import { join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { HarnessConfig } from "./config.js";
 import type { Check } from "./checks.js";
-import { type Outcome, cited, evaluate } from "./evaluate.js";
+import { type Outcome, evaluate } from "./evaluate.js";
+import { type Feedback, repairPrompt } from "./prompts/repair.js";
 import { generate } from "./generate.js";
 import { commitWork } from "./git.js";
 import { type Timings, emit } from "./events.js";
-import { type AttemptFailure, describeFailure, fromStage, fromVerdict } from "./failure.js";
+import { type AttemptFailure, fromStage, fromVerdict } from "./failure.js";
 import type { Run } from "./run.js";
 import { startServer } from "./serve.js";
 import { type StageFailure, runStages } from "./test.js";
@@ -72,13 +73,6 @@ export interface LoopResult {
 export type { Timings };
 
 /** What an attempt failed on, in the shape the diagram uses for `feedback.json`. */
-interface Feedback {
-  ok: boolean;
-  failures: AttemptFailure[];
-  /** Command output, carried to the repair prompt but not to `feedback.json`. */
-  detail?: string;
-}
-
 /** One attempt's outcome, as recorded in `result.json`. */
 export interface Attempt {
   attempt: number;
@@ -267,56 +261,6 @@ function report(attempt: number, feedback: Feedback, previous: Set<string>): boo
     failures: feedback.failures,
   });
   return open.length > 0;
-}
-
-/**
- * What the agent is told went wrong.
- *
- * A stage failure carries the command's own output, so it explains itself. A
- * verdict failure is one sentence from someone who watched the app in a browser
- * — so it gets the evidence too, by a path the agent can actually open. The
- * evaluator saves screenshots, page snapshots and saved responses, all of them
- * readable, and citing them by bare filename made them unfindable.
- */
-function repairPrompt(feedback: Feedback, artifacts: string): string {
-  return [
-    "That attempt did not pass. What went wrong:",
-    "",
-    ...feedback.failures.flatMap((failure) => [
-      `- ${describeFailure(failure)}`,
-      ...pointers(failure, artifacts),
-    ]),
-    feedback.detail === undefined ? "" : `\n${feedback.detail}`,
-    "",
-    "Fix it, then stop. Do not start the dev server or run the checks yourself —",
-    "they run automatically once you are done.",
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
-}
-
-/**
- * Where to look. A stage failure points at its own output, a judged one at the
- * evidence behind it.
- */
-function pointers(failure: AttemptFailure, artifacts: string): string[] {
-  if (failure.kind === "verdict") {
-    return failure.evidence.map((item) => `  ${located(item, artifacts)}`);
-  }
-  return [`  full output: ${join(artifacts, `${failure.stage}.txt`)}`];
-}
-
-/**
- * Evidence is a file the evaluator saved, or a URL it read. Only the first
- * needs a path, and it is reduced by the same function that validated it — so
- * a citation cannot pass the check in one spelling and be built into a path in
- * another, which is how `evidence/evidence/shot.png` happened.
- */
-function located(evidence: string, artifacts: string): string {
-  const name = cited(evidence);
-  return name === evidence && /^https?:\/\//.test(evidence)
-    ? evidence
-    : join(artifacts, "evidence", name);
 }
 
 async function writeFeedback(run: Run, attempt: number, feedback: Feedback): Promise<void> {

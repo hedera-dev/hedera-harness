@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { describeFailure, fromStage, fromVerdict } from "../failure.js";
 import { endingOf } from "../messages.js";
-import { cited, locators, nudge } from "../evaluate.js";
+import { cited, locators, } from "../evaluate.js";
+import { nudge } from "../prompts/evaluate.js";
 import type { StageFailure } from "../test.js";
 
 function stage(output: string, over: Partial<StageFailure> = {}): StageFailure {
