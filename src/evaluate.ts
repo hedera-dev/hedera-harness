@@ -1,9 +1,9 @@
 import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { type SDKMessage, query } from "@anthropic-ai/claude-agent-sdk";
 import { type Check, worded } from "./checks.js";
 import { emit } from "./events.js";
 import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
@@ -272,7 +272,7 @@ async function pass(
         // lesser half. Several of the rest — code-review, security-review,
         // simplify, run, init — point a judge at the code, which is the one
         // thing this stage may never look at.
-        skills: [driving()],
+        skills: [DRIVING],
         settingSources: [],
         permissionMode: "bypassPermissions",
         sandbox: {
@@ -308,6 +308,13 @@ async function pass(
         emit({ type: "tool", tool: step.tool, argument: step.argument, phase: "evaluate", attempt });
       }
       sessionId ??= message.session_id;
+
+      // Loud rather than detectable. This is the one message that says which
+      // skills actually survived the filter, and a wrong name degrades the
+      // evaluation silently — the failure class this whole file keeps meeting.
+      const absent = missingSkill(message);
+      if (absent !== null) emit({ type: "note", level: "warn", text: absent, attempt });
+
       // A bound the SDK enforces itself arrives as an error result and *then*
       // throws when the iterator is pulled again. Reading it here is what turns
       // "the run died" into "no verdict, ask once more", which is what the
@@ -760,6 +767,28 @@ function playwrightSkills(): string {
  * The same directory also ships `playwright-component-testing` and
  * `playwright-trace`, which have nothing to do with judging a running app.
  */
-function driving(): string {
-  return `${basename(playwrightSkills())}:playwright-cli`;
+/**
+ * The one skill the evaluator should have.
+ *
+ * `tools:` because a plugin's skills are named `plugin:skill`, and this
+ * "plugin" has no `.claude-plugin/plugin.json` to name it, so the SDK falls
+ * back to the folder — `playwright-core/lib/tools`.
+ *
+ * Which means the name can drift three ways: Playwright moves the folder,
+ * ships a manifest naming the plugin something else, or renames the skill. A
+ * filter that matches nothing is not an error — it is an empty guest list, and
+ * the evaluator would judge with no browser skill and say nothing. So the name
+ * is checked against what actually loaded rather than being computed to look
+ * safe; see `missingSkill`.
+ */
+const DRIVING = "tools:playwright-cli";
+
+/** Exported for tests. Why the skill filter matched nothing, or null when it matched. */
+export function missingSkill(message: SDKMessage): string | null {
+  if (message.type !== "system" || message.subtype !== "init") return null;
+  if (message.skills.includes(DRIVING)) return null;
+  const near = message.skills.filter((name: string) => name.endsWith("playwright-cli"));
+  return near.length > 0
+    ? `the browser skill is loaded as ${near.join(", ")}, not ${DRIVING} — the filter matched nothing`
+    : `${DRIVING} did not load, so the evaluator is driving a browser it was never taught to use`;
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { readChecks } from "../derive.js";
+import { missingSkill } from "../evaluate.js";
 
 /**
  * The distinction this file exists for.
@@ -66,4 +67,36 @@ test("two expectations in one entry are two claims wearing one locator", async (
   // two would report the wrong thing as fixed.
   const found = await readChecks(await wrote(JSON.stringify([{ ...ONE, expect: {} }])));
   assert.ok(!("failed" in found) && found.checks.length === 0 && found.dropped === 1);
+});
+
+/**
+ * The guard on the evaluator's one skill.
+ *
+ * `tools:playwright-cli` is a name assembled from a folder Playwright owns, so
+ * it can drift three ways — the folder moves, a plugin manifest appears, or the
+ * skill is renamed. None of those raise anything: the filter simply matches
+ * nothing and the evaluator judges with no browser skill. This is what makes
+ * that loud.
+ */
+test("a browser skill that did not load says so", () => {
+  const init = (skills: string[]) =>
+    ({ type: "system", subtype: "init", skills }) as unknown as Parameters<typeof missingSkill>[0];
+
+  assert.equal(missingSkill(init(["tools:playwright-cli", "dataviz"])), null, "loaded");
+
+  assert.match(
+    missingSkill(init(["playwright:playwright-cli"])) ?? "",
+    /not tools:playwright-cli/,
+    "a manifest renamed the plugin — the near-miss is named, since that is the fix",
+  );
+  assert.match(
+    missingSkill(init(["dataviz", "code-review"])) ?? "",
+    /never taught to use/,
+    "gone entirely",
+  );
+  assert.equal(
+    missingSkill({ type: "assistant" } as unknown as Parameters<typeof missingSkill>[0]),
+    null,
+    "every other message is not an answer to this question",
+  );
 });
