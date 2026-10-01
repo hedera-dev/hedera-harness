@@ -163,6 +163,14 @@ export function renderToTerminal(): () => void {
         console.log("");
         return;
 
+      case "config:written":
+        console.log(heading("wrote", event.file));
+        for (const { name, command } of event.commands) {
+          console.log(`  ${name.padEnd(8)}${command === null ? dim("(none)") : describe(command)}`);
+        }
+        console.log(dim("\n  next: harness run --spec <path>\n"));
+        return;
+
       case "derived": {
         console.log(`\n  ${dim("I will also verify, from this spec:")}`);
         for (const check of event.checks) {

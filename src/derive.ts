@@ -17,7 +17,9 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import { confirm } from "./ask.js";
 import { type Check, locate } from "./checks.js";
+import { emit } from "./events.js";
 
 /** Bounded: reading one document and answering once. */
 const TIMEOUT_MS = 3 * 60_000;
@@ -25,10 +27,49 @@ const MAX_TURNS = 8;
 
 const TOOL = "propose_checks";
 
+export interface DeriveOptions {
+  /** The spec's text. Checks are read from it before anything is built. */
+  spec: string;
+  /** Where the app will run, for the routes a derived check names. */
+  appUrlHint: string;
+  model: string;
+  /** Stop and confirm the derived checks rather than showing them and going on. */
+  review: boolean;
+  /** Answer the review confirmation without asking. */
+  assumeYes: boolean;
+}
+
+/**
+ * The phase between DOCTOR and GENERATE. Its own step, not part of DOCTOR,
+ * because the whole property of these checks is that they exist before the
+ * app does — nothing about the app can shape them — and because DOCTOR is
+ * deterministic while this is the one pre-generation step that asks a model.
+ *
+ * Shown rather than asked about. Confirming by default would put an
+ * interaction on the main path *per spec*, and whether a check says what you
+ * meant is usually only visible once it has run. `--review` is there for
+ * anyone who disagrees.
+ */
+export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
+  emit({ type: "phase:started", phase: "derive" });
+  const checks = await derive(options.spec, options.appUrlHint, options.model);
+  if (checks.length === 0) return [];
+
+  emit({ type: "derived", checks });
+  if (options.review) {
+    await confirm(
+      "Use these?",
+      options.assumeYes,
+      "declined — edit the spec and run again.",
+    );
+  }
+  return checks;
+}
+
 /**
  * Derives what a judge can verify by reading a value, from the spec's own
  * words. Returns nothing rather than throwing: a run without these is the run
- * we had last week, and failing DOCTOR because a helper could not be reached
+ * we had last week, and failing the run because a helper could not be reached
  * would trade a working harness for a stricter one.
  */
 export async function derive(spec: string, appUrlHint: string, model: string): Promise<Check[]> {

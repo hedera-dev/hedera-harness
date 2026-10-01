@@ -1,16 +1,17 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { aside, terminal } from "./ask.js";
+import { type Command, describe } from "./commands.js";
+import {
+  CONFIG_FILE,
+  type HarnessConfig,
+  commandProblem,
+  entries,
+  readConfig,
+  writeConfig,
+} from "./config.js";
 import { emit } from "./events.js";
-import type { Run } from "./run.js";
-
-/** Where specs live. A convention, not a requirement — `run` takes any path. */
-export const SPECS_DIR = "specs";
-
-/** Bounded: reading a repo to draft one document. */
-const DRAFT_TIMEOUT_MS = 5 * 60_000;
-const MAX_TURNS = 30;
+import { commit } from "./git.js";
 
 export class InitError extends Error {
   constructor(message: string) {
@@ -21,145 +22,169 @@ export class InitError extends Error {
 
 export interface InitOptions {
   repoRoot: string;
-  run: Run;
-  model: string;
-  /** Becomes `specs/<name>.md`. */
-  name: string;
-}
-
-export interface InitResult {
-  /** Repo-relative path of the spec that was written. */
-  path: string;
-  /** False when the agent could not be reached and the static skeleton was used. */
-  tailored: boolean;
+  /** Take every default without asking. Required when stdin is not a terminal. */
+  assumeYes: boolean;
 }
 
 /**
- * Writes a spec skeleton for the operator to fill in.
+ * What the repo itself says the answers are. A default is offered only when
+ * it was there to be read — the lockfile names the package manager, the
+ * manifest names the scripts — because a guessed default that is wrong is
+ * worse than an empty prompt.
+ */
+export interface Defaults {
+  install: Command;
+  /** Undefined when the manifest has no build script — the user must name one. */
+  build?: Command | undefined;
+  /** Null when the manifest has no real test script. "None" is a real answer. */
+  test: Command | null;
+  /** Undefined when no dev-server script was found. */
+  serve?: Command | undefined;
+}
+
+/**
+ * Writes `harness.yaml` by asking, not by agent.
  *
- * Drafted by an agent that has actually read the project, because a generic
- * skeleton cannot name the conventions a spec should follow — where pages
- * live, what the existing routes are, which hooks already exist. Unlike
- * command resolution this call is given file tools: the output is a document
- * a human edits, so there is nothing to keep reproducible.
+ * Four questions with defaults, for someone who knows their repo — the fast
+ * path. The slow one, where an agent reads the project and works the answers
+ * out, is `wizard`. Neither verifies the commands: a wrong one fails DOCTOR's
+ * baseline on the first run, with its output, which is where a wrong command
+ * is cheapest to recognise.
  */
-export async function initialise(options: InitOptions): Promise<InitResult> {
-  const relative = join(SPECS_DIR, `${options.name}.md`);
-  const target = join(options.repoRoot, relative);
-
-  if (existsSync(target)) {
-    throw new InitError(`${relative} already exists. Pick another name, or edit that one.`);
+export async function initialise(options: InitOptions): Promise<HarnessConfig> {
+  const { repoRoot } = options;
+  if ((await readConfig(repoRoot)) !== null) {
+    throw new InitError(`${CONFIG_FILE} already exists — edit it directly.`);
   }
 
-  await mkdir(dirname(target), { recursive: true });
+  const detected = await detectDefaults(repoRoot);
+  const config = options.assumeYes ? complete(detected) : await askForCommands(repoRoot, detected);
 
-  const tailored = await draft(options, target).catch((error: Error) => {
-    emit({
-      type: "note",
-      level: "warn",
-      text: `could not draft a tailored spec (${error.message}) — writing the skeleton`,
-    });
-    return false;
+  await writeConfig(repoRoot, config);
+  // Committed where the project lives: an uncommitted config is dirt, and
+  // DOCTOR's clean-tree check would refuse the first run over its own setup.
+  await commit([CONFIG_FILE], `chore: record harness commands in ${CONFIG_FILE}`, repoRoot);
+
+  emit({
+    type: "config:written",
+    file: CONFIG_FILE,
+    commands: entries(config).map(([name, command]) => ({ name, command })),
   });
+  return config;
+}
 
-  if (!tailored) await writeFile(target, SKELETON);
-  emit({ type: "spec:written", path: relative, tailored });
-  return { path: relative, tailored };
+/** Exported for tests: the defaults a repo would be offered. */
+export async function detectDefaults(repoRoot: string): Promise<Defaults> {
+  const pm = await packageManager(repoRoot);
+  const scripts = await readScripts(repoRoot);
+
+  // Idiomatic per manager: `yarn build`, but `npm run build`.
+  const run = (script: string): Command =>
+    pm === "npm" ? { run: `npm run ${script}` } : { run: `${pm} ${script}` };
+
+  const server = ["dev", "start", "serve"].find((name) => name in scripts);
+  const test = scripts["test"];
+  const hasRealTest = test !== undefined && !test.includes("no test specified");
+
+  return {
+    install: { run: `${pm} install` },
+    build: "build" in scripts ? run("build") : undefined,
+    test: hasRealTest ? (pm === "npm" ? { run: "npm test" } : { run: `${pm} test` }) : null,
+    serve: server === undefined ? undefined : run(server),
+  };
+}
+
+async function askForCommands(repoRoot: string, detected: Defaults): Promise<HarnessConfig> {
+  const asker = terminal();
+  try {
+    const install = await askOne(asker, repoRoot, "install", detected.install);
+    const build = await askOne(asker, repoRoot, "build", detected.build);
+    const test = await askTest(asker, repoRoot, detected.test);
+    const serve = await askOne(asker, repoRoot, "serve", detected.serve);
+    return { install, build, test, serve };
+  } finally {
+    asker.close();
+  }
 }
 
 /**
- * Lets the agent write the file itself. There was an MCP tool here that took
- * the markdown as an argument and put it in a variable — a schema that enforced
- * nothing, wrapping a capability the agent already ships.
+ * One question. Empty takes the default; with no default there is no empty.
+ * A command that names a missing script is warned about and accepted anyway —
+ * it may be arbitrary shell we cannot check, and the baseline is the real test.
  */
-async function draft(options: InitOptions, target: string): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DRAFT_TIMEOUT_MS);
-
-  try {
-    const conversation = query({
-      prompt: brief(options.name, target),
-      options: {
-        cwd: options.repoRoot,
-        model: options.model,
-        // One file, named in the prompt. Everything else is read-only: this is
-        // here to understand the project, not to change it.
-        allowedTools: ["Read", "Glob", "Grep", "Write"],
-        permissionMode: "bypassPermissions",
-        settingSources: ["project"],
-        maxTurns: MAX_TURNS,
-        abortController: controller,
-      },
-    });
-    for await (const _ of conversation) {
-      // Drained; the draft arrives on disk.
+async function askOne(
+  asker: ReturnType<typeof terminal>,
+  repoRoot: string,
+  name: string,
+  fallback: Command | undefined,
+): Promise<Command> {
+  const hint = fallback === undefined ? "" : ` [${describe(fallback)}]`;
+  for (;;) {
+    const answer = (await asker.ask(`${name}${hint} › `)).trim();
+    const command = answer === "" ? fallback : { run: answer };
+    if (command !== undefined) {
+      const problem = await commandProblem(command, repoRoot);
+      if (problem !== null) aside(`  warning: ${problem}`);
+      return command;
     }
-  } finally {
-    clearTimeout(timer);
   }
-
-  // The file is the answer, so nothing needs parsing — but an agent that talked
-  // about writing it without writing it must still fall back to the skeleton.
-  return existsSync(target);
 }
 
-function brief(name: string, target: string): string {
-  return [
-    "Read enough of this project to understand what it is and how it is organised:",
-    "its routes or pages, where components, hooks and utilities live, and the",
-    "conventions someone adding a feature would be expected to follow.",
-    "",
-    `Then write a spec *skeleton* for a feature called "${name}" — a document the`,
-    "developer will fill in, not a finished specification. It is read by a coding",
-    "agent that will implement whatever it says, and by a second agent that will",
-    "check the running app against it without being allowed to see the code.",
-    "",
-    "Write it so that:",
-    "",
-    "- headings and prompts show what to describe: what a user sees, how it behaves,",
-    "  what is out of scope",
-    "- placeholders are obvious and unmistakably unfilled",
-    "- guidance is concrete to *this* project — name the real directories, the",
-    "  existing routes, the conventions you actually found, so the developer knows",
-    "  where a feature would go",
-    "- it reminds the writer that anything observable should be stated in terms a",
-    "  person could check in a browser, since that is how it will be judged",
-    "",
-    "Do not invent a feature and do not write requirements. The developer supplies",
-    "the intent; you supply the shape and the local detail.",
-    "",
-    `Write the finished markdown to ${target} and nothing else. Do not create or`,
-    "modify any other file.",
-  ].join("\n");
+/** `test` alone may be "none" — a repo without tests is a fact, not an error. */
+async function askTest(
+  asker: ReturnType<typeof terminal>,
+  repoRoot: string,
+  fallback: Command | null,
+): Promise<Command | null> {
+  const hint = fallback === null ? ' [(none)]' : ` [${describe(fallback)}, or "none"]`;
+  const answer = (await asker.ask(`test${hint} › `)).trim();
+  if (answer === "none" || answer === "null") return null;
+  if (answer === "") return fallback;
+  const command = { run: answer };
+  const problem = await commandProblem(command, repoRoot);
+  if (problem !== null) aside(`  warning: ${problem}`);
+  return command;
 }
 
-/** Used when the agent cannot be reached. Deliberately plain. */
-const SKELETON = `# Feature name
+/** `--yes` takes the defaults whole; a missing one is the one thing it cannot take. */
+function complete(detected: Defaults): HarnessConfig {
+  if (detected.build === undefined || detected.serve === undefined) {
+    throw new InitError(
+      "could not detect a build or serve script from package.json — " +
+        "run without --yes to answer for yourself.",
+    );
+  }
+  return {
+    install: detected.install,
+    build: detected.build,
+    test: detected.test,
+    serve: detected.serve,
+  };
+}
 
-One sentence saying what this adds and who it is for.
+async function packageManager(repoRoot: string): Promise<string> {
+  const lockfiles: Record<string, string> = {
+    "yarn.lock": "yarn",
+    "pnpm-lock.yaml": "pnpm",
+    "bun.lockb": "bun",
+    "package-lock.json": "npm",
+  };
+  for (const [file, manager] of Object.entries(lockfiles)) {
+    const found = await readFile(join(repoRoot, file), "utf8").then(
+      () => true,
+      () => false,
+    );
+    if (found) return manager;
+  }
+  return "npm";
+}
 
-## What a user sees
-
-Describe the visible result. Name routes, elements and values concretely — this
-is judged by an agent driving a browser, so anything you cannot point at will
-not be checked.
-
-- [ ] ...
-
-## Behaviour
-
-What happens when it is used, including while loading and when something fails.
-
-- [ ] ...
-
-## Constraints
-
-Anything that must or must not happen: no new dependencies, follow existing
-patterns, read-only, no credentials required.
-
-- [ ] ...
-
-## Out of scope
-
-What this feature deliberately does not do.
-`;
+async function readScripts(repoRoot: string): Promise<Record<string, string>> {
+  const source = await readFile(join(repoRoot, "package.json"), "utf8").catch(() => null);
+  if (source === null) return {};
+  try {
+    return (JSON.parse(source) as { scripts?: Record<string, string> }).scripts ?? {};
+  } catch {
+    return {};
+  }
+}

@@ -9,8 +9,8 @@
 import type { Command } from "./commands.js";
 import type { AttemptFailure } from "./failure.js";
 
-/** The four stages of the loop. Named `Phase` to leave `Stage` to the commands. */
-export type Phase = "doctor" | "generate" | "test" | "evaluate";
+/** The stages of a run. Named `Phase` to leave `Stage` to the commands. */
+export type Phase = "doctor" | "derive" | "generate" | "test" | "evaluate";
 
 /** Wall-clock per stage across a whole run. */
 export interface Timings {
@@ -23,7 +23,7 @@ export type HarnessEvent =
   /** Once, first. What this run was pointed at. */
   | {
       type: "run:started";
-      command: "run" | "init";
+      command: "run";
       stamp: string;
       repo: string;
       /** Absolute path, when the command is `run`. */
@@ -104,12 +104,18 @@ export type HarnessEvent =
       failures: AttemptFailure[];
     }
   | { type: "branch"; branch: string }
-  /** What DOCTOR read out of the spec, before the app existed. */
+  /** What DERIVE read out of the spec, before the app existed. */
   | { type: "derived"; checks: Array<{ id: string; because?: string | undefined }> }
-  /** DOCTOR's proposed commands, before the operator confirms them. */
+  /** The wizard's proposed commands, before the operator confirms them. */
   | {
       type: "proposal";
       commands: Array<{ name: string; command: Command | null; note?: string | undefined }>;
+    }
+  /** Setup wrote the config a run reads. Not `proposal`: these were not proposed, they were answered. */
+  | {
+      type: "config:written";
+      file: string;
+      commands: Array<{ name: string; command: Command | null }>;
     }
   /** Anything worth saying that is not one of the above. `warn` is for the unexpected-but-survivable. */
   | { type: "note"; level: "info" | "warn"; text: string; attempt?: number | undefined }
@@ -123,7 +129,7 @@ export type HarnessEvent =
       /** The run directory, so a renderer can point at the artifacts. */
       dir: string;
     }
-  /** `init` wrote a spec skeleton. */
+  /** The wizard wrote a spec draft. */
   | { type: "spec:written"; path: string; tailored: boolean };
 
 export type Listener = (event: HarnessEvent) => void;

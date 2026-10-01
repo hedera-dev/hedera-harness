@@ -5,6 +5,7 @@ import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, readConfig } from "./config.js";
 import { doctor } from "./doctor.js";
+import { deriveChecks } from "./derive.js";
 import { initialise } from "./init.js";
 import { runLoop } from "./loop.js";
 import { killTrackedChildren } from "./commands.js";
@@ -16,16 +17,20 @@ import { renderToFile, renderToJson } from "./render/json.js";
 import { report } from "./render/report.js";
 import { renderToTerminal } from "./render/terminal.js";
 import { red } from "./style.js";
+import { wizard } from "./wizard.js";
 
-const USAGE = `usage: harness init [name] [--model NAME] [--yes]
+const USAGE = `usage: harness init [--yes]
+       harness wizard [name] [--model NAME] [--yes]
        harness run --spec <path> [--max-attempts N] [--max-spend USD]
                           [--model NAME] [--judge-model NAME] [--yes] [--json]
        harness report [run] [--full]
 
 Run from inside the target repository.
 
-  init [name]         set the project up: work out its commands, and draft
-                      specs/<name>.md for you to fill in (default: feature)
+  init                write harness.yaml by answering four questions, with
+                      defaults read from the project itself
+  wizard [name]       the same, worked out by an agent that reads the project,
+                      which then interviews you and drafts specs/<name>.md
   run --spec <path>   build the feature described by a spec
   report [run]        read a finished run: what it did, what the evaluator
                       checked, and whether to believe it (default: the latest)
@@ -36,7 +41,7 @@ Run from inside the target repository.
                       default: every stage is already bounded by a clock
   --model NAME        agent model: sonnet (default), opus, haiku, or a full id
   --judge-model NAME  model for EVALUATE only (default: the same as --model)
-  --yes               skip the first-run command confirmation
+  --yes               take the defaults without asking (init, wizard)
   --json              one JSON object per line instead of the watchable output
   --review            stop to confirm the checks read from the spec
   --continue          carry on from the last run: its branch, and what it
@@ -111,11 +116,11 @@ function onInterrupt(): void {
   void cancel();
 }
 
-type Command = "init" | "run" | "report";
+type Command = "init" | "wizard" | "run" | "report";
 
 interface Options {
   command: Command;
-  /** `init`'s optional name, becoming `specs/<name>.md`. */
+  /** The wizard's optional name, becoming `specs/<name>.md`. */
   name: string;
   spec: string;
   maxAttempts: number;
@@ -159,7 +164,7 @@ const APP_URL_HINT = "http://localhost:3000";
 function parse(argv: string[]): Options {
   const [command, ...rest] = argv;
   if (command === undefined || command === "--help" || command === "-h") throw new UsageError(USAGE);
-  if (command !== "run" && command !== "init" && command !== "report") {
+  if (command !== "run" && command !== "init" && command !== "wizard" && command !== "report") {
     throw new UsageError(`unknown command "${command}"\n\n${USAGE}`);
   }
 
@@ -248,6 +253,26 @@ async function main(argv: string[]): Promise<number> {
   }
 
   context.repoRoot = root;
+
+  // Setup, not a run. These write the config a run cannot start without, so
+  // they cannot be put behind DOCTOR, which refuses to start without it — and
+  // they need no run directory, no branch and no clean tree.
+  if (options.command === "init" || options.command === "wizard") {
+    if (options.json) renderToJson();
+    else renderToTerminal();
+    if (options.command === "init") {
+      await initialise({ repoRoot: root, assumeYes: options.assumeYes });
+    } else {
+      await wizard({
+        repoRoot: root,
+        name: options.name,
+        model: options.model,
+        assumeYes: options.assumeYes,
+      });
+    }
+    return 0;
+  }
+
   await ensureExcluded(root);
 
   const stamp = timestamp();
@@ -268,13 +293,13 @@ async function main(argv: string[]): Promise<number> {
 
   const startedOn = await currentBranch(root);
   context.startedOn = startedOn;
-  const specInRepoPath = options.command === "run" ? insideRepo(root, options.spec) : undefined;
+  const specInRepoPath = insideRepo(root, options.spec);
   emit({
     type: "run:started",
-    command: options.command,
+    command: "run",
     stamp,
     repo: root,
-    spec: options.command === "run" ? options.spec : undefined,
+    spec: options.spec,
     specInRepo: specInRepoPath,
     from: startedOn,
     head: (await headCommit(root)).slice(0, 12),
@@ -287,24 +312,18 @@ async function main(argv: string[]): Promise<number> {
   const specInRepo = specInRepoPath;
   context.specInRepo = specInRepo;
 
-  // The spec is read before anything is built, which is the point: a check
-  // derived from it cannot have been shaped by what the app turned out to do.
-  const specText = options.command === "run" ? await readFile(options.spec, "utf8") : undefined;
-  const examined = await doctor({
-    repoRoot: root,
-    run,
-    model: options.model,
-    spec: specText,
+  await doctor({ repoRoot: root, run, specPath: specInRepo });
+
+  // Its own phase, between DOCTOR and GENERATE. The spec is read before
+  // anything is built, which is the point: a check derived from it cannot have
+  // been shaped by what the app turned out to do.
+  const checks = await deriveChecks({
+    spec: await readFile(options.spec, "utf8"),
     appUrlHint: APP_URL_HINT,
+    model: options.model,
     review: options.review,
-    specPath: specInRepo,
     assumeYes: options.assumeYes,
   });
-
-  if (options.command === "init") {
-    await initialise({ repoRoot: root, run, model: options.model, name: options.name });
-    return 0;
-  }
 
   // Continuing branches from the previous run's work rather than from your
   // branch, so a run that stopped at its last attempt is not started over.
@@ -344,7 +363,7 @@ async function main(argv: string[]): Promise<number> {
       model: options.model,
       judgeModel: options.judgeModel,
       maxSpendUsd: options.maxSpendUsd,
-      checks: examined.checks,
+      checks,
       continuing: resuming === null ? undefined : resuming,
       specInRepo,
     });
