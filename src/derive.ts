@@ -41,7 +41,6 @@ export interface DeriveOptions {
   /** The spec's text. Checks are read from it before anything is built. */
   spec: string;
   /** Where the app will run, for the routes a derived check names. */
-  appUrlHint: string;
   model: string;
   /** Stop and confirm the derived checks rather than showing them and going on. */
   review: boolean;
@@ -60,7 +59,7 @@ export interface DeriveOptions {
  */
 export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
   emit({ type: "phase:started", phase: "derive" });
-  const derived = await derive(options.spec, options.appUrlHint, options.model);
+  const derived = await derive(options.spec, options.model);
 
   // Failing here costs three minutes and nothing else: no generation has run,
   // no evaluation has been paid for. Continuing would cost a whole run and give
@@ -88,7 +87,7 @@ export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
 }
 
 /** Derives what a judge can verify by reading a value, from the spec's words. */
-export async function derive(spec: string, appUrlHint: string, model: string): Promise<Derived> {
+export async function derive(spec: string, model: string): Promise<Derived> {
   const workspace = await mkdtemp(join(tmpdir(), "harness-derive-"));
   const target = join(workspace, CHECKS_FILE);
 
@@ -96,7 +95,7 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const conversation = query({
-      prompt: brief(spec, appUrlHint, target),
+      prompt: brief(spec, target),
       options: {
         model,
         // `Write` and nothing else. Not a convenience: with no Read, Glob or

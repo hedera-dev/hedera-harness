@@ -27,27 +27,38 @@ node /path/to/hedera-harness/dist/cli.js run --spec specs/payment-flow.md
 
 ## Quick start
 
-Then, from inside the project you want to build in:
+Then, from inside the project you want to build in. **Set it up once** — whichever of these fits:
 
 ```bash
-harness init payment-flow      # works out how to build this project, drafts a spec
-$EDITOR specs/payment-flow.md  # fill it in
+harness init                   # four questions, defaults read from your package.json
+```
+```bash
+harness wizard payment-flow    # an agent reads the project, then interviews you
+```
+
+Both write `harness.yaml` and commit it. `init` is the fast path when you already have a spec; `wizard` also drafts one at `specs/payment-flow.md`.
+
+**Then run it, as often as you like:**
+
+```bash
+$EDITOR specs/payment-flow.md  # your spec, in your words
 harness run --spec specs/payment-flow.md
 ```
 
-`init` is optional. `harness run --spec <path>` works on a project that has never seen the harness — it just resolves the commands on the way past.
+A run needs `harness.yaml`, so one of the two setup commands comes first. After that, setup is done.
 
 ## What it does
 
 ```
-DOCTOR → GENERATE → TEST → EVALUATE → done
-             ↑         │        │
-             └─────────┴────────┘   repair, up to --max-attempts (default 3)
+DOCTOR → DERIVE → GENERATE → TEST → EVALUATE → done
+                      ↑         │        │
+                      └─────────┴────────┘   repair, up to --max-attempts (default 3)
 ```
 
 | Stage | What happens |
 |---|---|
-| **DOCTOR** | Checks tooling and a clean tree. Works out how to install, build, test and serve this project, then runs those commands on the untouched repo — so a project that was already broken fails here rather than being blamed on the agent. |
+| **DOCTOR** | Deterministic, no agent. Checks git, a clean tree, your browser and wallet, and that `harness.yaml` names commands that exist — then runs install, build and test on the untouched repo, so a project that was already broken fails here rather than being blamed on the agent. |
+| **DERIVE** | An agent reads your spec — only the spec, never the code — and writes down what a judge could settle by reading a value. Runs before anything is built, so nothing about the app can shape it. |
 | **GENERATE** | An agent implements the spec. It decides which files to touch and whether to write tests. |
 | **TEST** | Install, build, test — stopping at the first failure. No agent involved. |
 | **EVALUATE** | A second agent judges the running app against the spec, driving a real browser and reading chain state from the public mirror node. It cannot see your code. |
@@ -79,7 +90,7 @@ The page at `/status` shows which Hedera network the app is pointed at.
 
 ## harness.yaml
 
-Written by the harness on first use, and committed, because it describes the project rather than a run:
+Written by `harness init` or `harness wizard`, and committed, because it describes the project rather than a run:
 
 ```yaml
 # Root next:build delegates to `next build` in @sh/nextjs, the only production
@@ -90,7 +101,7 @@ build: yarn next:build
 serve: yarn next:dev
 ```
 
-An agent reads your manifests and proposes these; you confirm them once. Script names lie often enough that this is worth an agent rather than a guess — in scaffold-hbar the root has no `build`, `test` or `dev` at all, and inside `packages/nextjs`, `start` is a dev server while `serve` runs the production build.
+`init` asks you for them, offering what your `package.json` actually contains. `wizard` has an agent read the project and propose them instead — worth it because script names lie often enough: in scaffold-hbar the root has no `build`, `test` or `dev` at all, and inside `packages/nextjs`, `start` is a dev server while `serve` runs the production build.
 
 The comments are the agent's reasoning, kept so the next person to read the file knows why this command and not the obvious-looking one. Edit any line by hand; the harness will not overwrite it.
 
@@ -99,7 +110,9 @@ Each command is a string, or `{ run, cwd }` when it must run somewhere other tha
 ## Commands
 
 ```
-harness init [name]         set the project up and draft specs/<name>.md
+harness init                write harness.yaml by answering four questions
+harness wizard [name]       the same, worked out by an agent, which then
+                            interviews you and drafts specs/<name>.md
 harness run --spec <path>   build the feature described by a spec
 harness report [run]        read a finished run (default: the latest)
 
@@ -107,7 +120,7 @@ harness report [run]        read a finished run (default: the latest)
   --max-spend USD           stop an agent that spends more than this (unset by default)
   --model NAME              sonnet (default), opus, haiku, or a full model id
   --judge-model NAME        model for EVALUATE only (default: the same as --model)
-  --yes                     skip the first-run command confirmation
+  --yes                     take the defaults without asking (init, wizard)
   --json                    one JSON object per line, for CI
   --review                  stop to confirm the checks read from your spec
   --continue                carry on from the last run rather than starting over
@@ -188,7 +201,7 @@ Each rule guards a specific way this could lie to you.
 
 **A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict. A finding it cannot see is not a finding.
 
-**Some of it is read from the spec before anything is built.** DOCTOR reads your spec — and only your spec, never the code — and states what a judge can verify by reading a value rather than forming an opinion. That checklist exists before the app does, so nothing about the app can shape it, and it is shown rather than asked about:
+**Some of it is read from the spec before anything is built.** DERIVE reads your spec — and only your spec, never the code — and states what a judge can verify by reading a value rather than forming an opinion. That checklist exists before the app does, so nothing about the app can shape it, and it is shown rather than asked about:
 
 ```
   I will also verify, from this spec:

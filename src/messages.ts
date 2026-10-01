@@ -23,7 +23,7 @@ export function describeMessage(message: unknown): { tool: string; argument: str
   return null;
 }
 
-/** `mcp__harness__submit_verdict` reads as `verdict` in a live feed. */
+/** A project's own MCP tools arrive as `mcp__server__name`; the feed shows `name`. */
 function shortName(name: string): string {
   const parts = name.split("__");
   return parts[parts.length - 1] ?? name;

@@ -1,7 +1,7 @@
 /** What DERIVE asks for, and the file it asks for it in. */
 export const CHECKS_FILE = "checks.json";
 
-export function brief(spec: string, appUrl: string, target: string): string {
+export function brief(spec: string, target: string): string {
   return [
     "Below is a specification for a web application that does not exist yet.",
     "Read it and state which of its claims a judge could verify by reading a",
@@ -13,7 +13,7 @@ export function brief(spec: string, appUrl: string, target: string): string {
     "  `/send`, `field` is a CSS selector like `#send-error`. Prefer this for anything",
     "  the spec says a user sees: it waits for the page to render, so it works where",
     "  reading the raw HTML does not.",
-    `- **http** — the app will run at ${appUrl}. \`path\` is a route, \`field\` is`,
+    "- **http** — a route on the app. `path` is the route, `field` is",
     "  `status` or `body`. Use it for whether a route exists, not for what it shows.",
     "- **chain** — a read from the Hedera mirror node. `path` is below `/api/v1/`,",
     "  like `accounts/0.0.2`, and `field` is a dotted path such as `balance.balance`.",

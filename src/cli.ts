@@ -150,13 +150,6 @@ const DEFAULT_MODEL = process.env["HARNESS_MODEL"] ?? "sonnet";
  */
 const DEFAULT_JUDGE = process.env["HARNESS_JUDGE_MODEL"];
 
-/**
- * Where a derived check should expect the app. The real URL is only known once
- * `serve` has answered, which is after the spec has been read — so a route
- * check is written against this and resolved against the live one.
- */
-const APP_URL_HINT = "http://localhost:3000";
-
 function parse(argv: string[]): Options {
   const [command, ...rest] = argv;
   if (command === undefined || command === "--help" || command === "-h") throw new UsageError(USAGE);
@@ -299,8 +292,8 @@ async function main(argv: string[]): Promise<number> {
     maxAttempts: options.maxAttempts,
   });
 
-  // DOCTOR runs before the branch exists: harness.yaml describes the project,
-  // so it is committed where the project lives, not on a throwaway run branch.
+  // DOCTOR and DERIVE run before the branch exists, so a preflight that fails
+  // leaves nothing behind to clean up.
   const specInRepo = specInRepoPath;
   context.specInRepo = specInRepo;
 
@@ -311,7 +304,6 @@ async function main(argv: string[]): Promise<number> {
   // been shaped by what the app turned out to do.
   const checks = await deriveChecks({
     spec: await readFile(options.spec, "utf8"),
-    appUrlHint: APP_URL_HINT,
     model: options.model,
     review: options.review,
     assumeYes: options.assumeYes,
