@@ -1,13 +1,6 @@
 /**
  * Claims read out of the spec, before the app exists.
  *
- * The harness does not check them — the judge does. What the harness owns is
- * that they exist before the app does, so nothing about the app can shape
- * them, and that the verdict accounts for every one: what the judge read
- * before it acted, what it read after, whether the claim held, and where a
- * reader can see the reading. The checking is the judge's work; the accounting
- * is mechanical.
- *
  * Checks are data, never code. A test file could be edited by the generator on
  * the next attempt, could pass trivially, and would mean the harness running
  * the agent's own program to grade the agent — three ways of losing the thing
@@ -15,11 +8,6 @@
  */
 
 /**
- * Deliberately small: enough to express a claim, too little to express a
- * program. No conditionals, and no check may refer to another — the moment one
- * expectation depends on another's result this is a language, and the reason a
- * person can read it in a second is gone.
- *
  * No deltas. "The balance rose by 2.5" needs a value from before the action,
  * and the harness no longer reads one — the judge reads its own before and
  * after, so a relative claim is something it verifies, cites, and stands
@@ -40,21 +28,11 @@ export interface Check {
   /** Dotted path into the response, e.g. `balance.balance`. Values are in the units the mirror node reports. */
   field: string;
   expect: Expectation;
-  /**
-   * The words this came from. A check that misreads prose fails a correct app,
-   * so a reader — and the judge — has to be able to see the reading.
-   */
   because?: string | undefined;
 }
 
 /**
  * What a check is, in one line, uniquely.
- *
- * The expectation is part of it. Two claims about one field are two claims —
- * "the body contains the network name" and "the body contains the block
- * number" read the same route and the same field, and collapsing them to one
- * locator would give them one identity, so the judge's accounting could not
- * tell them apart.
  */
 export function locate(
   kind: "chain" | "http" | "dom",
