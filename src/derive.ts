@@ -1,18 +1,14 @@
 /**
  * Checks read out of the spec, before the app exists.
  *
- * The conflict of interest this answers is not that a check is agent-authored.
- * It is that the test would be picked in the same moment, and by the same
- * mind, as the verdict — and a judge that has decided an app is fine chooses
- * checks that agree. These exist before anything has been built, so nothing
- * about the app can shape them: the judge receives them as a checklist it must
- * account for, not as claims it chose. What the checklist cannot cover —
- * anything the run creates — the judge verifies on its own, before and after,
- * and cites both readings.
+ * The judge receives these as a checklist it must account for, rather than as
+ * claims it chose — a judge picking its own tests in the same breath as its
+ * verdict picks ones that agree. Running before anything is built is what
+ * guarantees it: nothing about the app can shape them.
  *
- * It reads the spec and nothing else. No file tools, no repo access, the text
- * inline in the prompt — a pass that could read the code would be forming its
- * checks from the implementation, which is the property being bought.
+ * So this reads the spec and nothing else. No repo access, the text inline in
+ * the prompt; a pass that could read the code would derive from the
+ * implementation instead.
  */
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,9 +31,9 @@ export class DeriveError extends Error {
 }
 
 /**
- * Ran, or did not. The distinction this type exists for: an empty checklist
- * because the spec is all judgement, and an empty checklist because the
- * derivation broke, are opposite facts that used to be the same empty array.
+ * Ran, or did not. A checklist empty because the spec is all judgement and one
+ * empty because the derivation broke are opposite facts, and only the second
+ * should stop a run.
  */
 export type Derived = { checks: Check[]; dropped: number } | { failed: string };
 
@@ -59,10 +55,8 @@ export interface DeriveOptions {
  * app does — nothing about the app can shape them — and because DOCTOR is
  * deterministic while this is the one pre-generation step that asks a model.
  *
- * Shown rather than asked about. Confirming by default would put an
- * interaction on the main path *per spec*, and whether a check says what you
- * meant is usually only visible once it has run. `--review` is there for
- * anyone who disagrees.
+ * Shown rather than asked about: whether a check says what you meant is
+ * usually only visible once it has run. `--review` stops for approval.
  */
 export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
   emit({ type: "phase:started", phase: "derive" });
@@ -93,12 +87,7 @@ export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
   return derived.checks;
 }
 
-/**
- * Derives what a judge can verify by reading a value, from the spec's own
- * words. Returns nothing rather than throwing: a run without these is the run
- * we had last week, and failing the run because a helper could not be reached
- * would trade a working harness for a stricter one.
- */
+/** Derives what a judge can verify by reading a value, from the spec's words. */
 export async function derive(spec: string, appUrlHint: string, model: string): Promise<Derived> {
   const workspace = await mkdtemp(join(tmpdir(), "harness-derive-"));
   const target = join(workspace, CHECKS_FILE);
@@ -145,14 +134,9 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
 }
 
 /**
- * Reads back what the agent wrote, keeping only entries that are actually
- * usable.
- *
- * This validates in code because there is no longer a schema in a tool
- * signature to do it — and a schema never did the work that mattered anyway:
- * it can insist `matches` is a string, not that the string is a pattern
- * JavaScript will accept. The one real malformation we have seen,
- * `(?i)not.?found`, would have passed any schema ever written.
+ * Reads back what the agent wrote, keeping only usable entries. Validated here
+ * rather than by a schema, which could insist `matches` is a string but not
+ * that the string is a pattern JavaScript accepts.
  */
 export async function readChecks(target: string): Promise<Derived> {
   const source = await readFile(target, "utf8").catch(() => null);

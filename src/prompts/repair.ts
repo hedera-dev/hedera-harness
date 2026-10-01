@@ -49,9 +49,8 @@ function pointers(failure: AttemptFailure, artifacts: string): string[] {
 
 /**
  * Evidence is a file the evaluator saved, or a URL it read. Only the first
- * needs a path, and it is reduced by the same function that validated it — so
- * a citation cannot pass the check in one spelling and be built into a path in
- * another, which is how `evidence/evidence/shot.png` happened.
+ * needs a path, built with the same function that validated the citation, so
+ * the two cannot disagree about its spelling.
  */
 function located(evidence: string, artifacts: string): string {
   const name = cited(evidence);

@@ -94,9 +94,8 @@ function summary(
   // screen was always the smaller half.
   const spend = cost(events);
   if (spend !== null) {
-    // Runs from before evaluation reported its spend would otherwise show the
-    // generator's half and call it the total, which is how I came to quote a
-    // $1.26 run at $0.70.
+    // A run whose evaluation reported no spend shows the generator's half, and
+    // must say so rather than presenting it as the total.
     lines.push(dim(`~$${spend.total.toFixed(2)} of tokens${spend.partial ? " (generation only)" : " in total"}`));
   }
   console.log(`\n${frame(lines)}`);
@@ -175,13 +174,9 @@ async function section(
 }
 
 /**
- * The judge's accounting of the checklist, in its own readings.
- *
- * What held is a count, not a list — by the tenth run nobody rereads what was
- * fine. What earns a line is an item that did not hold: both readings, the
- * spec's words, and — when the run passed anyway — the judge's reason for
- * standing by the spec over the item. That last case is the leniency made
- * visible, and it appears nowhere else.
+ * The judge's accounting of the checklist. What held is a count; what earns a
+ * line is an item that did not — both readings, the spec's words, and, when the
+ * run passed anyway, the judge's reason. That last case is where leniency shows.
  */
 function verified(mine: HarnessEvent[]): void {
   const entries = mine.filter((event) => event.type === "check:verified");
@@ -310,10 +305,8 @@ function cost(events: HarnessEvent[]): { total: number; partial: boolean } | nul
 /**
  * Splits the stream by attempt, reading the attempt off each event.
  *
- * This used to be positional — bucket everything after a `phase:started` with
- * that phase's attempt — which was right until any event was emitted between
- * phases, and then silently wrong: nothing errors, nothing fails, the report is
- * just quietly attributed to the wrong attempt. Events carry it now.
+ * Read off each event rather than inferred from position: anything emitted
+ * between phases would otherwise be attributed to the wrong attempt, silently.
  */
 function group(events: HarnessEvent[]): Map<number, HarnessEvent[]> {
   const byAttempt = new Map<number, HarnessEvent[]>();

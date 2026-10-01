@@ -98,11 +98,9 @@ function describeStop(
   if (subtype === "error_max_budget_usd") {
     return { reason: "it reached its spend limit", recoverable: false };
   }
-  // Everything else: the subtype is a label and the payload is the reason. A
-  // usage limit arrives as `subtype: "success"` with `is_error: true`, and
-  // reporting the label alone produced "it stopped early (success)" while
-  // "You've hit your session limit · resets 4:50pm" sat unread in the same
-  // message.
+  // Everything else: the subtype is a label, the payload is the reason. A usage
+  // limit arrives as `subtype: "success"` with `is_error: true`, so the label
+  // alone would read "it stopped early (success)".
   const told = said?.trim();
   return {
     reason: told !== undefined && told !== "" ? told : `it stopped early (${subtype ?? "error"})`,
@@ -111,17 +109,12 @@ function describeStop(
 }
 
 /**
- * Records what the harness said, so a transcript is both halves.
+ * Records what the harness said, so a transcript holds both halves. The SDK
+ * streams an agent's messages but not the prompt that started them, which left
+ * no way to check what a nudge actually asked for.
  *
- * The SDK streams the agent's messages but not the prompt that started them,
- * so `generate.jsonl` and `evaluate.jsonl` held everything an agent did and
- * nothing it was asked. That gap is not academic: verifying that a corrected
- * nudge actually reached the model was impossible from the artifacts, leaving
- * only the model's behaviour to infer it from — in a tool whose claim is that
- * you need not infer.
- *
- * Marked with a `harness:` type so it cannot be mistaken for something the
- * agent said, and redacted, because a brief now carries a live key.
+ * Typed `harness:` so it cannot be mistaken for the agent, and redacted,
+ * because a brief carries a live key.
  */
 export async function said(
   transcript: string,

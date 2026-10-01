@@ -6,12 +6,9 @@ import { type HarnessEvent, subscribe } from "../events.js";
 export const EVENTS_FILE = "events.jsonl";
 
 /**
- * One JSON object per line — a whole run, losslessly. Rendering it back into
- * prose is `harness report`'s job, which is why no renderer writes that twice.
- *
- * It is this short only because events carry data. A stage that puts a
- * formatted sentence in an event turns this into the terminal output with
- * extra steps.
+ * One JSON object per line — a whole run, losslessly. It is this short only
+ * because events carry data: a stage that puts a formatted sentence in an event
+ * would turn this into the terminal output with extra steps.
  */
 function render(write: (line: string) => void): () => void {
   return subscribe((event: HarnessEvent) => {
@@ -25,11 +22,9 @@ export function renderToJson(): () => void {
 }
 
 /**
- * `events.jsonl` in the run directory, always, whichever renderer is on stdout.
- *
- * Written synchronously. The volume is small and it removes any chance of
- * losing the last few events to a process that exits before an async append has
- * flushed — which is exactly the moment the record matters most.
+ * `events.jsonl` in the run directory, whichever renderer is on stdout. Written
+ * synchronously: the volume is small, and an interrupted run must not lose the
+ * last few events to an append that never flushed.
  */
 export function renderToFile(dir: string): () => void {
   const path = join(dir, EVENTS_FILE);

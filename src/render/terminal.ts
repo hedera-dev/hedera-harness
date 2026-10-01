@@ -176,9 +176,8 @@ export function renderToTerminal(): () => void {
         return;
 
       case "derived": {
-        // Zero is said out loud. Silence here used to mean either "this spec has
-        // nothing a machine can settle" or "the derivation broke", and a reader
-        // could not tell which.
+        // Said out loud, because silence would not distinguish "nothing here
+        // can be settled by a machine" from "the derivation broke".
         if (event.checks.length === 0) {
           console.log(
             `\n  ${dim("nothing in this spec can be settled by reading a value — the judge decides all of it")}`,

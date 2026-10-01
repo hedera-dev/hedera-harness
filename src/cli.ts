@@ -140,17 +140,13 @@ const DEFAULT_MODEL = process.env["HARNESS_MODEL"] ?? "sonnet";
 /**
  * Who judges, when it should not be whoever generated.
  *
- * Judges are documented to over-reward their own model family, and this harness
- * runs one model for both halves — which is the shape a run of first-attempt
- * passes would take if leniency were the cause. A different family is not
- * reachable here: the agent is Claude Code and nothing else, so opus judging
- * sonnet is a different model on the same training distribution, not an
- * independent opinion. What this buys is a stronger or simply different judge,
- * and the ability to ask whether two of them agree — which is evidence where
- * there is currently none.
+ * Judges over-reward their own model family, and both halves run one model by
+ * default. A different *family* is not reachable — the agent is Claude Code —
+ * so this buys a stronger or simply different judge, and the ability to ask
+ * whether two of them agree.
  *
- * Defaults to the generating model, because changing who judges by default
- * would quietly change what every run costs.
+ * Defaults to the generating model: changing who judges by default would
+ * quietly change what every run costs.
  */
 const DEFAULT_JUDGE = process.env["HARNESS_JUDGE_MODEL"];
 
@@ -201,13 +197,9 @@ function parse(argv: string[]): Options {
     throw new UsageError(`--max-attempts must be a positive integer`);
   }
 
-  // Deliberately no default. What a run is worth is the operator's call, and a
-  // number we invented would only ever be wrong for somebody.
-  //
-  // The undefined check has to come first: `Number(undefined)` is NaN but
-  // `Number("")` is 0, and a zero ceiling stops an agent before its first turn.
-  // A bare `--max-spend -1` never reaches here — parseArgs reads the -1 as
-  // another flag and refuses it first, with its own wording.
+  // No default: what a run is worth is the operator's call. The undefined check
+  // comes first because `Number("")` is 0, and a zero ceiling would stop an
+  // agent before its first turn.
   const maxSpendUsd = values["max-spend"] === undefined ? undefined : Number(values["max-spend"]);
   if (maxSpendUsd !== undefined && !(maxSpendUsd > 0)) {
     throw new UsageError(`--max-spend must be a positive number of dollars`);

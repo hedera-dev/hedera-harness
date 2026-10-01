@@ -32,9 +32,7 @@ export interface DoctorOptions {
  * test — the point is to spend four seconds instead of forty minutes.
  *
  * Deterministic on purpose: the commands come from `harness.yaml` or the run
- * stops. An agent worked them out here once, which made the first run on a
- * new repo magic and every run after it a coin flip — `init` and `wizard` own
- * setup now, and this never asks a model anything.
+ * stops. `init` and `wizard` own setup, so nothing here asks a model anything.
  */
 export async function doctor(options: DoctorOptions): Promise<HarnessConfig> {
   const { repoRoot, run } = options;
@@ -68,9 +66,8 @@ export async function doctor(options: DoctorOptions): Promise<HarnessConfig> {
   }
   emit({ type: "check", name: `commands from ${CONFIG_FILE}`, ok: true });
 
-  // A hand-written or once-proposed config drifts: scripts get renamed. Naming
-  // one that no longer exists is a four-second failure here, not a baseline
-  // surprise with a log to read.
+  // Scripts get renamed. Catching that here is four seconds; catching it in the
+  // baseline is a log to read.
   for (const [name, command] of entries(config)) {
     if (command === null) continue;
     const problem = await commandProblem(command, repoRoot);
@@ -107,15 +104,11 @@ async function checkSkills(repoRoot: string): Promise<void> {
     emit({ type: "check", name: "skills from HEDERA_SKILLS_DIR", ok: true });
     return;
   }
-  // Two install paths are documented and only one of them reaches the
-  // generator. `npx skills add` writes into the project's .claude/skills, which
-  // GENERATE loads through `settingSources: ["project"]`. The Claude Code flow
-  // — `/plugin marketplace add` then `/plugin install` — installs at *user*
-  // level, which that setting deliberately excludes: measured on this machine
-  // at 40 skills reaching the generator against 74 the operator can see, three
-  // of them Hedera ones. So someone who installed the plugin way has the skills
-  // in their own session and none of them here, which is worth saying rather
-  // than leaving them to wonder.
+  // Of the two documented install paths only `npx skills add` reaches the
+  // generator: it writes into the project's .claude/skills, which
+  // `settingSources: ["project"]` loads. The `/plugin install` flow installs at
+  // user level, which that setting excludes — so the remedy says why, rather
+  // than leaving someone who has the skills in their own session wondering.
   emit({
     type: "check",
     name: "no project skills — the agent works without Hedera knowledge, which is fine",

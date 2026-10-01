@@ -16,12 +16,9 @@ import { type StageFailure, runStages } from "./test.js";
 const OUTPUT_TAIL = 4_000;
 
 /**
- * How long a whole run may take before it stops starting new attempts.
- *
- * Every stage was bounded and the run was not, so the bounds multiplied: three
- * attempts of generation (60), commands (62) and evaluation (45 plus a nudge)
- * is over ten hours, with nothing but Ctrl-C in the way. Nobody chose ten
- * hours; it was the product of five numbers each chosen for its own reasons.
+ * How long a run may take before it stops starting new attempts. Without it the
+ * per-stage bounds multiply: three attempts of generation, commands and
+ * evaluation is over ten hours that nobody chose.
  */
 const RUN_BUDGET_MS = 4 * 60 * 60_000;
 
@@ -188,10 +185,9 @@ async function assess(options: LoopOptions, attempt: number, timings: Timings): 
   const failure = await runStages({ config, repoRoot, run, prefix: `attempt-${attempt}`, attempt });
   timings.testMs += Date.now() - testStarted;
 
-  // Every attempt is committed, passing or not. A failing attempt left
-  // uncommitted used to lock the harness out of itself: the next run hit
-  // DOCTOR's clean-tree check and refused, with the cleanup left to you.
-  // It is also the change you most want to read after a failure.
+  // Every attempt is committed, passing or not. An uncommitted failure would
+  // leave a dirty tree that the next run's clean-tree check refuses — and a
+  // failed attempt is the diff you most want to read.
   const outcome = failure === null ? "passed tests" : `failed ${failure.stage}`;
   const commit = await commitWork(
     `harness: attempt ${attempt} (${outcome})`,
@@ -243,10 +239,8 @@ function verdictFeedback(outcome: Outcome): Feedback {
  * an agent converging from one trading one failure for another.
  */
 function report(attempt: number, feedback: Feedback, previous: Set<string>): boolean {
-  // A passing attempt goes through the same arithmetic as any other. It used to
-  // take a shortcut that reported zeros, which meant the one attempt that
-  // actually resolved everything was the only one that never said what it had
-  // fixed — the convergence story missing its ending.
+  // A passing attempt goes through the same arithmetic as any other, so the
+  // attempt that resolved everything is the one that says what it fixed.
   const now = feedback.failures.map((failure) => failure.id);
   const open = now.filter((id) => previous.has(id));
   const fixed = [...previous].filter((id) => !now.includes(id));

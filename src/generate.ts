@@ -15,13 +15,9 @@ const WALL_CLOCK_MS = 60 * 60_000;
 const MAX_TURNS = 300;
 
 /**
- * Extra skill plugins to load, for a project that does not ship its own.
- *
- * Unset by default. A scaffolded project carries its skills in
- * `.claude/skills/`, which `settingSources: ["project"]` already loads —
- * versioned with the repo, nothing to install. A marketplace checkout instead
- * duplicated most of them under a second name and added six about authoring
- * plugins, which is not the job the generator is doing.
+ * Extra skill plugins, for a project that ships none of its own. Unset by
+ * default: a scaffolded project carries them in `.claude/skills/`, which
+ * `settingSources: ["project"]` already loads.
  */
 const SKILLS_DIR = process.env["HEDERA_SKILLS_DIR"];
 

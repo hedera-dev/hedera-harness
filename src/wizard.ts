@@ -58,10 +58,9 @@ interface Proposal {
 
 /**
  * The agentic setup: an agent reads the project, proposes its commands, and
- * drafts the first spec. This is where the agentic work that used to sit in
- * DOCTOR belongs — setup is interactive and happens once, so nothing needs
- * reproducing; a run is the thing that must be deterministic, and it starts
- * from the file this writes.
+ * drafts the first spec. Setup is interactive and happens once, so nothing here
+ * needs reproducing; the run that reads these files is what must be
+ * deterministic.
  *
  * The commands arrive through a tool because the harness consumes them
  * mechanically; the spec arrives as a file because a human edits it.
@@ -117,16 +116,14 @@ export async function wizard(options: WizardOptions): Promise<void> {
 }
 
 /**
- * The grilling: the agent asks one question, the answer comes back, repeat.
+ * The grilling: one question, the answer, repeat.
  *
- * A single "what are you building?" produces a spec as vague as the sentence
- * that seeded it. What makes a spec checkable is the follow-up — which element,
- * what does it show while loading, what is out of scope — and those are
- * questions only something that has read the project can ask.
+ * What makes a spec checkable is the follow-up — which element, what it shows
+ * while loading, what is out of scope — so a single opening question would
+ * produce a spec as vague as the sentence that seeded it.
  *
- * Built here rather than borrowed: the technique is Matt Pocock's grill-me, but
- * that skill lives in a user's own plugins and the harness cannot require
- * someone to have installed it.
+ * The technique is Matt Pocock's grill-me, built here rather than loaded: that
+ * skill lives in a user's own plugins, which the harness cannot require.
  */
 async function draft(repoRoot: string, specPath: string, options: WizardOptions): Promise<boolean> {
   const written = (): boolean => existsSync(join(repoRoot, specPath));

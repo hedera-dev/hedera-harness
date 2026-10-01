@@ -11,38 +11,19 @@ import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
 import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
-/**
- * How long judging one spec may take. The bound that is actually ours to set:
- * a run has to end, and this is the only number here that is about the harness
- * rather than about the operator's wallet.
- *
- * Nine runs measured the rest. A `send-hbar` evaluation ended at
- * `error_max_turns` on turn 121 having spent $2.51 of its $5 in 13 of its 20
- * minutes — so the bound that fired was a turn count nobody had chosen for any
- * reason, while the two picked deliberately sat unused. It cost a verdict.
- */
+/** How long one evaluation pass may take. */
 const WALL_CLOCK_MS = 45 * 60_000;
 
 /** Measured: 13.4 minutes across the 121 turns of a real evaluation. */
 const SECONDS_PER_TURN = 6.7;
 
 /**
- * Derived so that each bound catches the pathology it exists for.
- *
- * At the measured rate the two expire together, which looks like the mistake
- * the old comment warned about — two bounds firing at once means one of them is
- * not a bound. It is the opposite. Turns are spent without time passing when a
- * loop errors instantly, and time passes without turns being spent when a
- * command hangs; so a fast loop runs out of turns first and a stuck one runs out
- * of clock first. They tie only in the healthy middle, where neither was needed.
+ * Derived so the two bounds catch different things: a loop erroring instantly
+ * runs out of turns first, one stuck on a command runs out of clock first.
  */
 const MAX_TURNS = Math.ceil(WALL_CLOCK_MS / 1_000 / SECONDS_PER_TURN);
 
-/**
- * The nudge is a turn to finish with, not a second evaluation. It was getting a
- * fresh `WALL_CLOCK_MS` because each pass builds its own timer — so a stage
- * documented as 45 minutes could take 90, by accident rather than by decision.
- */
+/** The retry is a turn to finish with, not a second evaluation. */
 const NUDGE_MS = Math.round(WALL_CLOCK_MS / 3);
 
 const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -156,22 +137,17 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
   });
 
   if (outcome.type === "no-verdict") {
-    // Resumed, not restarted: a fresh evaluator re-opens the browser, re-reads
-    // the chain and re-runs every wait, which on the one real occurrence
-    // repeated 28 tool calls. It does not weaken "a verdict is never
-    // re-rolled" — that rule stops an evaluator diffing against its own
-    // previous verdict, and here there is none.
+    // Resumed, not restarted: a fresh evaluator would re-open the browser,
+    // re-read the chain and re-run every wait.
     emit({
       type: "note",
       level: "warn",
       text: `no verdict (${outcome.reason}) — asking the same evaluator to finish`,
       attempt,
     });
-    // The one retry that starts from an existing verdict. The app has not
-    // changed between passes — same commit, same server — so the only correct
-    // response to a broken citation is to save the file or name one that
-    // exists. A retry that drops a finding instead has re-rolled a verdict,
-    // which is the one thing this stage may never do.
+    // The app has not changed between passes, so the only correct response to a
+    // broken citation is to fix the citation. Dropping the finding instead
+    // would be re-rolling the verdict.
     const judged = outcome.why === "unevidenced" ? locators(captured.verdict) : null;
 
     captured.malformed = null;
@@ -278,12 +254,9 @@ async function pass(
         model: options.model,
         ...(turn.resume === undefined ? {} : { resume: turn.resume }),
         plugins: [{ type: "local", path: playwrightSkills() }],
-        // `settingSources: []` blocks the operator's own skills and plugins but
-        // not the ones Claude Code bundles, which arrive regardless: measured at
-        // fifteen reaching the evaluator, of which one is wanted. Bloat is the
-        // lesser half. Several of the rest — code-review, security-review,
-        // simplify, run, init — point a judge at the code, which is the one
-        // thing this stage may never look at.
+        // `settingSources: []` does not block the skills Claude Code bundles,
+        // and several of those — code-review, security-review, run — point a
+        // judge at the code, which is the one thing this stage may not read.
         skills: [DRIVING],
         settingSources: [],
         permissionMode: "bypassPermissions",
@@ -293,13 +266,9 @@ async function pass(
           // downgrade to an unsandboxed evaluator.
           failIfUnavailable: true,
           filesystem: contained(workspace, repoRoot),
-          // The evaluator has to reach the app it is judging, and the app is on
-          // a loopback port. Without this the sandbox refuses the connection —
-          // both families, so it is not a localhost-resolves-to-IPv6 problem —
-          // and the agent's own recovery is to rerun the command with its
-          // sandbox switched off. Granting the one thing it needs is better
-          // than a containment the agent routes around. External egress was
-          // never blocked; it reads the mirror node in the same session.
+          // The app under judgement is on a loopback port, which the sandbox
+          // otherwise refuses — and the agent's own recovery is to rerun with
+          // its sandbox off, which is worse. External egress is unaffected.
           network: { allowLocalBinding: true },
         },
         maxTurns: MAX_TURNS,
@@ -310,10 +279,8 @@ async function pass(
     });
 
     for await (const message of conversation) {
-      // The key is in this agent's context, so it is in anything it echoes. The
-      // transcript records every message either way, which makes it the one
-      // artifact a live key must never survive in — so the scrub happens at the
-      // write, not at the agent's discretion.
+      // The key is in this agent's context, so it can appear in anything it
+      // echoes. Scrubbed at the write rather than left to the agent.
       await appendFile(transcript, `${redact(JSON.stringify(message), signer?.key)}\n`);
       const step = describeMessage(message);
       if (step !== null) {
@@ -327,10 +294,8 @@ async function pass(
       const absent = missingSkill(message);
       if (absent !== null) emit({ type: "note", level: "warn", text: absent, attempt });
 
-      // A bound the SDK enforces itself arrives as an error result and *then*
-      // throws when the iterator is pulled again. Reading it here is what turns
-      // "the run died" into "no verdict, ask once more", which is what the
-      // bounds table always said it was.
+      // An SDK-enforced bound arrives as an error result and *then* throws on
+      // the next pull. Read here, it becomes "no verdict" rather than a crash.
       const ending = endingOf(message, MAX_TURNS);
       if (ending !== null) {
         costUsd = ending.costUsd;
@@ -378,17 +343,8 @@ async function pass(
 }
 
 /**
- * Reads the verdict the evaluator wrote.
- *
- * This was an MCP tool, and the schema it carried is now described in the brief
- * instead. One thing does not survive the move: the tool returned
- * `_meta: {"claude/endTurn": true}`, so answering ended the turn. A file cannot
- * do that, which means an evaluator may keep working after it has answered.
- * With turns derived from the wall clock that costs little, and it is the only
- * capability given up here.
- *
- * A file that is absent, unparseable or the wrong shape all mean the same
- * thing to the caller — no verdict — which earns the one retry.
+ * Reads the verdict the evaluator wrote. Absent, unparseable or the wrong shape
+ * all mean the same thing to the caller — no verdict — which earns one retry.
  */
 async function readVerdict(workspace: string): Promise<Verdict | null> {
   const source = await readFile(join(workspace, VERDICT_FILE), "utf8").catch(() => null);
@@ -422,7 +378,7 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-/** Evidence is normalised on the way in, as the tool handler used to do. */
+/** Evidence is normalised on the way in. */
 function evidenceOf(value: unknown): string[] {
   return asArray(value)
     .filter((entry): entry is string => typeof entry === "string" && entry !== "")
@@ -455,12 +411,8 @@ function asVerified(entry: unknown): Verified | null {
 }
 
 /**
- * What the harness says when it intervenes.
- *
- * An evaluator that was cut off mid-check needs the opposite advice from one
- * that finished and forgot to answer. Telling the first that it already has
- * what it needs would buy a fast verdict at the cost of a thorough one, which
- * is the only thing this stage is for.
+ * What the harness says when it intervenes. One cut off mid-check needs the
+ * opposite advice from one that finished and forgot to answer.
  */
 /** What a verdict found, ignoring how it evidenced it. Order-insensitive. */
 export function locators(verdict: Verdict | null): string {
@@ -547,14 +499,9 @@ export function adjudicate(
 }
 
 /**
- * A citation reduced to the name it has inside `evidence/`.
- *
- * The evaluator writes `shot.png`, `evidence/shot.png` and absolute paths into
- * its own workspace, all meaning the same file. Accepting every form and then
- * building a path from the raw string produced `evidence/evidence/shot.png` in
- * the repair prompt — an unopenable path, in the one message whose job is to
- * hand the agent something it can open. Normalising once, here, means the check
- * and the path it later becomes cannot disagree.
+ * A citation reduced to its name inside `evidence/`. The evaluator writes
+ * `shot.png`, `evidence/shot.png` and absolute paths for the same file;
+ * normalising once here keeps the check and the path built from it in step.
  */
 export function cited(evidence: string): string {
   if (/^https?:\/\//.test(evidence)) return evidence;
@@ -586,21 +533,14 @@ function hedera(): Hedera {
 /**
  * What the evaluator may read, and everything it may not.
  *
- * The plan has always said "deny rules for everything outside that directory".
- * The code denied two of them — the repo and the harness — which made the
- * blindness that matters real and left the claim wider than the code. `allowRead`
- * is not a standalone allowlist: the SDK defines it as paths re-allowed *within*
- * denied regions, so the only way to express "everything else" is to deny a
- * region and punch holes in it.
+ * `allowRead` is not a standalone allowlist — the SDK re-allows those paths
+ * *within* denied regions — so blindness is expressed by denying the home
+ * directory and punching holes in it. Home because that is where keys, tokens
+ * and other repositories live; system paths stay readable because an agent that
+ * cannot read `/usr/bin` cannot run anything.
  *
- * The region is the home directory, because that is where a person's secrets
- * live — keys, tokens, other clients' repositories. System paths are not denied:
- * an agent that cannot read `/usr/bin` cannot run anything, and `/usr/bin` holds
- * nothing worth hiding.
- *
- * The holes are the three things an evaluator genuinely needs from home: its own
- * credentials, the browser it drives, and the CLI that drives it. Each is here
- * because removing it breaks evaluation, not because it seemed harmless.
+ * The holes are the three things it needs from home: its credentials, the
+ * browser, and the CLI that drives the browser.
  */
 /** Exported for tests: the rules themselves, since the sandbox cannot be asserted on. */
 export function contained(workspace: string, repoRoot: string) {
@@ -637,28 +577,9 @@ function playwrightSkills(): string {
 }
 
 /**
- * The one skill the evaluator should have, qualified by plugin name. That name
- * comes from the directory, so it is read from the path rather than written out
- * twice — the alternative is a literal that stops matching if Playwright moves
- * the folder, and a filter that matches nothing leaves the evaluator with no
- * browser skill and no complaint.
- *
- * The same directory also ships `playwright-component-testing` and
- * `playwright-trace`, which have nothing to do with judging a running app.
- */
-/**
- * The one skill the evaluator should have.
- *
- * `tools:` because a plugin's skills are named `plugin:skill`, and this
- * "plugin" has no `.claude-plugin/plugin.json` to name it, so the SDK falls
- * back to the folder — `playwright-core/lib/tools`.
- *
- * Which means the name can drift three ways: Playwright moves the folder,
- * ships a manifest naming the plugin something else, or renames the skill. A
- * filter that matches nothing is not an error — it is an empty guest list, and
- * the evaluator would judge with no browser skill and say nothing. So the name
- * is checked against what actually loaded rather than being computed to look
- * safe; see `missingSkill`.
+ * The one skill the evaluator gets. `tools:` is the plugin name, which the SDK
+ * takes from the folder because Playwright ships no plugin manifest — so the
+ * name can drift, and `missingSkill` checks it against what actually loaded.
  */
 const DRIVING = "tools:playwright-cli";
 
