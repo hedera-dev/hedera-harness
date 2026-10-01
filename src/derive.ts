@@ -14,9 +14,10 @@
  * inline in the prompt — a pass that could read the code would be forming its
  * checks from the implementation, which is the property being bought.
  */
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import { confirm } from "./ask.js";
 import { type Check, locate } from "./checks.js";
 import { emit } from "./events.js";
@@ -25,7 +26,8 @@ import { emit } from "./events.js";
 const TIMEOUT_MS = 3 * 60_000;
 const MAX_TURNS = 8;
 
-const TOOL = "propose_checks";
+/** What the agent writes, and the harness reads back. */
+const CHECKS_FILE = "checks.json";
 
 export interface DeriveOptions {
   /** The spec's text. Checks are read from it before anything is built. */
@@ -73,100 +75,110 @@ export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
  * would trade a working harness for a stricter one.
  */
 export async function derive(spec: string, appUrlHint: string, model: string): Promise<Check[]> {
-  const found: Check[] = [];
-
-  const server = createSdkMcpServer({
-    name: "harness",
-    tools: [
-      tool(
-        TOOL,
-        "Submit the claims in this spec that a judge can verify by reading a value. Call once.",
-        {
-          checks: z
-            .array(
-              z.object({
-                kind: z.enum(["chain", "http", "dom"]),
-                path: z
-                  .string()
-                  .min(1)
-                  .describe(
-                    "For chain: a mirror node path below /api/v1/, e.g. `accounts/0.0.2`. " +
-                      "For http and dom: a route on the app, e.g. `/send`.",
-                  ),
-                field: z
-                  .string()
-                  .describe(
-                    "For chain: a dotted path into the response, e.g. `balance.balance`. " +
-                      "For http: `status` or `body`. For dom: a CSS selector, e.g. `#send-error`.",
-                  ),
-                expect: z.object({
-                  equals: z.union([z.string(), z.number()]).optional(),
-                  matches: z.string().optional(),
-                  contains: z.string().optional(),
-                  atLeast: z.number().optional(),
-                }),
-                /** Kept so a failing check can show the words it came from. */
-                because: z
-                  .string()
-                  .min(1)
-                  .describe("The phrase in the spec this comes from, quoted, so a reader can judge it"),
-              }),
-            )
-            .describe("Only what the spec states plainly. An empty list is a fine answer."),
-        },
-        async (args) => {
-          for (const proposed of args.checks) {
-            const expect = Object.fromEntries(
-              Object.entries(proposed.expect).filter(([, value]) => value !== undefined),
-            );
-            if (Object.keys(expect).length !== 1) continue;
-            found.push({
-              id: locate(proposed.kind, proposed.path, proposed.field, expect as Check["expect"]),
-              kind: proposed.kind,
-              path: proposed.path,
-              field: proposed.field,
-              expect: expect as Check["expect"],
-              because: proposed.because,
-            });
-          }
-          return { content: [{ type: "text", text: `Recorded ${found.length}.` }] };
-        },
-      ),
-    ],
-  });
+  const workspace = await mkdtemp(join(tmpdir(), "harness-derive-"));
+  const target = join(workspace, CHECKS_FILE);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const conversation = query({
-      prompt: brief(spec, appUrlHint),
+      prompt: brief(spec, appUrlHint, target),
       options: {
         model,
-        mcpServers: { harness: server },
-        // The spec is in the prompt and there is nothing else to read. A pass
-        // that could open the repo would be deriving from the implementation.
-        allowedTools: [`mcp__harness__${TOOL}`],
+        // `Write` and nothing else. Not a convenience: with no Read, Glob or
+        // Grep there is no way to reach the repo, so a check still cannot be
+        // formed from the implementation — which is the whole property this
+        // phase buys. The file is the answer, so that is all it needs.
+        allowedTools: ["Write"],
         permissionMode: "bypassPermissions",
         settingSources: [],
         maxTurns: MAX_TURNS,
         abortController: controller,
         systemPrompt:
           "You turn a written specification into claims a judge can verify by " +
-          "reading a value. You answer only by calling the propose_checks tool.",
+          "reading a value. You answer by writing one JSON file and nothing else.",
       },
     });
     for await (const _ of conversation) {
-      // Drained for the tool call; the checks arrive through the handler.
+      // Drained; the checklist arrives on disk.
     }
   } catch {
     // A helper that cannot be reached costs the run nothing it had before.
   } finally {
     clearTimeout(timer);
   }
+
+  return readChecks(target);
+}
+
+/**
+ * Reads back what the agent wrote, keeping only entries that are actually
+ * usable.
+ *
+ * This validates in code because there is no longer a schema in a tool
+ * signature to do it — and a schema never did the work that mattered anyway:
+ * it can insist `matches` is a string, not that the string is a pattern
+ * JavaScript will accept. The one real malformation we have seen,
+ * `(?i)not.?found`, would have passed any schema ever written.
+ */
+async function readChecks(target: string): Promise<Check[]> {
+  const source = await readFile(target, "utf8").catch(() => null);
+  if (source === null) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const found: Check[] = [];
+  for (const entry of parsed) {
+    const check = usable(entry);
+    if (check !== null) found.push(check);
+  }
   return found;
 }
 
-function brief(spec: string, appUrl: string): string {
+const KINDS = new Set(["chain", "http", "dom"]);
+const EXPECTATIONS = new Set(["equals", "matches", "contains", "atLeast"]);
+
+/** One proposed entry, or null if it is not a claim anything could settle. */
+function usable(entry: unknown): Check | null {
+  if (entry === null || typeof entry !== "object") return null;
+  const { kind, path, field, expect, because } = entry as Record<string, unknown>;
+
+  if (typeof kind !== "string" || !KINDS.has(kind)) return null;
+  if (typeof path !== "string" || path === "") return null;
+  if (typeof field !== "string" || field === "") return null;
+  if (typeof because !== "string" || because === "") return null;
+  if (expect === null || typeof expect !== "object") return null;
+
+  // Exactly one, or it is two claims wearing one locator — and the identity a
+  // failure hashes would cover only the first.
+  const stated = Object.entries(expect as Record<string, unknown>).filter(
+    ([name, value]) => EXPECTATIONS.has(name) && value !== undefined,
+  );
+  if (stated.length !== 1) return null;
+
+  const [name, value] = stated[0]!;
+  if (name === "atLeast" ? typeof value !== "number" : typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+
+  const only = { [name]: value } as Check["expect"];
+  return {
+    id: locate(kind as Check["kind"], path, field, only),
+    kind: kind as Check["kind"],
+    path,
+    field,
+    expect: only,
+    because,
+  };
+}
+
+function brief(spec: string, appUrl: string, target: string): string {
   return [
     "Below is a specification for a web application that does not exist yet.",
     "Read it and state which of its claims a judge could verify by reading a",
@@ -214,6 +226,18 @@ function brief(spec: string, appUrl: string): string {
     spec,
     "--- end ---",
     "",
-    `Call ${TOOL} once with what you have.`,
+    `Write what you have to ${target}, as a JSON array and nothing else — no`,
+    "prose around it, no markdown fence. Each entry:",
+    "",
+    "    {",
+    '      "kind": "chain" | "http" | "dom",',
+    '      "path": "accounts/0.0.2" | "/send",',
+    '      "field": "balance.balance" | "status" | "body" | "#send-error",',
+    '      "expect": { "equals": … } | { "matches": … } | { "contains": … } | { "atLeast": … },',
+    '      "because": "the phrase in the spec this comes from, quoted"',
+    "    }",
+    "",
+    "Exactly one key inside `expect`. An empty array `[]` is a fine answer, and",
+    "a better one than a check you had to invent.",
   ].join("\n");
 }

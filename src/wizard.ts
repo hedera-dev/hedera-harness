@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import { confirm, terminal } from "./ask.js";
 import type { Command } from "./commands.js";
 import {
@@ -26,7 +26,8 @@ const MAX_TURNS = 30;
 /** Questions before it must write what it has. Enough to get specific, not an interview. */
 const GRILL_ROUNDS = 8;
 
-const TOOL = "propose_commands";
+/** What the agent writes, and the harness reads back. */
+const COMMANDS_FILE = "commands.json";
 
 export class WizardError extends Error {
   constructor(message: string) {
@@ -163,104 +164,96 @@ async function draft(repoRoot: string, specPath: string, options: WizardOptions)
   }
 }
 
-const commandShape = z.object({
-  run: z.string().min(1).describe("The command exactly as it should be run"),
-  cwd: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("Directory relative to the repo root. Omit to run at the root."),
-});
-
 async function propose(repoRoot: string, model: string): Promise<Proposal> {
-  const captured: { proposal: Proposal | null } = { proposal: null };
-
-  const server = createSdkMcpServer({
-    name: "harness",
-    tools: [
-      tool(
-        TOOL,
-        "Report the commands that install, build, test and serve this project.",
-        {
-          install: commandShape,
-          build: commandShape,
-          test: commandShape
-            .nullable()
-            .describe("null if the project genuinely has no test command"),
-          serve: commandShape.describe("Starts a long-running dev server"),
-          notes: z
-            .object({
-              install: z.string(),
-              build: z.string(),
-              test: z.string(),
-              serve: z.string(),
-            })
-            .describe(
-              "Why you chose each command — one short sentence each. These are written " +
-                "into harness.yaml as comments, so write them for whoever reads that file " +
-                "later wondering why this command and not the obvious-looking one.",
-            ),
-        },
-        async (args) => {
-          captured.proposal = {
-            config: {
-              install: args.install as Command,
-              build: args.build as Command,
-              test: args.test as Command | null,
-              serve: args.serve as Command,
-            },
-            notes: args.notes as Notes,
-          };
-          return { content: [{ type: "text", text: "Recorded." }] };
-        },
-      ),
-    ],
-  });
+  const workspace = await mkdtemp(join(tmpdir(), "harness-wizard-"));
+  const target = join(workspace, COMMANDS_FILE);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const conversation = query({
-      prompt: commandsBrief(),
+      prompt: commandsBrief(target),
       options: {
         cwd: repoRoot,
         model,
-        mcpServers: { harness: server },
-        // Reading the real files beats being handed excerpts. Nothing is
-        // written here — the spec comes later, in its own conversation.
-        allowedTools: ["Read", "Glob", "Grep", `mcp__harness__${TOOL}`],
+        // Reading the real files beats being handed excerpts. The only thing it
+        // writes is the answer, outside the repo.
+        allowedTools: ["Read", "Glob", "Grep", "Write"],
         permissionMode: "bypassPermissions",
         settingSources: ["project"],
         maxTurns: MAX_TURNS,
         abortController: controller,
         systemPrompt:
-          "You work out how a project installs, builds, tests and serves. " +
-          "You report them only by calling the propose_commands tool.",
+          "You work out how a project installs, builds, tests and serves, and " +
+          "write the answer as one JSON file.",
       },
     });
     for await (const _ of conversation) {
-      // Drained; the commands arrive through the tool.
-    }
-  } catch (error) {
-    // Only if nothing arrived. A timeout *after* the tool fired would otherwise
-    // throw away a perfectly good proposal.
-    if (captured.proposal === null) {
-      throw new WizardError(
-        `the agent could not be reached (${(error as Error).message}). ` +
-          "Run `harness init` to answer the questions yourself.",
-      );
+      // Drained; the commands arrive on disk.
     }
   } finally {
     clearTimeout(timer);
   }
 
-  if (captured.proposal === null) {
+  const proposal = await readProposal(target);
+  if (proposal === null) {
     throw new WizardError(
-      `the agent finished without calling ${TOOL}. ` +
+      "the agent did not produce a usable set of commands. " +
         "Run `harness init` to answer the questions yourself.",
     );
   }
-  return captured.proposal;
+  return proposal;
+}
+
+/**
+ * Reads back what the agent wrote. Validated here because there is no schema in
+ * a tool signature doing it any more — though a schema never gave the guarantee
+ * that matters: it can insist `run` is a string, not that the script exists.
+ * That is `commandProblem`'s job, and it runs on what this returns.
+ */
+async function readProposal(target: string): Promise<Proposal | null> {
+  const source = await readFile(target, "utf8").catch(() => null);
+  if (source === null) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+
+  const { install, build, test, serve, notes } = parsed as Record<string, unknown>;
+  const required = { install: command(install), build: command(build), serve: command(serve) };
+  if (Object.values(required).some((value) => value === null)) return null;
+
+  // `test` alone may be absent: a project with no tests is a fact, not a flaw.
+  const tested = test === null || test === undefined ? null : command(test);
+
+  return {
+    config: {
+      install: required.install!,
+      build: required.build!,
+      test: tested,
+      serve: required.serve!,
+    },
+    notes: written(notes),
+  };
+}
+
+/** `{ run, cwd? }`, or null when it is not one. */
+function command(value: unknown): Command | null {
+  if (value === null || typeof value !== "object") return null;
+  const { run, cwd } = value as Record<string, unknown>;
+  if (typeof run !== "string" || run.trim() === "") return null;
+  return typeof cwd === "string" && cwd !== "" ? { run, cwd } : { run };
+}
+
+/** Missing reasoning costs a comment in the file, never the command itself. */
+function written(value: unknown): Notes {
+  const given = (value ?? {}) as Record<string, unknown>;
+  const one = (name: string): string => (typeof given[name] === "string" ? (given[name] as string) : "");
+  return { install: one("install"), build: one("build"), test: one("test"), serve: one("serve") };
 }
 
 /** One exchange of the grilling. Returns what it said, and where to resume. */
@@ -305,7 +298,7 @@ async function turn(
   return { text, sessionId };
 }
 
-function commandsBrief(): string {
+function commandsBrief(target: string): string {
   return [
     "Read this project well enough to say how it installs, builds, tests and serves.",
     "",
@@ -313,12 +306,28 @@ function commandsBrief(): string {
     "build/test/dev script at all while the real ones are namespaced per workspace,",
     "and a workspace may define `start` as a dev server while `serve` runs the",
     "production build. Read what each script actually does rather than matching on",
-    "its name. Then call propose_commands once:",
+    "its name.",
     "",
     "- prefer a command runnable from the repo root; set cwd only when necessary",
     "- build must produce a production build; serve must start a dev server that",
     "  keeps running and serves the app locally",
     "- test is null only if the project genuinely has no way to run tests",
+    "",
+    `Write the answer to ${target}, as JSON and nothing else — no prose around`,
+    "it, no markdown fence:",
+    "",
+    "    {",
+    '      "install": { "run": "yarn install" },',
+    '      "build":   { "run": "yarn next:build" },',
+    '      "test":    { "run": "yarn test" },',
+    '      "serve":   { "run": "yarn dev", "cwd": "packages/nextjs" },',
+    '      "notes": { "install": "…", "build": "…", "test": "…", "serve": "…" }',
+    "    }",
+    "",
+    "`cwd` is optional and relative to the repo root; omit it to run at the root.",
+    "`test` may be null. Each note is one short sentence saying why that command",
+    "and not the obvious-looking one — they are written into harness.yaml as",
+    "comments, for whoever reads it later wondering the same thing.",
   ].join("\n");
 }
 

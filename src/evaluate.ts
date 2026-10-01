@@ -1,10 +1,9 @@
-import { appendFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import { type Check, worded } from "./checks.js";
 import { emit } from "./events.js";
 import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
@@ -34,7 +33,8 @@ const SECONDS_PER_TURN = 6.7;
  */
 const MAX_TURNS = Math.ceil(WALL_CLOCK_MS / 1_000 / SECONDS_PER_TURN);
 
-const TOOL = "submit_verdict";
+/** What the evaluator writes, in its own workspace, and the harness reads back. */
+const VERDICT_FILE = "verdict.json";
 const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export class EvaluateError extends Error {
@@ -113,37 +113,6 @@ export interface EvaluateOptions {
   maxSpendUsd?: number | undefined;
 }
 
-const failureShape = z.object({
-  what: z.string().min(1).describe("What a user cannot do, in their terms"),
-  /**
-   * Kept to a bare locator on purpose. The harness hashes this to tell a
-   * repeated failure from a new one across attempts, and a fresh evaluator
-   * each attempt words prose differently every time — two runs describing
-   * one bug would look like two bugs.
-   */
-  where: z
-    .string()
-    .min(1)
-    .describe(
-      "Where it happens, as a bare locator and nothing else: a route like " +
-        "`/?n=5`, or a selector like `#result`. No sentences, no explanation.",
-    ),
-  /**
-   * A list rather than a string, because a single field invites prose: the
-   * first evaluator to fail a spec answered with a filename followed by a
-   * parenthesised explanation, and the whole thing was read as a path.
-   * Explanation belongs in `what`; this field holds only references.
-   */
-  evidence: z
-    .array(z.string().min(1))
-    .min(1)
-    .describe(
-      "One entry per piece of evidence, each either a filename you saved in " +
-        "evidence/ or a mirror node URL. Nothing else — no sentences, no notes " +
-        "in brackets. Put the explanation in `what`.",
-    ),
-});
-
 /**
  * Judges the running app against the spec, from a directory that holds only
  * the spec. The evaluator never sees the code, the diff, or this harness —
@@ -162,7 +131,6 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
 
   const captured: Captured = { verdict: null, malformed: null };
   const chain = hedera();
-  const server = verdictServer(captured);
   const transcript = await run.path(`attempt-${attempt}`, "evaluate.jsonl");
 
   emit({
@@ -172,7 +140,7 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
     detail: `${options.model} · blind · ${appUrl}`,
   });
 
-  let { outcome, sessionId } = await pass(options, workspace, server, transcript, {
+  let { outcome, sessionId } = await pass(options, workspace, transcript, {
     prompt: brief(appUrl, chain, options.checks),
     captured,
   });
@@ -197,7 +165,7 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
     const judged = outcome.why === "unevidenced" ? locators(captured.verdict) : null;
 
     captured.malformed = null;
-    ({ outcome } = await pass(options, workspace, server, transcript, {
+    ({ outcome } = await pass(options, workspace, transcript, {
       prompt: nudge(outcome),
       captured,
       resume: sessionId,
@@ -266,7 +234,6 @@ interface Captured {
 async function pass(
   options: EvaluateOptions,
   workspace: string,
-  server: ReturnType<typeof createSdkMcpServer>,
   transcript: string,
   turn: { prompt: string; captured: Captured; resume?: string | undefined },
 ): Promise<{ outcome: Outcome; sessionId: string | undefined }> {
@@ -287,6 +254,10 @@ async function pass(
   // never be written verbatim.
   await said(transcript, turn.resume === undefined ? "prompt" : "nudge", turn.prompt, signer?.key);
 
+  // A verdict from the previous pass must not be mistaken for this one's: the
+  // retry exists precisely because the last attempt did not answer properly.
+  await rm(join(workspace, VERDICT_FILE), { force: true });
+
   try {
     const conversation = query({
       prompt: turn.prompt,
@@ -302,7 +273,6 @@ async function pass(
         // simplify, run, init — point a judge at the code, which is the one
         // thing this stage may never look at.
         skills: [driving()],
-        mcpServers: { harness: server },
         settingSources: [],
         permissionMode: "bypassPermissions",
         sandbox: {
@@ -369,6 +339,11 @@ async function pass(
     process.env["PATH"] = previousPath;
   }
 
+  // The answer is on disk, not in a tool handler. Read after the turn rather
+  // than during it: there is nothing the harness can do with a verdict until
+  // the evaluator has stopped working on it.
+  turn.captured.verdict = await readVerdict(workspace);
+
   const outcome = adjudicate(turn.captured, workspace, options.checks);
   emit({
     type: "evaluate:finished",
@@ -381,72 +356,81 @@ async function pass(
   return { outcome, sessionId };
 }
 
-const verifiedShape = z.object({
-  id: z.string().min(1).describe("The checklist item's id, copied from the brief exactly"),
-  before: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      "Chain items: what the mirror node answered before you touched the app. " +
-        "Without it there is no change to claim — only a state.",
-    ),
-  after: z
-    .string()
-    .min(1)
-    .describe("What it answers now (chain), what the element shows (dom), or the route's answer (http)"),
-  holds: z.boolean().describe("Whether the claim held"),
-  evidence: z
-    .array(z.string().min(1))
-    .min(1)
-    .describe("Mirror node URLs or files in evidence/ that show the readings"),
-  note: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("When holds is false but the run passes: how the item misread the spec"),
-});
+/**
+ * Reads the verdict the evaluator wrote.
+ *
+ * This was an MCP tool, and the schema it carried is now described in the brief
+ * instead. One thing does not survive the move: the tool returned
+ * `_meta: {"claude/endTurn": true}`, so answering ended the turn. A file cannot
+ * do that, which means an evaluator may keep working after it has answered.
+ * With turns derived from the wall clock that costs little, and it is the only
+ * capability given up here.
+ *
+ * A file that is absent, unparseable or the wrong shape all mean the same
+ * thing to the caller — no verdict — which earns the one retry.
+ */
+async function readVerdict(workspace: string): Promise<Verdict | null> {
+  const source = await readFile(join(workspace, VERDICT_FILE), "utf8").catch(() => null);
+  if (source === null) return null;
 
-function verdictServer(captured: Captured): ReturnType<typeof createSdkMcpServer> {
-  return createSdkMcpServer({
-    name: "harness",
-    tools: [
-      tool(
-        TOOL,
-        "Report whether the running app satisfies the spec. Call this exactly once, at the end.",
-        {
-          pass: z.boolean().describe("true only if every requirement in the spec is met"),
-          failures: z
-            .array(failureShape)
-            .describe("Empty when passing. One entry per requirement that is not met."),
-          verified: z
-            .array(verifiedShape)
-            .describe(
-              "One entry per checklist item in the brief, in any order. " +
-                "Empty when the brief listed none.",
-            ),
-        },
-        async (args) => {
-          const failures = (args.failures as Failure[]).map((failure) => ({
-            ...failure,
-            evidence: failure.evidence.map(cited),
-          }));
-          const verified = (args.verified as Verified[]).map((entry) => ({
-            ...entry,
-            evidence: entry.evidence.map(cited),
-          }));
-          captured.verdict = { pass: args.pass, failures, verified };
-          // Answering ends the turn. Without this the evaluator decides for
-          // itself when it is finished, and the one time it got that wrong it
-          // ended without answering at all.
-          return {
-            content: [{ type: "text", text: "Verdict recorded." }],
-            _meta: { "claude/endTurn": true },
-          };
-        },
-      ),
-    ],
-  });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+
+  const { pass, failures, verified } = parsed as Record<string, unknown>;
+  if (typeof pass !== "boolean") return null;
+
+  return {
+    pass,
+    failures: asArray(failures).flatMap((entry) => {
+      const failure = asFailure(entry);
+      return failure === null ? [] : [failure];
+    }),
+    verified: asArray(verified).flatMap((entry) => {
+      const item = asVerified(entry);
+      return item === null ? [] : [item];
+    }),
+  };
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** Evidence is normalised on the way in, as the tool handler used to do. */
+function evidenceOf(value: unknown): string[] {
+  return asArray(value)
+    .filter((entry): entry is string => typeof entry === "string" && entry !== "")
+    .map(cited);
+}
+
+function asFailure(entry: unknown): Failure | null {
+  if (entry === null || typeof entry !== "object") return null;
+  const { what, where, evidence } = entry as Record<string, unknown>;
+  if (typeof what !== "string" || what === "") return null;
+  if (typeof where !== "string" || where === "") return null;
+  const cited = evidenceOf(evidence);
+  return cited.length === 0 ? null : { what, where, evidence: cited };
+}
+
+function asVerified(entry: unknown): Verified | null {
+  if (entry === null || typeof entry !== "object") return null;
+  const { id, before, after, holds, evidence, note } = entry as Record<string, unknown>;
+  if (typeof id !== "string" || id === "") return null;
+  if (typeof holds !== "boolean") return null;
+  if (typeof after !== "string" || after === "") return null;
+  return {
+    id,
+    ...(typeof before === "string" && before !== "" ? { before } : {}),
+    after,
+    holds,
+    evidence: evidenceOf(evidence),
+    ...(typeof note === "string" && note !== "" ? { note } : {}),
+  };
 }
 
 /**
@@ -481,17 +465,18 @@ export function nudge(outcome: { reason: string; why: Unanswered }): string {
     "cut-off": [
       "You were stopped before you were done, not because you were wrong. Finish",
       "the checks you had not reached — the spec is still in spec.md and your",
-      `evidence is still in evidence/ — and only then call ${TOOL}.`,
+      `evidence is still in evidence/ — and only then write ${VERDICT_FILE}.`,
       "Do not pass a requirement you have not actually checked.",
     ],
     unreported: [
-      `You did the work and ended without reporting it. Call ${TOOL} now with what`,
+      `You did the work and ended without reporting it. Write ${VERDICT_FILE} now`,
+      `with what`,
       "you found. Check anything you are unsure of first.",
     ],
     unevidenced: [
       "Your verdict cited evidence the harness cannot find. Save the files you",
       "meant to cite into evidence/, or cite only files that are there, and call",
-      `${TOOL} again. A finding nobody can check is not a finding.`,
+      `write ${VERDICT_FILE} again. A finding nobody can check is not a finding.`,
       "",
       "Report the same findings. You are fixing how they are evidenced, not",
       "whether they stand — the app has not changed since you looked at it.",
@@ -499,7 +484,7 @@ export function nudge(outcome: { reason: string; why: Unanswered }): string {
     incomplete: [
       "Your verdict left checklist items unaccounted for. Read the ones you",
       "skipped — the checklist is in the brief, and your browser and session are",
-      `still live — then call ${TOOL} again. This is the reading you have not`,
+      `still live — then write ${VERDICT_FILE} again. This is the reading you have not`,
       "done, not a re-reading: your other findings stand unless what you read",
       "now contradicts them.",
     ],
@@ -524,7 +509,7 @@ export function adjudicate(
   if (captured.verdict === null) {
     return {
       type: "no-verdict",
-      reason: `the evaluator finished without calling ${TOOL}`,
+      reason: `the evaluator finished without writing ${VERDICT_FILE}`,
       why: "unreported",
     };
   }
@@ -669,7 +654,7 @@ function brief(appUrl: string, chain: Hedera, checks: Check[]): string {
           "",
           ...checks.map((check) => worded(check)),
           "",
-          `Every item needs one \`verified\` entry in ${TOOL}: its id, what you read`,
+          "Every item needs one `verified` entry: its id, what you read",
           "(before, for chain items, and after), whether it held, and the URL or",
           "evidence file that shows it. An item that did not hold normally means the",
           "run fails; if the item misread the spec, say how in `note` and judge the",
@@ -684,9 +669,29 @@ function brief(appUrl: string, chain: Hedera, checks: Check[]): string {
     "need to wait, wait in the foreground: a blocking command costs nothing while it",
     `runs, and you have ${WALL_CLOCK_MS / 60_000} minutes for the entire check.`,
     "",
-    `When you are done, call ${TOOL} exactly once. Pass only if every requirement in the`,
-    "spec is met. For each requirement that is not met, give one entry naming what a user",
-    "cannot do, where it happens, and the evidence file or mirror node URL that shows it.",
+    `When you are done, write your verdict to ${VERDICT_FILE} in this directory, as`,
+    "JSON and nothing else — no prose around it, no markdown fence:",
+    "",
+    "    {",
+    '      "pass": false,',
+    '      "failures": [',
+    '        { "what": "what a user cannot do, in their terms",',
+    '          "where": "a bare locator: /send, or #result",',
+    '          "evidence": ["shot.png", "https://testnet.mirrornode.hedera.com/..."] }',
+    "      ],",
+    '      "verified": [',
+    '        { "id": "<the checklist id, copied exactly>",',
+    '          "before": "100", "after": "102.5", "holds": true,',
+    '          "evidence": ["https://testnet.mirrornode.hedera.com/..."],',
+    '          "note": "only when it did not hold but the run still passes" }',
+    "      ]",
+    "    }",
+    "",
+    "Pass only if every requirement in the spec is met. `where` is a bare locator and",
+    "nothing else — no sentences; the explanation belongs in `what`. Every entry in",
+    "`evidence` is a filename you saved in evidence/ or a mirror node URL, nothing else.",
+    "`before` is for chain items only. Writing that file is how you answer; nothing",
+    "else counts as answering.",
   ]
     .filter((line) => line !== "")
     .join("\n");
