@@ -172,10 +172,24 @@ export function renderToTerminal(): () => void {
         return;
 
       case "derived": {
+        // Zero is said out loud. Silence here used to mean either "this spec has
+        // nothing a machine can settle" or "the derivation broke", and a reader
+        // could not tell which.
+        if (event.checks.length === 0) {
+          console.log(
+            `\n  ${dim("nothing in this spec can be settled by reading a value — the judge decides all of it")}`,
+          );
+          return;
+        }
         console.log(`\n  ${dim("I will also verify, from this spec:")}`);
         for (const check of event.checks) {
           const source = check.because === undefined ? "" : dim(`  — "${clip(check.because)}"`);
           console.log(`    ${check.id}${source}`);
+        }
+        if (event.dropped > 0) {
+          console.log(
+            `  ${dim(`${event.dropped} proposal(s) discarded as unusable — the wrong shape, or two claims in one`)}`,
+          );
         }
         return;
       }

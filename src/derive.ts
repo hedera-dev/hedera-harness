@@ -29,6 +29,20 @@ const MAX_TURNS = 8;
 /** What the agent writes, and the harness reads back. */
 const CHECKS_FILE = "checks.json";
 
+export class DeriveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeriveError";
+  }
+}
+
+/**
+ * Ran, or did not. The distinction this type exists for: an empty checklist
+ * because the spec is all judgement, and an empty checklist because the
+ * derivation broke, are opposite facts that used to be the same empty array.
+ */
+export type Derived = { checks: Check[]; dropped: number } | { failed: string };
+
 export interface DeriveOptions {
   /** The spec's text. Checks are read from it before anything is built. */
   spec: string;
@@ -54,18 +68,31 @@ export interface DeriveOptions {
  */
 export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
   emit({ type: "phase:started", phase: "derive" });
-  const checks = await derive(options.spec, options.appUrlHint, options.model);
-  if (checks.length === 0) return [];
+  const derived = await derive(options.spec, options.appUrlHint, options.model);
 
-  emit({ type: "derived", checks });
-  if (options.review) {
+  // Failing here costs three minutes and nothing else: no generation has run,
+  // no evaluation has been paid for. Continuing would cost a whole run and give
+  // back a pass that nothing mechanical stood behind — and would look exactly
+  // like a run where the spec simply had nothing to settle.
+  if ("failed" in derived) {
+    throw new DeriveError(
+      `could not read checks from the spec: ${derived.failed}. ` +
+        "Nothing has been generated yet, so this costs only the time to try again.",
+    );
+  }
+
+  // Emitted even at zero. A checklist of none is a fact about the spec worth
+  // seeing, and the only way to tell it apart from the failure above.
+  emit({ type: "derived", checks: derived.checks, dropped: derived.dropped });
+
+  if (derived.checks.length > 0 && options.review) {
     await confirm(
       "Use these?",
       options.assumeYes,
       "declined — edit the spec and run again.",
     );
   }
-  return checks;
+  return derived.checks;
 }
 
 /**
@@ -74,7 +101,7 @@ export async function deriveChecks(options: DeriveOptions): Promise<Check[]> {
  * we had last week, and failing the run because a helper could not be reached
  * would trade a working harness for a stricter one.
  */
-export async function derive(spec: string, appUrlHint: string, model: string): Promise<Check[]> {
+export async function derive(spec: string, appUrlHint: string, model: string): Promise<Derived> {
   const workspace = await mkdtemp(join(tmpdir(), "harness-derive-"));
   const target = join(workspace, CHECKS_FILE);
 
@@ -102,8 +129,16 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
     for await (const _ of conversation) {
       // Drained; the checklist arrives on disk.
     }
-  } catch {
-    // A helper that cannot be reached costs the run nothing it had before.
+    // The file is the answer, so a conversation that ended without one has not
+    // answered — whatever it said on the way.
+  } catch (error) {
+    const why = controller.signal.aborted
+      ? `it did not finish within ${TIMEOUT_MS / 60_000} minutes`
+      : (error as Error).message;
+    // Unless it wrote the file and then fell over, in which case the answer is
+    // already on disk and the fall is not interesting.
+    const written = await readChecks(target);
+    return "failed" in written ? { failed: why } : written;
   } finally {
     clearTimeout(timer);
   }
@@ -121,24 +156,26 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
  * JavaScript will accept. The one real malformation we have seen,
  * `(?i)not.?found`, would have passed any schema ever written.
  */
-async function readChecks(target: string): Promise<Check[]> {
+export async function readChecks(target: string): Promise<Derived> {
   const source = await readFile(target, "utf8").catch(() => null);
-  if (source === null) return [];
+  if (source === null) return { failed: "the agent wrote no checklist" };
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
   } catch {
-    return [];
+    return { failed: "the checklist it wrote is not JSON" };
   }
-  if (!Array.isArray(parsed)) return [];
+  if (!Array.isArray(parsed)) return { failed: "the checklist it wrote is not a list" };
 
   const found: Check[] = [];
   for (const entry of parsed) {
     const check = usable(entry);
     if (check !== null) found.push(check);
   }
-  return found;
+  // An empty list is a real answer — most specs are mostly judgement. What is
+  // not a real answer is no list at all, which is the case above.
+  return { checks: found, dropped: parsed.length - found.length };
 }
 
 const KINDS = new Set(["chain", "http", "dom"]);
