@@ -2,16 +2,13 @@
  * Checks read out of the spec, before the app exists.
  *
  * The conflict of interest this answers is not that a check is agent-authored.
- * It is that **the same mind picks the test and renders the verdict, in the
- * same moment** — and a judge that decides an app is fine will choose checks
- * that agree. Every check the harness settles today comes from that judge, so
- * "no check has ever caught a bad pass" is unfalsifiable rather than
- * reassuring: you cannot detect a lenient judge with an instrument it controls.
- *
- * These exist before anything has been built, so nothing about the app can
- * shape them. They are pinned for the run and reused across attempts, and the
- * evaluator never sees them — it declares its own, which cover what this
- * cannot: anything the run creates. The two sources are disjoint on purpose.
+ * It is that the test would be picked in the same moment, and by the same
+ * mind, as the verdict — and a judge that has decided an app is fine chooses
+ * checks that agree. These exist before anything has been built, so nothing
+ * about the app can shape them: the judge receives them as a checklist it must
+ * account for, not as claims it chose. What the checklist cannot cover —
+ * anything the run creates — the judge verifies on its own, before and after,
+ * and cites both readings.
  *
  * It reads the spec and nothing else. No file tools, no repo access, the text
  * inline in the prompt — a pass that could read the code would be forming its
@@ -29,10 +26,10 @@ const MAX_TURNS = 8;
 const TOOL = "propose_checks";
 
 /**
- * Derives what can be settled mechanically from the spec's own words. Returns
- * nothing rather than throwing: a run without these is the run we had last
- * week, and failing DOCTOR because a helper could not be reached would trade a
- * working harness for a stricter one.
+ * Derives what a judge can verify by reading a value, from the spec's own
+ * words. Returns nothing rather than throwing: a run without these is the run
+ * we had last week, and failing DOCTOR because a helper could not be reached
+ * would trade a working harness for a stricter one.
  */
 export async function derive(spec: string, appUrlHint: string, model: string): Promise<Check[]> {
   const found: Check[] = [];
@@ -42,7 +39,7 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
     tools: [
       tool(
         TOOL,
-        "Submit the claims in this spec that a machine can settle. Call once.",
+        "Submit the claims in this spec that a judge can verify by reading a value. Call once.",
         {
           checks: z
             .array(
@@ -84,7 +81,6 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
             if (Object.keys(expect).length !== 1) continue;
             found.push({
               id: locate(proposed.kind, proposed.path, proposed.field, expect as Check["expect"]),
-              source: "derived",
               kind: proposed.kind,
               path: proposed.path,
               field: proposed.field,
@@ -114,8 +110,8 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
         maxTurns: MAX_TURNS,
         abortController: controller,
         systemPrompt:
-          "You turn a written specification into claims a machine can settle. " +
-          "You answer only by calling the propose_checks tool.",
+          "You turn a written specification into claims a judge can verify by " +
+          "reading a value. You answer only by calling the propose_checks tool.",
       },
     });
     for await (const _ of conversation) {
@@ -132,8 +128,8 @@ export async function derive(spec: string, appUrlHint: string, model: string): P
 function brief(spec: string, appUrl: string): string {
   return [
     "Below is a specification for a web application that does not exist yet.",
-    "Read it and state which of its claims a machine could settle on its own,",
-    "with no judgement and no browser.",
+    "Read it and state which of its claims a judge could verify by reading a",
+    "value — from the mirror node, a route, or an element — with no judgement.",
     "",
     "You have three kinds available:",
     "",

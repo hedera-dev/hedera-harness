@@ -167,8 +167,8 @@ evaluator checked rather than taking its word.
     build.txt
     test.txt
     evaluate.jsonl     every message from the judging agent
-    verdict.json       what the evaluator answered, before the harness had its say
-    checks.json        claims it asked the harness to settle, and what was found
+    verdict.json       what the evaluator answered, with its accounting of the
+                       checklist: both readings and the evidence for each item
     feedback.json      what this attempt was told went wrong
     evidence/          screenshots, page snapshots, saved responses
   result.json          { passed, attempts, branch, timings, skills, history }
@@ -188,20 +188,18 @@ Each rule guards a specific way this could lie to you.
 
 **A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict. A finding it cannot see is not a finding.
 
-**Some of it is checked before anything is built.** DOCTOR reads your spec — and only your spec, never the code — and states what it can settle mechanically. Those checks exist before the app does, so nothing about the app can shape them, and they are shown rather than asked about:
+**Some of it is read from the spec before anything is built.** DOCTOR reads your spec — and only your spec, never the code — and states what a judge can verify by reading a value rather than forming an opinion. That checklist exists before the app does, so nothing about the app can shape it, and it is shown rather than asked about:
 
 ```
   I will also verify, from this spec:
     http:/status:status:equals=200  — "The page at `/status` must return HTTP 200."
 ```
 
-Those checks read the page in a real browser where the spec names an element, so a value your app fetches after the first paint is seen rather than missed. Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
+Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
 
-**These report; they never fail a run on their own.** A check read out of prose is one agent's interpretation, and when it disagrees with your app either of the two could be wrong. Measured across four real specs, about one in ten would have failed an app that was doing exactly what was asked. So a failure here is a line in the report — including the useful case, where it disagrees with a judge that passed.
+**The judge does the checking; the harness keeps the books.** The evaluator verifies each item itself — chain state from the public mirror node, read before it touches the app and again after, because a change is only visible against a value written down beforehand; page state from the browser it is already driving. A verdict is not accepted until every item is accounted for: both readings, whether the claim held, and the URL or screenshot that shows it. An item that did not hold fails the run unless the judge says how the item misread the spec — out loud, in the report. Measured across four real specs, about one reading in ten is wrong that way, so the call is the judge's; the harness's job is that it is never made silently.
 
-**And the evaluator's own claims are checked, not taken.** It declares what should be true on chain; the harness reads the mirror node itself and decides. That one *does* turn a pass into a fail — never the reverse — because a judge passing over a claim it made itself has contradicted itself, and nothing is a better reason to reject. A claim the harness cannot read at all is a warning, never a failure. `verdict.json` keeps what the evaluator answered; `checks.json` keeps what was actually there.
-
-**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, or evidence that is not there — earns a second look, once.
+**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, evidence that is not there, or a checklist left unaccounted for — earns a second look, once.
 
 **Secrets never reach git history.** `.env` files are refused during generation and, more importantly, can never be staged — the enforceable half, since the harness owns the commit.
 

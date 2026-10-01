@@ -6,7 +6,7 @@ import { type Outcome, cited, evaluate } from "./evaluate.js";
 import { generate } from "./generate.js";
 import { commitWork } from "./git.js";
 import { type Timings, emit } from "./events.js";
-import { type AttemptFailure, describeFailure, fromCheck, fromStage, fromVerdict } from "./failure.js";
+import { type AttemptFailure, describeFailure, fromStage, fromVerdict } from "./failure.js";
 import type { Run } from "./run.js";
 import { startServer } from "./serve.js";
 import { type StageFailure, runStages } from "./test.js";
@@ -27,7 +27,7 @@ export interface LoopOptions {
   judgeModel: string;
   /** Unset means no spend ceiling. Bounds each agent call, not the run. */
   maxSpendUsd?: number | undefined;
-  /** Read from the spec at DOCTOR, pinned for the run, settled every attempt. */
+  /** Read from the spec at DOCTOR, pinned for the run, verified by the judge every attempt. */
   checks: Check[];
   /**
    * Failures a previous run ended on. The first attempt starts as a repair of
@@ -213,14 +213,7 @@ function stageFeedback(failure: StageFailure): Feedback {
 function verdictFeedback(outcome: Outcome): Feedback {
   if (outcome.type !== "verdict") throw new AbortRun(outcome.reason);
   if (outcome.verdict.pass) return { ok: true, failures: [] };
-
-  // A claim the harness settled and found untrue is a reason the attempt did
-  // not pass, exactly like one the judge formed. It reaches the repair prompt
-  // and the open/fixed/new tally by the same route.
-  const measured = outcome.checks
-    .filter((result) => result.state === "failed" && result.check.source === "declared")
-    .map(fromCheck);
-  return { ok: false, failures: [...measured, ...fromVerdict(outcome.verdict)] };
+  return { ok: false, failures: fromVerdict(outcome.verdict) };
 }
 
 /**
@@ -276,11 +269,9 @@ function repairPrompt(feedback: Feedback, artifacts: string): string {
 
 /**
  * Where to look. A stage failure points at its own output, a judged one at the
- * evidence behind it, and a measured one at nothing — the harness read the
- * chain itself, so the claim and its result are the whole story.
+ * evidence behind it.
  */
 function pointers(failure: AttemptFailure, artifacts: string): string[] {
-  if (failure.kind === "check") return [];
   if (failure.kind === "verdict") {
     return failure.evidence.map((item) => `  ${located(item, artifacts)}`);
   }

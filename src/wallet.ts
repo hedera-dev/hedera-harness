@@ -13,8 +13,6 @@
  * the key through to the evaluator without ever using it. No SDK, no
  * provisioning, and the key never enters the harness's own logic.
  */
-import { read } from "./checks.js";
-
 /** Below this the account cannot pay for much, and a run is not worth starting. */
 const ENOUGH_TINYBARS = 5 * 100_000_000;
 
@@ -66,6 +64,32 @@ export async function funding(mirrorNode: string, id: string): Promise<Funding> 
 
   const hbar = tinybars / 100_000_000;
   return tinybars >= ENOUGH_TINYBARS ? { state: "ok", hbar } : { state: "low", hbar };
+}
+
+/**
+ * Reads `field` out of the mirror node's answer for `path`. The one harness-side
+ * chain read that survives the move to judge-side verification: this is
+ * preflight — "can the account pay for a run" — asked of a public API before
+ * anything starts, not evidence about what an agent did.
+ */
+async function read(
+  mirrorNode: string,
+  path: string,
+  field: string,
+): Promise<{ value: unknown } | { error: string }> {
+  const url = `${mirrorNode.replace(/\/$/, "")}/api/v1/${path.replace(/^\//, "")}`;
+  const response = await fetch(url).catch((error: Error) => error);
+  if (response instanceof Error) return { error: `${url} could not be reached: ${response.message}` };
+  if (!response.ok) return { error: `${url} answered ${response.status}` };
+
+  const body = (await response.json().catch(() => null)) as unknown;
+  if (body === null) return { error: `${url} did not answer with JSON` };
+
+  const value = field.split(".").reduce<unknown>(
+    (into, key) => (into !== null && typeof into === "object" ? (into as Record<string, unknown>)[key] : undefined),
+    body,
+  );
+  return value === undefined ? { error: `${url} has no ${field}` } : { value };
 }
 
 /**

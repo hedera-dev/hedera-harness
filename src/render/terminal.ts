@@ -111,18 +111,19 @@ export function renderToTerminal(): () => void {
         console.log(`  ${dim(elapsed())}  ${verdict(event.verdict, event.findings)}`);
         return;
 
-      case "check:settled": {
-        // A settled claim reads as a check because that is what it is: the
-        // harness looked, rather than the evaluator saying so.
-        // A derived check that fails did not fail the run, so it does not get
-        // the mark that means it did.
-        const failed = event.state === "failed" && event.source === "declared";
-        const mark = event.state === "held" ? tick("") : failed ? red("✗") : warn("");
-        console.log(`  ${mark.trim()} ${dim(`${event.id} — ${event.detail}`)}`);
-        // The reading earns a line only when it disagreed or could not be read;
-        // one that held was already shown, with its quote, at DOCTOR.
-        if (event.because !== undefined && event.state !== "held") {
+      case "check:verified": {
+        // The judge's accounting, not the harness's: it read both sides and
+        // called it. What the line carries is the reading — before → after —
+        // and for one that did not hold, the spec's words and the judge's
+        // reason for standing by the run anyway.
+        const seen = event.before === undefined ? event.after : `${event.before} → ${event.after}`;
+        const mark = event.holds ? tick("") : warn("");
+        console.log(`  ${mark.trim()} ${dim(`${event.id} — ${seen}`)}`);
+        if (!event.holds && event.because !== undefined) {
           console.log(`    ${dim(`— "${clip(event.because)}"`)}`);
+        }
+        if (!event.holds && event.note !== undefined) {
+          console.log(`    ${dim(`judge: ${clip(event.note)}`)}`);
         }
         return;
       }

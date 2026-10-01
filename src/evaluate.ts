@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { type Check, type CheckResult, baseline, locate, settleAll } from "./checks.js";
+import { type Check, worded } from "./checks.js";
 import { emit } from "./events.js";
 import { type Wallet, mirrorNode, network, redact, wallet } from "./wallet.js";
 import { describeMessage, endingOf, said } from "./messages.js";
@@ -35,7 +35,6 @@ const SECONDS_PER_TURN = 6.7;
 const MAX_TURNS = Math.ceil(WALL_CLOCK_MS / 1_000 / SECONDS_PER_TURN);
 
 const TOOL = "submit_verdict";
-const DECLARE = "declare_check";
 const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export class EvaluateError extends Error {
@@ -51,22 +50,43 @@ export interface Failure {
   evidence: string[];
 }
 
+/**
+ * The judge's accounting of one checklist item. The harness never reads the
+ * values — it requires that they exist, that the evidence behind them does,
+ * and that a claim reported as not held is reconciled with the verdict.
+ */
+export interface Verified {
+  /** The checklist item's id, copied from the brief. */
+  id: string;
+  /** What a chain item answered before the judge touched the app. */
+  before?: string | undefined;
+  /** What it answered after — or what the element shows, for a page item. */
+  after: string;
+  holds: boolean;
+  /** Mirror node URLs or files in `evidence/` that show the readings. */
+  evidence: string[];
+  /** When the claim did not hold but the run passes: how the item misread the spec. */
+  note?: string | undefined;
+}
+
 export interface Verdict {
   pass: boolean;
   failures: Failure[];
+  /** One entry per checklist item in the brief. Empty when there were none. */
+  verified: Verified[];
 }
 
 /**
  * Either the evaluator answered, or it did not. There is no third state: a
  * well-formed verdict is final and is never re-rolled, while "no verdict"
- * means exactly the three cases below and earns one retry.
+ * means exactly the cases below and earns one retry.
  */
 export type Outcome =
-  | { type: "verdict"; verdict: Verdict; checks: CheckResult[] }
+  | { type: "verdict"; verdict: Verdict }
   | { type: "no-verdict"; reason: string; why: Unanswered };
 
 /**
- * The three ways an evaluation ends without an answer, which need different
+ * The ways an evaluation ends without an answer, which need different
  * things said to them. Matching on the reason's prose would work until someone
  * reworded it.
  */
@@ -76,11 +96,13 @@ export type Unanswered =
   /** It ended its own turn without calling the tool. */
   | "unreported"
   /** It answered, but cited evidence that is not on disk. */
-  | "unevidenced";
+  | "unevidenced"
+  /** It answered without accounting for every checklist item. */
+  | "incomplete";
 
 export interface EvaluateOptions {
   repoRoot: string;
-  /** Read from the spec at DOCTOR, before the app existed. Settled alongside the judge's own. */
+  /** Read from the spec at DOCTOR, before the app existed. The judge must account for every one. */
   checks: Check[];
   run: Run;
   specPath: string;
@@ -138,9 +160,9 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
   await mkdir(join(workspace, "evidence"));
   await cp(options.specPath, join(workspace, "spec.md"));
 
-  const captured: Captured = { verdict: null, malformed: null, checks: [] };
+  const captured: Captured = { verdict: null, malformed: null };
   const chain = hedera();
-  const server = verdictServer(captured, chain.mirrorNode);
+  const server = verdictServer(captured);
   const transcript = await run.path(`attempt-${attempt}`, "evaluate.jsonl");
 
   emit({
@@ -151,7 +173,7 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
   });
 
   let { outcome, sessionId } = await pass(options, workspace, server, transcript, {
-    prompt: brief(appUrl, hedera()),
+    prompt: brief(appUrl, chain, options.checks),
     captured,
   });
 
@@ -199,31 +221,29 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
     }
   }
 
-  // Every declared claim is settled before the verdict is accepted, and a
-  // failing one turns a pass into a fail. Mechanical rejection beats an LLM
-  // approval, never the reverse: a judge that passed over its own failed check
-  // has contradicted itself, which is the strongest reason there is to reject.
-  // An unreadable check is a warning — the mechanical layer must never
-  // manufacture failures out of its own bugs.
-  const settled = await settleAll(
-    { mirrorNode: chain.mirrorNode, appUrl },
-    [...options.checks, ...captured.checks],
-    attempt,
-  );
-  await writeFile(
-    await run.path(`attempt-${attempt}`, "checks.json"),
-    `${JSON.stringify(settled, null, 2)}\n`,
-  );
-  // What the judge said, recorded before the harness has its say. Overwriting it
-  // with the overridden result would make the one thing this feature exists to
-  // expose — the harness disagreeing with the judge — invisible afterwards.
+  // The verdict is the judge's, full stop — the harness never reads the chain
+  // to confirm it. What it records is the accounting: each checklist item, both
+  // of the judge's readings, and whether the claim held, so the report can show
+  // the working rather than the conclusion.
   if (outcome.type === "verdict") {
+    for (const entry of outcome.verdict.verified) {
+      const check = options.checks.find((item) => item.id === entry.id);
+      emit({
+        type: "check:verified",
+        id: entry.id,
+        holds: entry.holds,
+        before: entry.before,
+        after: entry.after,
+        note: entry.note,
+        because: check?.because,
+        attempt,
+      });
+    }
     await writeFile(
       await run.path(`attempt-${attempt}`, "verdict.json"),
       `${JSON.stringify({ ...outcome.verdict, judgedBy: options.model }, null, 2)}\n`,
     );
   }
-  outcome = override(outcome, settled);
 
   // Evidence is collected whatever the outcome — a run that produced no verdict
   // is exactly when you want to see what the evaluator was looking at.
@@ -234,41 +254,9 @@ export async function evaluate(options: EvaluateOptions): Promise<Outcome> {
   return outcome;
 }
 
-/**
- * Mechanical rejection beats an LLM approval, never the reverse.
- *
- * A judge that passed over a claim it declared and the harness found untrue has
- * contradicted itself, which is the strongest reason there is to reject. The
- * asymmetry matters as much as the rule: a check that held never rescues a
- * failed verdict, because the judge saw things no check was written for.
- *
- * `errored` is not `failed`. A path that 404s or a field that is absent is the
- * check being wrong, not the app — and a mechanical layer that manufactures
- * failures out of its own bugs stops being the thing worth trusting.
- */
-export function override(outcome: Outcome, settled: CheckResult[]): Outcome {
-  if (outcome.type !== "verdict") return outcome;
-  // Only a claim the judge made itself. A derived check that fails is one
-  // reading of a spec disagreeing with an app, and nothing present can say
-  // which of the two is wrong — across four real specs, roughly one derived
-  // check in ten would have failed a working app. Those are reported instead,
-  // which costs the point of them nothing: a derived check failing while the
-  // judge passed is still the leniency showing, whether or not it fails the run.
-  const untrue = settled.some(
-    (result) => result.state === "failed" && result.check.source === "declared",
-  );
-  return {
-    type: "verdict",
-    verdict: { ...outcome.verdict, pass: outcome.verdict.pass && !untrue },
-    checks: settled,
-  };
-}
-
 interface Captured {
   verdict: Verdict | null;
   malformed: string | null;
-  /** Claims the evaluator asked the harness to settle, in declaration order. */
-  checks: Check[];
 }
 
 /**
@@ -381,7 +369,7 @@ async function pass(
     process.env["PATH"] = previousPath;
   }
 
-  const outcome = adjudicate(turn.captured, workspace);
+  const outcome = adjudicate(turn.captured, workspace, options.checks);
   emit({
     type: "evaluate:finished",
     attempt,
@@ -393,61 +381,36 @@ async function pass(
   return { outcome, sessionId };
 }
 
-function verdictServer(
-  captured: Captured,
-  mirrorNode: string,
-): ReturnType<typeof createSdkMcpServer> {
+const verifiedShape = z.object({
+  id: z.string().min(1).describe("The checklist item's id, copied from the brief exactly"),
+  before: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Chain items: what the mirror node answered before you touched the app. " +
+        "Without it there is no change to claim — only a state.",
+    ),
+  after: z
+    .string()
+    .min(1)
+    .describe("What it answers now (chain), what the element shows (dom), or the route's answer (http)"),
+  holds: z.boolean().describe("Whether the claim held"),
+  evidence: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("Mirror node URLs or files in evidence/ that show the readings"),
+  note: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("When holds is false but the run passes: how the item misread the spec"),
+});
+
+function verdictServer(captured: Captured): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: "harness",
     tools: [
-      tool(
-        DECLARE,
-        "State a claim about chain state that the harness will check itself. Declare it " +
-          "BEFORE the action that should make it true — a change can only be measured " +
-          "against a value recorded beforehand.",
-        {
-          path: z
-            .string()
-            .min(1)
-            .describe("Mirror node path below /api/v1/, e.g. `accounts/0.0.2`"),
-          field: z
-            .string()
-            .min(1)
-            .describe("Dotted path into the response, e.g. `balance.balance`. Units are the mirror node's."),
-          expect: z
-            .object({
-              equals: z.union([z.string(), z.number()]).optional(),
-              matches: z.string().optional(),
-              contains: z.string().optional(),
-              atLeast: z.number().optional(),
-              changedBy: z.number().optional(),
-              increasedBy: z.number().optional(),
-            })
-            .describe("Exactly one of these."),
-        },
-        async (args) => {
-          const expect = Object.fromEntries(
-            Object.entries(args.expect).filter(([, value]) => value !== undefined),
-          );
-          if (Object.keys(expect).length !== 1) {
-            return { content: [{ type: "text", text: "Give exactly one expectation." }] };
-          }
-          const check = await baseline(mirrorNode, {
-            id: locate("chain", args.path, args.field, expect as Check["expect"]),
-            source: "declared",
-            kind: "chain",
-            path: args.path,
-            field: args.field,
-            expect: expect as Check["expect"],
-          });
-          captured.checks.push(check);
-          return {
-            content: [
-              { type: "text", text: `Recorded. The harness will settle ${check.id} itself.` },
-            ],
-          };
-        },
-      ),
       tool(
         TOOL,
         "Report whether the running app satisfies the spec. Call this exactly once, at the end.",
@@ -456,13 +419,23 @@ function verdictServer(
           failures: z
             .array(failureShape)
             .describe("Empty when passing. One entry per requirement that is not met."),
+          verified: z
+            .array(verifiedShape)
+            .describe(
+              "One entry per checklist item in the brief, in any order. " +
+                "Empty when the brief listed none.",
+            ),
         },
         async (args) => {
           const failures = (args.failures as Failure[]).map((failure) => ({
             ...failure,
             evidence: failure.evidence.map(cited),
           }));
-          captured.verdict = { pass: args.pass, failures };
+          const verified = (args.verified as Verified[]).map((entry) => ({
+            ...entry,
+            evidence: entry.evidence.map(cited),
+          }));
+          captured.verdict = { pass: args.pass, failures, verified };
           // Answering ends the turn. Without this the evaluator decides for
           // itself when it is finished, and the one time it got that wrong it
           // ended without answering at all.
@@ -487,7 +460,11 @@ function verdictServer(
 /** What a verdict found, ignoring how it evidenced it. Order-insensitive. */
 export function locators(verdict: Verdict | null): string {
   if (verdict === null) return "";
-  return verdict.failures.map((failure) => failure.where).sort().join(", ");
+  const findings = verdict.failures.map((failure) => failure.where);
+  // Whether a claim held is a finding too — an evidence-fixing retry that
+  // flips one has changed the verdict, which is the one thing it may not do.
+  const claims = verdict.verified.map((entry) => `${entry.id}=${entry.holds}`);
+  return [...findings, ...claims].sort().join(", ");
 }
 
 /** Exported for tests: the three-way branch decides how thorough the retry is. */
@@ -519,18 +496,27 @@ export function nudge(outcome: { reason: string; why: Unanswered }): string {
       "Report the same findings. You are fixing how they are evidenced, not",
       "whether they stand — the app has not changed since you looked at it.",
     ],
+    incomplete: [
+      "Your verdict left checklist items unaccounted for. Read the ones you",
+      "skipped — the checklist is in the brief, and your browser and session are",
+      `still live — then call ${TOOL} again. This is the reading you have not`,
+      "done, not a re-reading: your other findings stand unless what you read",
+      "now contradicts them.",
+    ],
   }[outcome.why];
   return [...opening, ...closing].join("\n");
 }
 
 /**
- * The three ways there is no verdict: the evaluator never called the tool,
- * the payload was not usable, or it cited evidence that is not on disk.
- * Anything else the evaluator says is an answer, and answers stand.
+ * The ways there is no verdict: the evaluator never called the tool, the
+ * payload was not usable, it cited evidence that is not on disk, or it left
+ * the checklist partly unaccounted for. Anything else the evaluator says is
+ * an answer, and answers stand.
  */
-function adjudicate(
+export function adjudicate(
   captured: { verdict: Verdict | null; malformed: string | null },
   workspace: string,
+  checks: Check[],
 ): Outcome {
   if (captured.malformed !== null) {
     return { type: "no-verdict", reason: captured.malformed, why: "cut-off" };
@@ -542,10 +528,12 @@ function adjudicate(
       why: "unreported",
     };
   }
+  const verdict = captured.verdict;
 
-  const missing = captured.verdict.failures
-    .flatMap((failure) => failure.evidence)
-    .filter((evidence) => !resolves(evidence, workspace));
+  const missing = [
+    ...verdict.failures.flatMap((failure) => failure.evidence),
+    ...verdict.verified.flatMap((entry) => entry.evidence),
+  ].filter((evidence) => !resolves(evidence, workspace));
 
   if (missing.length > 0) {
     return {
@@ -556,7 +544,41 @@ function adjudicate(
       why: "unevidenced",
     };
   }
-  return { type: "verdict", verdict: captured.verdict, checks: [] };
+
+  // The accounting is the mechanical part. The harness cannot tell whether a
+  // reading is true — it can tell whether there is one, and a verdict that
+  // skips an item is a verdict about work the judge did not do.
+  const unaccounted = checks.filter((check) => {
+    const entry = verdict.verified.find((candidate) => candidate.id === check.id);
+    if (entry === undefined) return true;
+    // A chain claim without its "before" is a state, not a change.
+    return check.kind === "chain" && entry.before === undefined;
+  });
+  if (unaccounted.length > 0) {
+    return {
+      type: "no-verdict",
+      reason:
+        `the verdict does not account for every checklist item: ` +
+        `${unaccounted.map((check) => check.id).join(", ")}`,
+      why: "incomplete",
+    };
+  }
+
+  // A pass over an item the judge itself reported as not holding is a
+  // contradiction — unless the item misread the spec, which is the judge's
+  // call to make out loud, not to make silently.
+  const unexplained = verdict.verified.filter((entry) => !entry.holds && entry.note === undefined);
+  if (verdict.pass && unexplained.length > 0) {
+    return {
+      type: "no-verdict",
+      reason:
+        `the verdict passes but reports ${unexplained.map((entry) => entry.id).join(", ")} ` +
+        `as not holding. Either the run fails, or the item misread the spec — say how in \`note\`.`,
+      why: "incomplete",
+    };
+  }
+
+  return { type: "verdict", verdict };
 }
 
 /**
@@ -596,7 +618,7 @@ function hedera(): Hedera {
   return { network: network(), mirrorNode: mirrorNode(), signer: wallet() };
 }
 
-function brief(appUrl: string, chain: Hedera): string {
+function brief(appUrl: string, chain: Hedera, checks: Check[]): string {
   return [
     "You are checking whether a running web application does what its spec says.",
     "",
@@ -630,15 +652,30 @@ function brief(appUrl: string, chain: Hedera): string {
     "",
     "- drive the browser with `playwright-cli` through Bash (see the playwright-cli skill)",
     "- check any on-chain effect by reading the mirror node over HTTP; it is public,",
-    "  and you have no keys and need none",
-    `- for anything on chain, also call ${DECLARE} so the harness reads it too. Declare`,
-    "  the claim **before** the action that should make it true: a change can only be",
-    "  measured against a value recorded beforehand. The harness settles these itself",
-    "  and does not ask you whether they held, so a claim you are unsure of is worth",
-    "  declaring — it is checked, not taken on trust",
+    "  and you have no keys and need none. Read it **before** the action that should",
+    "  change it and again after — a change is only visible against a value you wrote",
+    "  down beforehand, and both readings belong in your evidence",
     "- save a screenshot, page snapshot or saved response into `evidence/` **as you go**,",
     "  so every finding can be checked afterwards",
     "",
+    ...(checks.length === 0
+      ? []
+      : [
+          "This checklist was read out of the spec before the app existed, so nothing",
+          "about the app could have shaped it. Account for every item. For chain items:",
+          "read the path from the mirror node **before you touch the app** and again",
+          "afterwards — the first reading is what the second is measured against. For",
+          "page items: check them in the browser you have open.",
+          "",
+          ...checks.map((check) => worded(check)),
+          "",
+          `Every item needs one \`verified\` entry in ${TOOL}: its id, what you read`,
+          "(before, for chain items, and after), whether it held, and the URL or",
+          "evidence file that shows it. An item that did not hold normally means the",
+          "run fails; if the item misread the spec, say how in `note` and judge the",
+          "spec itself.",
+          "",
+        ]),
     "You cannot see the source code and should not try; judge only observable behaviour.",
     "",
     "**You get one turn and nothing will resume you.** Never start a command in the",

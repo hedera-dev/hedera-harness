@@ -70,18 +70,24 @@ export type HarnessEvent =
       durationMs: number;
     }
   | { type: "committed"; attempt: number; sha: string | null }
-  /** One claim the harness settled itself. `errored` is a warning, never a failure. */
+  /**
+   * The judge's accounting of one checklist item: what it read, and whether
+   * the claim held. The harness records these; it does not decide them.
+   */
   | {
-      type: "check:settled";
+      type: "check:verified";
       id: string;
-      source: "declared" | "derived";
-      state: "held" | "failed" | "errored";
-      detail: string;
+      holds: boolean;
+      /** What a chain item answered before the judge touched the app. */
+      before?: string | undefined;
+      /** What it answered after — or what the element shows, for a page item. */
+      after: string;
+      /** Why a not-held item did not fail the run, when the judge passed it anyway. */
+      note?: string | undefined;
       /**
-       * The spec line a derived check was read from. A derived failure appears
-       * only in the report, so the quote has to travel with the event — it is
-       * how a reader tells "my app is wrong" from "my spec said something I
-       * did not mean".
+       * The spec line the item was read from. A not-held item is where a
+       * reader tells "my app is wrong" from "my spec said something I did not
+       * mean", so the quote has to travel with the event.
        */
       because?: string | undefined;
       attempt: number;

@@ -49,7 +49,7 @@ export interface DoctorOptions {
  */
 export interface Examined {
   config: HarnessConfig;
-  /** What the spec itself says can be settled, before the app exists. */
+  /** What the spec itself says a judge can verify, read before the app exists. */
   checks: Check[];
 }
 
@@ -97,7 +97,7 @@ export async function doctor(options: DoctorOptions): Promise<Examined> {
 }
 
 /**
- * What the spec says can be settled, read before anything is built.
+ * What the spec says a judge can verify, read before anything is built.
  *
  * Shown rather than asked about. Confirming by default would put an
  * interaction on the main path *per spec*, where the command prompt is per
