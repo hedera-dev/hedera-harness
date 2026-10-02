@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { confirm, terminal } from "./ask.js";
+import { confirm, interview, terminal, working } from "./ask.js";
 import { COMMANDS_FILE, commandsBrief, grillBrief } from "./prompts/wizard.js";
 import type { Command } from "./commands.js";
 import {
@@ -78,7 +78,8 @@ export async function wizard(options: WizardOptions): Promise<void> {
   // Commands first, and committed before a word is said about the feature.
   // Someone who abandons the questions still walks away with a working config,
   // which is the half a run cannot start without.
-  const proposal = await propose(repoRoot, options.model);
+  const stop = working("reading the project to work out its commands");
+  const proposal = await propose(repoRoot, options.model).finally(stop);
 
   // The agentic path is the one whose commands nobody typed, so it is the one
   // that most needs checking. `init` has always done this; the wizard did not.
@@ -130,7 +131,8 @@ async function draft(repoRoot: string, specPath: string, options: WizardOptions)
 
   // Nobody to ask. One pass, and it writes the skeleton it can.
   if (options.assumeYes) {
-    await turn(repoRoot, options.model, grillBrief(specPath, false), undefined);
+    const stop = working("drafting the spec skeleton");
+    await turn(repoRoot, options.model, grillBrief(specPath, false), undefined).finally(stop);
     return written();
   }
 
@@ -140,19 +142,23 @@ async function draft(repoRoot: string, specPath: string, options: WizardOptions)
     let next = grillBrief(specPath, true);
 
     for (let round = 1; round <= GRILL_ROUNDS; round += 1) {
-      const said = await turn(repoRoot, options.model, next, session);
+      const thinking = working(round === 1 ? "preparing the interview" : "thinking");
+      const said = await turn(repoRoot, options.model, next, session).finally(thinking);
       session = said.sessionId;
       if (written()) return true;
       if (said.text === "") break;
 
-      const answer = (await asker.ask(`\n${said.text}\n\n› `)).trim();
+      const answer = await interview(asker, said.text, round, GRILL_ROUNDS);
       next =
         answer === ""
           ? `That is all. Write ${specPath} now, with an obvious placeholder wherever you had to guess.`
           : answer;
     }
     // Out of rounds: it has enough to write something either way.
-    if (!written()) await turn(repoRoot, options.model, `Write ${specPath} now.`, session);
+    if (!written()) {
+      const stop = working(`writing ${specPath}`);
+      await turn(repoRoot, options.model, `Write ${specPath} now.`, session).finally(stop);
+    }
     return written();
   } finally {
     asker.close();
