@@ -45,11 +45,9 @@ export interface Defaults {
 /**
  * Writes `harness.yaml` by asking, not by agent.
  *
- * Four questions with defaults, for someone who knows their repo — the fast
- * path. The slow one, where an agent reads the project and works the answers
- * out, is `wizard`. Neither verifies the commands: a wrong one fails DOCTOR's
- * baseline on the first run, with its output, which is where a wrong command
- * is cheapest to recognise.
+ * Four questions, with defaults read from the project itself. The commands are
+ * not run here: a wrong one fails DOCTOR's baseline on the first run, with its
+ * output, which is where a wrong command is cheapest to recognise.
  */
 export async function initialise(options: InitOptions): Promise<HarnessConfig> {
   const { repoRoot } = options;

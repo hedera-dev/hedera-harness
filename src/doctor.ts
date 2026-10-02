@@ -32,7 +32,7 @@ export interface DoctorOptions {
  * test — the point is to spend four seconds instead of forty minutes.
  *
  * Deterministic on purpose: the commands come from `harness.yaml` or the run
- * stops. `init` and `wizard` own setup, so nothing here asks a model anything.
+ * stops. `init` owns setup, so nothing here asks a model anything.
  */
 export async function doctor(options: DoctorOptions): Promise<HarnessConfig> {
   const { repoRoot, run } = options;
@@ -60,8 +60,7 @@ export async function doctor(options: DoctorOptions): Promise<HarnessConfig> {
   const config = await readConfig(repoRoot);
   if (config === null) {
     throw new DoctorError(
-      `no ${CONFIG_FILE}. Run \`harness init\` to answer the four questions, ` +
-        `or \`harness wizard\` to have an agent work them out.`,
+      `no ${CONFIG_FILE}. Run \`harness init\` to write one.`,
     );
   }
   emit({ type: "check", name: `commands from ${CONFIG_FILE}`, ok: true });
