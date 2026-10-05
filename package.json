@@ -1,11 +1,19 @@
 {
   "name": "hedera-harness",
-  "version": "0.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Takes a PRD and an existing Hedera dApp repo, and loops an agent until the PRD is implemented or the budget is spent.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/web3buidlerz/hedera-harness.git"
+  },
   "type": "module",
   "bin": {
     "harness": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json && chmod +x dist/cli.js",
@@ -13,19 +21,15 @@
     "test": "npm run build --silent && node --test dist/tests",
     "harness": "npm run build --silent && node dist/cli.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "MIT",
-  "devDependencies": {
-    "@types/node": "^26.5.0",
-    "typescript": "^7.0.2"
-  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.263",
     "@playwright/cli": "^0.1.19",
     "playwright-core": "^1.63.0-alpha-2026-08-31",
     "yaml": "^2.9.0",
     "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "typescript": "^7.0.2"
   }
 }

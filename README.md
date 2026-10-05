@@ -27,7 +27,7 @@ node /path/to/hedera-harness/dist/cli.js run --spec specs/payment-flow.md
 
 ## Quick start
 
-Then, from inside the project you want to build in. **Set it up once** — whichever of these fits:
+From inside the project you want to build in. **Set it up once** — whichever of these fits:
 
 ```bash
 harness init                   # four questions, defaults read from your package.json
@@ -46,6 +46,18 @@ harness run --spec specs/payment-flow.md
 ```
 
 A run needs `harness.yaml`, so one of the two setup commands comes first. After that, setup is done.
+
+The wizard interviews you one question at a time, following your answers rather than working through a list — it has read the project, so it can ask about what you have not said:
+
+```
+── question 2 of 8
+Which mirror node should it query — the one for whatever network the
+wallet is currently connected to, or a fixed network regardless?
+
+› a fixed network. The page is read-only and must work with nothing connected.
+```
+
+An empty answer ends the interview and it writes with what it has.
 
 ## What it does
 
