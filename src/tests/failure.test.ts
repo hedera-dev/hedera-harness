@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { describeFailure, fromStage, fromVerdict } from "../failure.js";
 import { endingOf } from "../messages.js";
-import { cited, locators, nudge } from "../evaluate.js";
+import { cited, locators, } from "../evaluate.js";
+import { nudge } from "../prompts/evaluate.js";
 import type { StageFailure } from "../test.js";
 
 function stage(output: string, over: Partial<StageFailure> = {}): StageFailure {
@@ -31,12 +32,14 @@ test("one bug described two ways is still one bug", () => {
     failures: [
       { where: "/status", what: "the timestamp shows undefined while loading", evidence: ["a.png"] },
     ],
+    verified: [],
   });
   const second = fromVerdict({
     pass: false,
     failures: [
       { where: "/status", what: "a placeholder appears before data arrives", evidence: ["b.png"] },
     ],
+    verified: [],
   });
   assert.equal(first[0]?.id, second[0]?.id);
 });
@@ -48,6 +51,7 @@ test("two bugs in different places are two bugs", () => {
       { where: "/status", what: "same words", evidence: ["a.png"] },
       { where: "#status-error", what: "same words", evidence: ["a.png"] },
     ],
+    verified: [],
   });
   assert.notEqual(a?.id, b?.id);
 });
@@ -154,6 +158,10 @@ test("the retry tells a cut-off evaluator to finish, not to conclude", () => {
   const unevidenced = nudge({ reason: "cites evidence that is not there", why: "unevidenced" });
   assert.match(unevidenced, /cited evidence the harness cannot find/);
   assert.match(unevidenced, /A finding nobody can check is not a finding/);
+
+  const incomplete = nudge({ reason: "does not account for every checklist item", why: "incomplete" });
+  assert.match(incomplete, /left checklist items unaccounted for/);
+  assert.match(incomplete, /your other findings stand unless/, "the reading may change the verdict — it is not recitation");
 });
 
 /**
@@ -173,13 +181,35 @@ test("a citation is reduced to the name it has inside evidence/", () => {
 });
 
 test("a verdict's findings are compared by where, not by how they are evidenced", () => {
-  const one = { pass: false, failures: [{ what: "a", where: "/x", evidence: ["a.png"] }] };
-  const reworded = { pass: false, failures: [{ what: "a, differently", where: "/x", evidence: ["b.png"] }] };
-  const dropped = { pass: true, failures: [] };
+  const one = { pass: false, failures: [{ what: "a", where: "/x", evidence: ["a.png"] }], verified: [] };
+  const reworded = {
+    pass: false,
+    failures: [{ what: "a, differently", where: "/x", evidence: ["b.png"] }],
+    verified: [],
+  };
+  const dropped = { pass: true, failures: [], verified: [] };
 
   assert.equal(locators(one), locators(reworded), "recitation and rewording are not a new judgement");
   assert.notEqual(locators(one), locators(dropped), "dropping a finding is");
   assert.equal(locators(null), "");
+});
+
+test("whether a claim held is a finding too", () => {
+  const held = {
+    pass: true,
+    failures: [],
+    verified: [{ id: "chain:x", after: "1", holds: true, evidence: ["https://m"] }],
+  };
+  const flipped = {
+    pass: true,
+    failures: [],
+    verified: [{ id: "chain:x", after: "1", holds: false, evidence: ["https://m"], note: "misread" }],
+  };
+  assert.notEqual(
+    locators(held),
+    locators(flipped),
+    "an evidence-fixing retry that flips a claim has changed the verdict",
+  );
 });
 
 /**

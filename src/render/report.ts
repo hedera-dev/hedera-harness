@@ -94,9 +94,8 @@ function summary(
   // screen was always the smaller half.
   const spend = cost(events);
   if (spend !== null) {
-    // Runs from before evaluation reported its spend would otherwise show the
-    // generator's half and call it the total, which is how I came to quote a
-    // $1.26 run at $0.70.
+    // A run whose evaluation reported no spend shows the generator's half, and
+    // must say so rather than presenting it as the total.
     lines.push(dim(`~$${spend.total.toFixed(2)} of tokens${spend.partial ? " (generation only)" : " in total"}`));
   }
   console.log(`\n${frame(lines)}`);
@@ -151,17 +150,7 @@ async function section(
     );
   }
 
-  // The headline of the whole verification story: the evaluator answered pass,
-  // and a claim it declared itself did not hold. Nothing else in a run is worth
-  // seeing sooner.
-  const judged = evaluations[evaluations.length - 1];
-  if (judged?.verdict === "pass" && outcome !== undefined && !outcome.passed) {
-    console.log(
-      `  ${red("✗")} ${dim("the harness overrode this — a claim the evaluator made did not hold")}`,
-    );
-  }
-
-  settled(mine);
+  verified(mine);
 
   // Anomalies the live output slides past. The one real occurrence — an
   // evaluator that ended its turn without answering — was invisible in a
@@ -177,10 +166,7 @@ async function section(
     );
     for (const failure of outcome.failures) {
       const again = earlier.has(failure.id) ? dim("  (still open)") : "";
-      // Two words, and only two: whether the harness looked, or the evaluator
-      // formed an opinion. A reader needs to know how certain a finding is.
-      const how = failure.kind === "verdict" ? "judged" : "measured";
-      console.log(`    ${dim(how.padEnd(8))} ${describeFailure(failure)}${again}`);
+      console.log(`    ${describeFailure(failure)}${again}`);
     }
   }
 
@@ -188,45 +174,32 @@ async function section(
 }
 
 /**
- * Claims the harness settled itself.
- *
- * The ones that held are a count, not a list — by the tenth run nobody rereads
- * what was fine. What earns a line is a claim that did not fail the run but
- * ought to be seen: one that could not be read at all, and one read out of the
- * spec that the app disagreed with. Both usually mean the check was wrong, and
- * neither appears anywhere else.
+ * The judge's accounting of the checklist. What held is a count; what earns a
+ * line is an item that did not — both readings, the spec's words, and, when the
+ * run passed anyway, the judge's reason. That last case is where leniency shows.
  */
-function settled(mine: HarnessEvent[]): void {
-  const results = mine.filter((event) => event.type === "check:settled");
-  if (results.length === 0) return;
+function verified(mine: HarnessEvent[]): void {
+  const entries = mine.filter((event) => event.type === "check:verified");
+  if (entries.length === 0) return;
 
-  const shown = (event: HarnessEvent) =>
-    event.type === "check:settled" &&
-    (event.state === "errored" || (event.state === "failed" && event.source === "derived"));
-  const counted = (state: string, source?: string) =>
-    results.filter(
-      (event) =>
-        event.type === "check:settled" &&
-        event.state === state &&
-        (source === undefined || event.source === source),
-    ).length;
+  const held = entries.filter((event) => event.type === "check:verified" && event.holds).length;
   const parts = [
-    `${counted("held")} held`,
-    ...(counted("failed", "declared") > 0 ? [`${counted("failed", "declared")} failed`] : []),
-    ...(counted("failed", "derived") > 0
-      ? [`${counted("failed", "derived")} read from the spec did not hold`]
-      : []),
-    ...(counted("errored") > 0 ? [`${counted("errored")} unreadable`] : []),
+    `${held} held`,
+    ...(entries.length - held > 0 ? [`${entries.length - held} did not hold`] : []),
   ];
   console.log(`  ${"checks".padEnd(9)} ${dim("      ")}  ${dim(parts.join(" · "))}`);
 
-  for (const event of results) {
-    if (!shown(event)) continue;
-    console.log(`    ${yellow("!")} ${dim(`${event.id} — ${event.detail}`)}`);
-    // A derived failure exists only here, so the reading has to be here too:
-    // the quoted line is how a reader tells a wrong app from a misread spec.
+  for (const event of entries) {
+    if (event.type !== "check:verified" || event.holds) continue;
+    const seen = event.before === undefined ? event.after : `${event.before} → ${event.after}`;
+    console.log(`    ${yellow("!")} ${dim(`${event.id} — ${seen}`)}`);
+    // The quoted line is how a reader tells a wrong app from a misread spec;
+    // the note is the judge saying which of the two it judged this to be.
     if (event.because !== undefined) {
       console.log(`      ${dim(`— "${clip(event.because)}"`)}`);
+    }
+    if (event.note !== undefined) {
+      console.log(`      ${dim(`judge: ${clip(event.note)}`)}`);
     }
   }
 }
@@ -332,10 +305,8 @@ function cost(events: HarnessEvent[]): { total: number; partial: boolean } | nul
 /**
  * Splits the stream by attempt, reading the attempt off each event.
  *
- * This used to be positional — bucket everything after a `phase:started` with
- * that phase's attempt — which was right until any event was emitted between
- * phases, and then silently wrong: nothing errors, nothing fails, the report is
- * just quietly attributed to the wrong attempt. Events carry it now.
+ * Read off each event rather than inferred from position: anything emitted
+ * between phases would otherwise be attributed to the wrong attempt, silently.
  */
 function group(events: HarnessEvent[]): Map<number, HarnessEvent[]> {
   const byAttempt = new Map<number, HarnessEvent[]>();

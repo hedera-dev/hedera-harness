@@ -1,17 +1,13 @@
 /**
  * Picking up a run that stopped.
  *
- * A run that dies at its third attempt of three leaves everything that matters
- * on disk — every attempt is committed to its branch, and every failure is in
- * its `feedback.json` — and no way to use it. Starting again from the spec
- * throws away work the harness itself preserved, which is the one outcome its
- * commit-every-attempt discipline exists to prevent.
+ * Everything that matters is already on disk: each attempt is committed to the
+ * run's branch and each failure is in its `feedback.json`. This finds them so
+ * the next run repairs that work instead of starting from the spec.
  *
- * What comes back is the code and what was wrong with it. What does not is the
- * generator's conversation: session ids are not persisted, so the next attempt
- * reads the failures rather than remembering them. That is the honest half —
- * a repair prompt is what a fresh session after a reset gets anyway, and it
- * has worked every time the reset has fired.
+ * What does not come back is the generator's conversation — session ids are not
+ * persisted, so the next attempt reads the failures rather than remembering
+ * them, exactly as a fresh session after a reset does.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";

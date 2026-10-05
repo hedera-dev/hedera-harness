@@ -27,27 +27,35 @@ node /path/to/hedera-harness/dist/cli.js run --spec specs/payment-flow.md
 
 ## Quick start
 
-Then, from inside the project you want to build in:
+Then, from inside the project you want to build in. **Set it up once:**
 
 ```bash
-harness init payment-flow      # works out how to build this project, drafts a spec
-$EDITOR specs/payment-flow.md  # fill it in
+harness init                   # four questions, defaults read from your package.json
+```
+
+That writes `harness.yaml` and commits it, because it describes the project rather than a run.
+
+**Then run it, as often as you like:**
+
+```bash
+$EDITOR specs/payment-flow.md  # your spec, in your words
 harness run --spec specs/payment-flow.md
 ```
 
-`init` is optional. `harness run --spec <path>` works on a project that has never seen the harness — it just resolves the commands on the way past.
+A run needs `harness.yaml`, so `init` comes first. After that, setup is done.
 
 ## What it does
 
 ```
-DOCTOR → GENERATE → TEST → EVALUATE → done
-             ↑         │        │
-             └─────────┴────────┘   repair, up to --max-attempts (default 3)
+DOCTOR → DERIVE → GENERATE → TEST → EVALUATE → done
+                      ↑         │        │
+                      └─────────┴────────┘   repair, up to --max-attempts (default 3)
 ```
 
 | Stage | What happens |
 |---|---|
-| **DOCTOR** | Checks tooling and a clean tree. Works out how to install, build, test and serve this project, then runs those commands on the untouched repo — so a project that was already broken fails here rather than being blamed on the agent. |
+| **DOCTOR** | Deterministic, no agent. Checks git, a clean tree, your browser and wallet, and that `harness.yaml` names commands that exist — then runs install, build and test on the untouched repo, so a project that was already broken fails here rather than being blamed on the agent. |
+| **DERIVE** | An agent reads your spec — only the spec, never the code — and writes down what a judge could settle by reading a value. Runs before anything is built, so nothing about the app can shape it. |
 | **GENERATE** | An agent implements the spec. It decides which files to touch and whether to write tests. |
 | **TEST** | Install, build, test — stopping at the first failure. No agent involved. |
 | **EVALUATE** | A second agent judges the running app against the spec, driving a real browser and reading chain state from the public mirror node. It cannot see your code. |
@@ -79,7 +87,7 @@ The page at `/status` shows which Hedera network the app is pointed at.
 
 ## harness.yaml
 
-Written by the harness on first use, and committed, because it describes the project rather than a run:
+Written by `harness init`, and committed, because it describes the project rather than a run:
 
 ```yaml
 # Root next:build delegates to `next build` in @sh/nextjs, the only production
@@ -90,7 +98,7 @@ build: yarn next:build
 serve: yarn next:dev
 ```
 
-An agent reads your manifests and proposes these; you confirm them once. Script names lie often enough that this is worth an agent rather than a guess — in scaffold-hbar the root has no `build`, `test` or `dev` at all, and inside `packages/nextjs`, `start` is a dev server while `serve` runs the production build.
+`init` asks you for them, offering what your `package.json` actually contains — and asks rather than guesses because script names lie often enough: in scaffold-hbar the root has no `build`, `test` or `dev` at all, and inside `packages/nextjs`, `start` is a dev server while `serve` runs the production build.
 
 The comments are the agent's reasoning, kept so the next person to read the file knows why this command and not the obvious-looking one. Edit any line by hand; the harness will not overwrite it.
 
@@ -99,14 +107,15 @@ Each command is a string, or `{ run, cwd }` when it must run somewhere other tha
 ## Commands
 
 ```
-harness init [name]         set the project up and draft specs/<name>.md
+harness init                write harness.yaml by answering four questions
 harness run --spec <path>   build the feature described by a spec
 harness report [run]        read a finished run (default: the latest)
 
   --max-attempts N          repair attempts before giving up (default 3)
+  --max-spend USD           stop an agent that spends more than this (unset by default)
   --model NAME              sonnet (default), opus, haiku, or a full model id
   --judge-model NAME        model for EVALUATE only (default: the same as --model)
-  --yes                     skip the first-run command confirmation
+  --yes                     take the defaults without asking (init)
   --json                    one JSON object per line, for CI
   --review                  stop to confirm the checks read from your spec
   --continue                carry on from the last run rather than starting over
@@ -166,8 +175,8 @@ evaluator checked rather than taking its word.
     build.txt
     test.txt
     evaluate.jsonl     every message from the judging agent
-    verdict.json       what the evaluator answered, before the harness had its say
-    checks.json        claims it asked the harness to settle, and what was found
+    verdict.json       what the evaluator answered, with its accounting of the
+                       checklist: both readings and the evidence for each item
     feedback.json      what this attempt was told went wrong
     evidence/          screenshots, page snapshots, saved responses
   result.json          { passed, attempts, branch, timings, skills, history }
@@ -187,20 +196,18 @@ Each rule guards a specific way this could lie to you.
 
 **A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict. A finding it cannot see is not a finding.
 
-**Some of it is checked before anything is built.** DOCTOR reads your spec — and only your spec, never the code — and states what it can settle mechanically. Those checks exist before the app does, so nothing about the app can shape them, and they are shown rather than asked about:
+**Some of it is read from the spec before anything is built.** DERIVE reads your spec — and only your spec, never the code — and states what a judge can verify by reading a value rather than forming an opinion. That checklist exists before the app does, so nothing about the app can shape it, and it is shown rather than asked about:
 
 ```
   I will also verify, from this spec:
     http:/status:status:equals=200  — "The page at `/status` must return HTTP 200."
 ```
 
-Those checks read the page in a real browser where the spec names an element, so a value your app fetches after the first paint is seen rather than missed. Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
+Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
 
-**These report; they never fail a run on their own.** A check read out of prose is one agent's interpretation, and when it disagrees with your app either of the two could be wrong. Measured across four real specs, about one in ten would have failed an app that was doing exactly what was asked. So a failure here is a line in the report — including the useful case, where it disagrees with a judge that passed.
+**The judge does the checking; the harness keeps the books.** The evaluator verifies each item itself — chain state from the public mirror node, read before it touches the app and again after, because a change is only visible against a value written down beforehand; page state from the browser it is already driving. A verdict is not accepted until every item is accounted for: both readings, whether the claim held, and the URL or screenshot that shows it. An item that did not hold fails the run unless the judge says how the item misread the spec — out loud, in the report. Measured across four real specs, about one reading in ten is wrong that way, so the call is the judge's; the harness's job is that it is never made silently.
 
-**And the evaluator's own claims are checked, not taken.** It declares what should be true on chain; the harness reads the mirror node itself and decides. That one *does* turn a pass into a fail — never the reverse — because a judge passing over a claim it made itself has contradicted itself, and nothing is a better reason to reject. A claim the harness cannot read at all is a warning, never a failure. `verdict.json` keeps what the evaluator answered; `checks.json` keeps what was actually there.
-
-**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, or evidence that is not there — earns a second look, once.
+**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, evidence that is not there, or a checklist left unaccounted for — earns a second look, once.
 
 **Secrets never reach git history.** `.env` files are refused during generation and, more importantly, can never be staged — the enforceable half, since the harness owns the commit.
 
@@ -227,7 +234,13 @@ Machine-level settings are environment variables, deliberately kept out of `harn
 | `HEDERA_OPERATOR_KEY` | Its private key. Passed to the evaluator to import into the app, and scrubbed from every artifact. The harness never signs with it. |
 | `NO_COLOR` | Turns off colour. Already off when stdout is not a terminal, so piping or redirecting needs nothing. |
 
-Every stage is bounded — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The current numbers, and what measurement set them, are in [PLAN-V2 § Bounds](./PLAN-V2.md#bounds).
+Every stage is bounded by a clock — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The numbers live beside the code they bound, in `src/`, each with what measurement set it.
+
+A run stops starting new attempts after four hours; each stage is bounded on its own as well.
+
+There is deliberately **no spend limit by default**. What a run is worth is yours to decide, and a figure we picked would only ever be wrong for somebody. Pass `--max-spend` if you want one.
+
+What that leaves, stated plainly rather than reassuringly. Measured runs cost **$0.57–5.89** and take 6–36 minutes. The bounds would permit a pathological one to reach roughly **seven hours and $63** before anything stopped it — three attempts each exhausting a generation, an evaluation and a nudge. Nothing has come close: the busiest generation used 54 of its 300 turns. But that is the exposure, and `--max-attempts` or `--max-spend` is how you cap it.
 
 ## What it does not do yet
 
@@ -243,4 +256,3 @@ npm test          # builds, then runs the suite
 npm run typecheck
 ```
 
-Design notes, measurements and parked work are in [PLAN-V2.md](./PLAN-V2.md).

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { type Command, describe } from "./commands.js";
-import type { CheckResult } from "./checks.js";
 import type { Verdict } from "./evaluate.js";
 import type { Stage, StageFailure } from "./test.js";
 
@@ -29,14 +28,6 @@ export type AttemptFailure =
       /** Run-relative path to the full output, e.g. `attempt-2/build.txt`. */
       artifact: string;
     }
-  /** A claim the harness settled against the chain and found untrue. */
-  | {
-      kind: "check";
-      id: string;
-      /** `chain:accounts/0.0.2:balance.balance` — already the shape identity hashes. */
-      locator: string;
-      detail: string;
-    }
   /** Something the blind evaluator could not do in the running app. */
   | {
       kind: "verdict";
@@ -63,20 +54,6 @@ export function fromStage(failure: StageFailure): AttemptFailure {
   };
 }
 
-/**
- * A check the harness settled and found untrue. Its locator is already the
- * shape failure identity hashes, so a measured failure joins the open/fixed/new
- * accounting with no special case.
- */
-export function fromCheck(result: CheckResult): AttemptFailure {
-  return {
-    kind: "check",
-    id: identity(result.check.id),
-    locator: result.check.id,
-    detail: result.detail,
-  };
-}
-
 export function fromVerdict(verdict: Verdict): AttemptFailure[] {
   return verdict.failures.map((failure) => ({
     kind: "verdict" as const,
@@ -93,7 +70,6 @@ export function fromVerdict(verdict: Verdict): AttemptFailure[] {
 
 /** One line, for a person: a terminal row, a repair prompt, an error message. */
 export function describeFailure(failure: AttemptFailure): string {
-  if (failure.kind === "check") return `${failure.locator}: ${failure.detail}`;
   if (failure.kind === "verdict") {
     return `${failure.where}: ${failure.what} [${failure.evidence.join(", ")}]`;
   }

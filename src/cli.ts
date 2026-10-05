@@ -5,6 +5,7 @@ import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, readConfig } from "./config.js";
 import { doctor } from "./doctor.js";
+import { deriveChecks } from "./derive.js";
 import { initialise } from "./init.js";
 import { runLoop } from "./loop.js";
 import { killTrackedChildren } from "./commands.js";
@@ -17,24 +18,26 @@ import { report } from "./render/report.js";
 import { renderToTerminal } from "./render/terminal.js";
 import { red } from "./style.js";
 
-const USAGE = `usage: harness init [name] [--model NAME] [--yes]
-       harness run --spec <path> [--max-attempts N] [--model NAME]
-                          [--judge-model NAME] [--yes] [--json]
+const USAGE = `usage: harness init [--yes]
+       harness run --spec <path> [--max-attempts N] [--max-spend USD]
+                          [--model NAME] [--judge-model NAME] [--yes] [--json]
        harness report [run] [--full]
 
 Run from inside the target repository.
 
-  init [name]         set the project up: work out its commands, and draft
-                      specs/<name>.md for you to fill in (default: feature)
+  init                write harness.yaml by answering four questions, with
+                      defaults read from the project itself
   run --spec <path>   build the feature described by a spec
   report [run]        read a finished run: what it did, what the evaluator
                       checked, and whether to believe it (default: the latest)
 
   --spec <path>        the feature to build
   --max-attempts N    repair attempts before giving up (default 3)
+  --max-spend USD     stop an agent that spends more than this. Unset by
+                      default: every stage is already bounded by a clock
   --model NAME        agent model: sonnet (default), opus, haiku, or a full id
   --judge-model NAME  model for EVALUATE only (default: the same as --model)
-  --yes               skip the first-run command confirmation
+  --yes               take the defaults without asking (init)
   --json              one JSON object per line instead of the watchable output
   --review            stop to confirm the checks read from the spec
   --continue          carry on from the last run: its branch, and what it
@@ -113,12 +116,13 @@ type Command = "init" | "run" | "report";
 
 interface Options {
   command: Command;
-  /** `init`'s optional name, becoming `specs/<name>.md`. */
+  /** The wizard's optional name, becoming `specs/<name>.md`. */
   name: string;
   spec: string;
   maxAttempts: number;
   model: string;
   judgeModel: string;
+  maxSpendUsd: number | undefined;
   assumeYes: boolean;
   json: boolean;
   review: boolean;
@@ -132,26 +136,15 @@ const DEFAULT_MODEL = process.env["HARNESS_MODEL"] ?? "sonnet";
 /**
  * Who judges, when it should not be whoever generated.
  *
- * Judges are documented to over-reward their own model family, and this harness
- * runs one model for both halves — which is the shape a run of first-attempt
- * passes would take if leniency were the cause. A different family is not
- * reachable here: the agent is Claude Code and nothing else, so opus judging
- * sonnet is a different model on the same training distribution, not an
- * independent opinion. What this buys is a stronger or simply different judge,
- * and the ability to ask whether two of them agree — which is evidence where
- * there is currently none.
+ * Judges over-reward their own model family, and both halves run one model by
+ * default. A different *family* is not reachable — the agent is Claude Code —
+ * so this buys a stronger or simply different judge, and the ability to ask
+ * whether two of them agree.
  *
- * Defaults to the generating model, because changing who judges by default
- * would quietly change what every run costs.
+ * Defaults to the generating model: changing who judges by default would
+ * quietly change what every run costs.
  */
 const DEFAULT_JUDGE = process.env["HARNESS_JUDGE_MODEL"];
-
-/**
- * Where a derived check should expect the app. The real URL is only known once
- * `serve` has answered, which is after the spec has been read — so a route
- * check is written against this and resolved against the live one.
- */
-const APP_URL_HINT = "http://localhost:3000";
 
 function parse(argv: string[]): Options {
   const [command, ...rest] = argv;
@@ -169,6 +162,7 @@ function parse(argv: string[]): Options {
       options: {
         spec: { type: "string" },
         "max-attempts": { type: "string", default: "3" },
+        "max-spend": { type: "string" },
         model: { type: "string", default: DEFAULT_MODEL },
         "judge-model": { type: "string", ...(DEFAULT_JUDGE === undefined ? {} : { default: DEFAULT_JUDGE }) },
         yes: { type: "boolean", default: false },
@@ -192,6 +186,14 @@ function parse(argv: string[]): Options {
     throw new UsageError(`--max-attempts must be a positive integer`);
   }
 
+  // No default: what a run is worth is the operator's call. The undefined check
+  // comes first because `Number("")` is 0, and a zero ceiling would stop an
+  // agent before its first turn.
+  const maxSpendUsd = values["max-spend"] === undefined ? undefined : Number(values["max-spend"]);
+  if (maxSpendUsd !== undefined && !(maxSpendUsd > 0)) {
+    throw new UsageError(`--max-spend must be a positive number of dollars`);
+  }
+
   return {
     command,
     name: positionals[0] ?? "feature",
@@ -199,6 +201,7 @@ function parse(argv: string[]): Options {
     maxAttempts,
     model: values.model,
     judgeModel: values["judge-model"] ?? values.model,
+    maxSpendUsd,
     assumeYes: values.yes,
     json: values.json,
     review: values.review,
@@ -231,6 +234,17 @@ async function main(argv: string[]): Promise<number> {
   }
 
   context.repoRoot = root;
+
+  // Setup, not a run. These write the config a run cannot start without, so
+  // they cannot be put behind DOCTOR, which refuses to start without it — and
+  // they need no run directory, no branch and no clean tree.
+  if (options.command === "init") {
+    if (options.json) renderToJson();
+    else renderToTerminal();
+    await initialise({ repoRoot: root, assumeYes: options.assumeYes });
+    return 0;
+  }
+
   await ensureExcluded(root);
 
   const stamp = timestamp();
@@ -251,13 +265,13 @@ async function main(argv: string[]): Promise<number> {
 
   const startedOn = await currentBranch(root);
   context.startedOn = startedOn;
-  const specInRepoPath = options.command === "run" ? insideRepo(root, options.spec) : undefined;
+  const specInRepoPath = insideRepo(root, options.spec);
   emit({
     type: "run:started",
-    command: options.command,
+    command: "run",
     stamp,
     repo: root,
-    spec: options.command === "run" ? options.spec : undefined,
+    spec: options.spec,
     specInRepo: specInRepoPath,
     from: startedOn,
     head: (await headCommit(root)).slice(0, 12),
@@ -265,29 +279,22 @@ async function main(argv: string[]): Promise<number> {
     maxAttempts: options.maxAttempts,
   });
 
-  // DOCTOR runs before the branch exists: harness.yaml describes the project,
-  // so it is committed where the project lives, not on a throwaway run branch.
+  // DOCTOR and DERIVE run before the branch exists, so a preflight that fails
+  // leaves nothing behind to clean up.
   const specInRepo = specInRepoPath;
   context.specInRepo = specInRepo;
 
-  // The spec is read before anything is built, which is the point: a check
-  // derived from it cannot have been shaped by what the app turned out to do.
-  const specText = options.command === "run" ? await readFile(options.spec, "utf8") : undefined;
-  const examined = await doctor({
-    repoRoot: root,
-    run,
+  await doctor({ repoRoot: root, run, specPath: specInRepo });
+
+  // Its own phase, between DOCTOR and GENERATE. The spec is read before
+  // anything is built, which is the point: a check derived from it cannot have
+  // been shaped by what the app turned out to do.
+  const checks = await deriveChecks({
+    spec: await readFile(options.spec, "utf8"),
     model: options.model,
-    spec: specText,
-    appUrlHint: APP_URL_HINT,
     review: options.review,
-    specPath: specInRepo,
     assumeYes: options.assumeYes,
   });
-
-  if (options.command === "init") {
-    await initialise({ repoRoot: root, run, model: options.model, name: options.name });
-    return 0;
-  }
 
   // Continuing branches from the previous run's work rather than from your
   // branch, so a run that stopped at its last attempt is not started over.
@@ -326,7 +333,8 @@ async function main(argv: string[]): Promise<number> {
       maxAttempts: options.maxAttempts,
       model: options.model,
       judgeModel: options.judgeModel,
-      checks: examined.checks,
+      maxSpendUsd: options.maxSpendUsd,
+      checks,
       continuing: resuming === null ? undefined : resuming,
       specInRepo,
     });

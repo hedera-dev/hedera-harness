@@ -117,13 +117,9 @@ export function clip(text: string): string {
 const ARGUMENT_WIDTH = 96;
 
 /**
- * The wordmark, printed once before a run starts.
- *
- * Dim rather than coloured, on the same rule as everything else here: colour
- * means something in this output, and a banner means nothing — it is the one
- * thing on screen a reader should be able to skip entirely. It prints when
- * piped too, because "piped output is the terminal's minus the escape codes"
- * is an invariant worth more than saving six lines in a log file.
+ * The wordmark, printed once before a run starts. Dim rather than coloured:
+ * colour means something in this output and a banner means nothing. It prints
+ * when piped too, so piped output stays the terminal's minus the escape codes.
  */
 export function banner(): string {
   const rows = [

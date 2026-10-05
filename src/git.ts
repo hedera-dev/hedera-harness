@@ -47,10 +47,9 @@ export async function currentBranch(cwd: string): Promise<string> {
 /**
  * Paths changed in the work tree, minus `ignoring`.
  *
- * The clean-tree check exists to guarantee a known starting point for the
- * project's code. A spec file is an input to the run, not a change to the
- * project, so it does not count as dirt — writing one and immediately running
- * used to be refused.
+ * The clean-tree check guarantees a known starting point for the project's
+ * code. A spec is an input to the run rather than a change to the project, so
+ * it does not count as dirt — otherwise writing one and running is refused.
  */
 export async function dirtyPaths(cwd: string, ignoring: string[] = []): Promise<string[]> {
   const changed = await changedPaths(cwd);
@@ -82,15 +81,14 @@ export async function commit(paths: string[], message: string, cwd: string): Pro
 }
 
 /**
- * Inputs to the run are never committed as its work — a spec living in the
- * repo would otherwise be swept onto the run branch and then deleted from the
- * working tree when the run switched back, losing the file the user wrote.
+ * Two things never reach a run's commits.
  *
- * A dotenv file must never enter git history, whatever the working tree holds.
- * The generator's hook refuses the obvious writes, but no pattern beats an
- * interpreter — an agent refused three times wrote one with
- * `python3 -c "open('.env','w')"`. This half is enforceable: the harness owns
- * staging.
+ * Inputs to the run: a spec living in the repo would be swept onto the run
+ * branch and then deleted from the working tree when the run switched back.
+ *
+ * Dotenv files, whatever the working tree holds. The generator's hook refuses
+ * the obvious writes, but no pattern beats an interpreter — so this is the
+ * enforceable half, because the harness owns staging.
  */
 const SECRET_FILE = /(^|\/)\.env(?!\.(example|sample|template|dist|defaults)$)(\.[^/]*)?$/;
 

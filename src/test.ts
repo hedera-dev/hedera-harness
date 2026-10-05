@@ -6,7 +6,7 @@ import { emit } from "./events.js";
 import type { HarnessConfig } from "./config.js";
 import type { Run } from "./run.js";
 
-/** See PLAN-V2 § Bounds. */
+/** Per command. A build or test that never returns is a defect, not a hang. */
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 const FINGERPRINT_FILE = "install-fingerprint.txt";

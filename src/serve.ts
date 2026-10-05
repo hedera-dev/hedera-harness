@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { type Command, describe, killGroup, trackChild, untrackChild } from "./commands.js";
 
-/** See PLAN-V2 § Bounds. */
+/** How long a dev server gets to answer, and how often we ask. */
 const READY_TIMEOUT_MS = 2 * 60_000;
 const POLL_INTERVAL_MS = 250;
 

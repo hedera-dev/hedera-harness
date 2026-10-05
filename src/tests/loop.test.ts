@@ -37,12 +37,14 @@ function freePort(): number {
 function fails(where: string, evidence = ["shot.png"]): Outcome {
   return {
     type: "verdict",
-    verdict: { pass: false, failures: [{ what: "broken", where, evidence }] },
-    checks: [],
+    verdict: { pass: false, failures: [{ what: "broken", where, evidence }], verified: [] },
   };
 }
 
-const PASSES: Outcome = { type: "verdict", verdict: { pass: true, failures: [] }, checks: [] };
+const PASSES: Outcome = {
+  type: "verdict",
+  verdict: { pass: true, failures: [], verified: [] },
+};
 
 interface Driven {
   events: HarnessEvent[];
@@ -278,3 +280,4 @@ test("a pass with nothing before it has nothing to have fixed", async () => {
   const driven = await drive([PASSES]);
   assert.deepEqual(tallies(driven.events), [[0, 0, 0]]);
 });
+

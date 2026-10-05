@@ -6,19 +6,18 @@ import { emit } from "./events.js";
 import { describeMessage, endingOf, said } from "./messages.js";
 import type { Run } from "./run.js";
 
-/** See PLAN-V2 § Bounds. Starting points, to be tuned once there are real runs. */
+/**
+ * Measured across nine runs and left alone: a turn here costs $0.032, so 300 of
+ * them is $9.60 — and the busiest generation used 54. EVALUATE's equivalents did
+ * not survive the same check; its comment says why.
+ */
 const WALL_CLOCK_MS = 60 * 60_000;
 const MAX_TURNS = 300;
-const MAX_BUDGET_USD = 10;
 
 /**
- * Extra skill plugins to load, for a project that does not ship its own.
- *
- * Unset by default. A scaffolded project carries its skills in
- * `.claude/skills/`, which `settingSources: ["project"]` already loads —
- * versioned with the repo, nothing to install. A marketplace checkout instead
- * duplicated most of them under a second name and added six about authoring
- * plugins, which is not the job the generator is doing.
+ * Extra skill plugins, for a project that ships none of its own. Unset by
+ * default: a scaffolded project carries them in `.claude/skills/`, which
+ * `settingSources: ["project"]` already loads.
  */
 const SKILLS_DIR = process.env["HEDERA_SKILLS_DIR"];
 
@@ -38,6 +37,8 @@ export interface GenerateOptions {
   model: string;
   /** Continue the previous attempt's conversation. Omitted after a reset. */
   resume?: string | undefined;
+  /** Unset means no spend ceiling — the wall clock is what bounds a run. */
+  maxSpendUsd?: number | undefined;
 }
 
 export interface GenerateResult {
@@ -101,7 +102,8 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
         permissionMode: "bypassPermissions",
         hooks: { PreToolUse: [{ hooks: [guard] }] },
         maxTurns: MAX_TURNS,
-        maxBudgetUsd: MAX_BUDGET_USD,
+        // Only when asked for. See `--max-spend`.
+        ...(options.maxSpendUsd === undefined ? {} : { maxBudgetUsd: options.maxSpendUsd }),
         abortController: controller,
       },
     });

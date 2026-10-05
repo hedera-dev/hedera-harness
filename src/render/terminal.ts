@@ -70,7 +70,11 @@ export function renderToTerminal(): () => void {
 
       case "check": {
         console.log(event.ok ? tick(event.name) : warn(event.name));
-        if (event.remedy !== undefined) console.log(`  ${dim(event.remedy)}`);
+        // A remedy may need more than one line: the shortest form of "do this"
+        // is sometimes not the one people already tried.
+        if (event.remedy !== undefined) {
+          for (const line of event.remedy.split("\n")) console.log(`  ${dim(line)}`);
+        }
         return;
       }
 
@@ -111,18 +115,19 @@ export function renderToTerminal(): () => void {
         console.log(`  ${dim(elapsed())}  ${verdict(event.verdict, event.findings)}`);
         return;
 
-      case "check:settled": {
-        // A settled claim reads as a check because that is what it is: the
-        // harness looked, rather than the evaluator saying so.
-        // A derived check that fails did not fail the run, so it does not get
-        // the mark that means it did.
-        const failed = event.state === "failed" && event.source === "declared";
-        const mark = event.state === "held" ? tick("") : failed ? red("✗") : warn("");
-        console.log(`  ${mark.trim()} ${dim(`${event.id} — ${event.detail}`)}`);
-        // The reading earns a line only when it disagreed or could not be read;
-        // one that held was already shown, with its quote, at DOCTOR.
-        if (event.because !== undefined && event.state !== "held") {
+      case "check:verified": {
+        // The judge's accounting, not the harness's: it read both sides and
+        // called it. What the line carries is the reading — before → after —
+        // and for one that did not hold, the spec's words and the judge's
+        // reason for standing by the run anyway.
+        const seen = event.before === undefined ? event.after : `${event.before} → ${event.after}`;
+        const mark = event.holds ? tick("") : warn("");
+        console.log(`  ${mark.trim()} ${dim(`${event.id} — ${seen}`)}`);
+        if (!event.holds && event.because !== undefined) {
           console.log(`    ${dim(`— "${clip(event.because)}"`)}`);
+        }
+        if (!event.holds && event.note !== undefined) {
+          console.log(`    ${dim(`judge: ${clip(event.note)}`)}`);
         }
         return;
       }
@@ -162,11 +167,32 @@ export function renderToTerminal(): () => void {
         console.log("");
         return;
 
+      case "config:written":
+        console.log(heading("wrote", event.file));
+        for (const { name, command } of event.commands) {
+          console.log(`  ${name.padEnd(8)}${command === null ? dim("(none)") : describe(command)}`);
+        }
+        console.log(dim("\n  next: harness run --spec <path>\n"));
+        return;
+
       case "derived": {
+        // Said out loud, because silence would not distinguish "nothing here
+        // can be settled by a machine" from "the derivation broke".
+        if (event.checks.length === 0) {
+          console.log(
+            `\n  ${dim("nothing in this spec can be settled by reading a value — the judge decides all of it")}`,
+          );
+          return;
+        }
         console.log(`\n  ${dim("I will also verify, from this spec:")}`);
         for (const check of event.checks) {
           const source = check.because === undefined ? "" : dim(`  — "${clip(check.because)}"`);
           console.log(`    ${check.id}${source}`);
+        }
+        if (event.dropped > 0) {
+          console.log(
+            `  ${dim(`${event.dropped} proposal(s) discarded as unusable — the wrong shape, or two claims in one`)}`,
+          );
         }
         return;
       }

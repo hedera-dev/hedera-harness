@@ -2,17 +2,25 @@ import { join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { HarnessConfig } from "./config.js";
 import type { Check } from "./checks.js";
-import { type Outcome, cited, evaluate } from "./evaluate.js";
+import { type Outcome, evaluate } from "./evaluate.js";
+import { type Feedback, repairPrompt } from "./prompts/repair.js";
 import { generate } from "./generate.js";
 import { commitWork } from "./git.js";
 import { type Timings, emit } from "./events.js";
-import { type AttemptFailure, describeFailure, fromCheck, fromStage, fromVerdict } from "./failure.js";
+import { type AttemptFailure, fromStage, fromVerdict } from "./failure.js";
 import type { Run } from "./run.js";
 import { startServer } from "./serve.js";
 import { type StageFailure, runStages } from "./test.js";
 
 /** How much of a failing command's output the repair prompt carries. */
 const OUTPUT_TAIL = 4_000;
+
+/**
+ * How long a run may take before it stops starting new attempts. Without it the
+ * per-stage bounds multiply: three attempts of generation, commands and
+ * evaluation is over ten hours that nobody chose.
+ */
+const RUN_BUDGET_MS = 4 * 60 * 60_000;
 
 export interface LoopOptions {
   config: HarnessConfig;
@@ -25,7 +33,9 @@ export interface LoopOptions {
   model: string;
   /** Who judges. The same as `model` unless asked otherwise. */
   judgeModel: string;
-  /** Read from the spec at DOCTOR, pinned for the run, settled every attempt. */
+  /** Unset means no spend ceiling. Bounds each agent call, not the run. */
+  maxSpendUsd?: number | undefined;
+  /** Read from the spec at DOCTOR, pinned for the run, verified by the judge every attempt. */
   checks: Check[];
   /**
    * Failures a previous run ended on. The first attempt starts as a repair of
@@ -60,13 +70,6 @@ export interface LoopResult {
 export type { Timings };
 
 /** What an attempt failed on, in the shape the diagram uses for `feedback.json`. */
-interface Feedback {
-  ok: boolean;
-  failures: AttemptFailure[];
-  /** Command output, carried to the repair prompt but not to `feedback.json`. */
-  detail?: string;
-}
-
 /** One attempt's outcome, as recorded in `result.json`. */
 export interface Attempt {
   attempt: number;
@@ -90,6 +93,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const build = options.agents?.generate ?? generate;
 
   const timings: Timings = { generateMs: 0, testMs: 0, evaluateMs: 0 };
+  const startedAt = Date.now();
   // Recorded once: what the agent could reach. A run that behaves differently
   // from another is usually a different skill set, and this is the record of it.
   let skills: string[] = [];
@@ -104,7 +108,32 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const history: Attempt[] = [];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const generated = await build({ repoRoot, run, prompt, attempt, resume: session, model: options.model });
+    // Checked between attempts, never inside one: a deadline that killed work
+    // in flight would throw away a generation already paid for. So the real
+    // ceiling is this plus one attempt, which is the point — it stops the next
+    // one starting rather than interrupting this one.
+    const spent = Date.now() - startedAt;
+    if (attempt > 1 && spent > RUN_BUDGET_MS) {
+      emit({
+        type: "note",
+        level: "warn",
+        text:
+          `stopping after ${attempt - 1} attempt(s): ${Math.round(spent / 60_000)} minutes is ` +
+          `past the ${RUN_BUDGET_MS / 60_000}-minute budget for a run. The branch has the work so far, ` +
+          `and --continue picks it up.`,
+      });
+      break;
+    }
+
+    const generated = await build({
+      repoRoot,
+      run,
+      prompt,
+      attempt,
+      resume: session,
+      model: options.model,
+      maxSpendUsd: options.maxSpendUsd,
+    });
     session = generated.sessionId;
     timings.generateMs += generated.durationMs;
     if (skills.length === 0) skills = generated.skills;
@@ -156,10 +185,9 @@ async function assess(options: LoopOptions, attempt: number, timings: Timings): 
   const failure = await runStages({ config, repoRoot, run, prefix: `attempt-${attempt}`, attempt });
   timings.testMs += Date.now() - testStarted;
 
-  // Every attempt is committed, passing or not. A failing attempt left
-  // uncommitted used to lock the harness out of itself: the next run hit
-  // DOCTOR's clean-tree check and refused, with the cleanup left to you.
-  // It is also the change you most want to read after a failure.
+  // Every attempt is committed, passing or not. An uncommitted failure would
+  // leave a dirty tree that the next run's clean-tree check refuses — and a
+  // failed attempt is the diff you most want to read.
   const outcome = failure === null ? "passed tests" : `failed ${failure.stage}`;
   const commit = await commitWork(
     `harness: attempt ${attempt} (${outcome})`,
@@ -183,6 +211,7 @@ async function assess(options: LoopOptions, attempt: number, timings: Timings): 
         attempt,
         appUrl: server.url,
         model: options.judgeModel,
+        maxSpendUsd: options.maxSpendUsd,
       }),
     );
   } finally {
@@ -202,14 +231,7 @@ function stageFeedback(failure: StageFailure): Feedback {
 function verdictFeedback(outcome: Outcome): Feedback {
   if (outcome.type !== "verdict") throw new AbortRun(outcome.reason);
   if (outcome.verdict.pass) return { ok: true, failures: [] };
-
-  // A claim the harness settled and found untrue is a reason the attempt did
-  // not pass, exactly like one the judge formed. It reaches the repair prompt
-  // and the open/fixed/new tally by the same route.
-  const measured = outcome.checks
-    .filter((result) => result.state === "failed" && result.check.source === "declared")
-    .map(fromCheck);
-  return { ok: false, failures: [...measured, ...fromVerdict(outcome.verdict)] };
+  return { ok: false, failures: fromVerdict(outcome.verdict) };
 }
 
 /**
@@ -217,10 +239,8 @@ function verdictFeedback(outcome: Outcome): Feedback {
  * an agent converging from one trading one failure for another.
  */
 function report(attempt: number, feedback: Feedback, previous: Set<string>): boolean {
-  // A passing attempt goes through the same arithmetic as any other. It used to
-  // take a shortcut that reported zeros, which meant the one attempt that
-  // actually resolved everything was the only one that never said what it had
-  // fixed — the convergence story missing its ending.
+  // A passing attempt goes through the same arithmetic as any other, so the
+  // attempt that resolved everything is the one that says what it fixed.
   const now = feedback.failures.map((failure) => failure.id);
   const open = now.filter((id) => previous.has(id));
   const fixed = [...previous].filter((id) => !now.includes(id));
@@ -235,58 +255,6 @@ function report(attempt: number, feedback: Feedback, previous: Set<string>): boo
     failures: feedback.failures,
   });
   return open.length > 0;
-}
-
-/**
- * What the agent is told went wrong.
- *
- * A stage failure carries the command's own output, so it explains itself. A
- * verdict failure is one sentence from someone who watched the app in a browser
- * — so it gets the evidence too, by a path the agent can actually open. The
- * evaluator saves screenshots, page snapshots and saved responses, all of them
- * readable, and citing them by bare filename made them unfindable.
- */
-function repairPrompt(feedback: Feedback, artifacts: string): string {
-  return [
-    "That attempt did not pass. What went wrong:",
-    "",
-    ...feedback.failures.flatMap((failure) => [
-      `- ${describeFailure(failure)}`,
-      ...pointers(failure, artifacts),
-    ]),
-    feedback.detail === undefined ? "" : `\n${feedback.detail}`,
-    "",
-    "Fix it, then stop. Do not start the dev server or run the checks yourself —",
-    "they run automatically once you are done.",
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
-}
-
-/**
- * Where to look. A stage failure points at its own output, a judged one at the
- * evidence behind it, and a measured one at nothing — the harness read the
- * chain itself, so the claim and its result are the whole story.
- */
-function pointers(failure: AttemptFailure, artifacts: string): string[] {
-  if (failure.kind === "check") return [];
-  if (failure.kind === "verdict") {
-    return failure.evidence.map((item) => `  ${located(item, artifacts)}`);
-  }
-  return [`  full output: ${join(artifacts, `${failure.stage}.txt`)}`];
-}
-
-/**
- * Evidence is a file the evaluator saved, or a URL it read. Only the first
- * needs a path, and it is reduced by the same function that validated it — so
- * a citation cannot pass the check in one spelling and be built into a path in
- * another, which is how `evidence/evidence/shot.png` happened.
- */
-function located(evidence: string, artifacts: string): string {
-  const name = cited(evidence);
-  return name === evidence && /^https?:\/\//.test(evidence)
-    ? evidence
-    : join(artifacts, "evidence", name);
 }
 
 async function writeFeedback(run: Run, attempt: number, feedback: Feedback): Promise<void> {

@@ -1,20 +1,11 @@
 /**
- * The account the app signs with, supplied by whoever is running the harness.
+ * The account the app signs with, supplied by whoever runs the harness.
  *
- * Deliberately not a signer. The harness creates no accounts, transfers
- * nothing, and sweeps nothing — the first transactional run showed why that
- * machinery exists and how to avoid needing it. The evaluator clicked Connect,
- * the app generated its own burner wallet, and funding *that* address was the
- * hard part: known only at runtime, and needing a signed transfer. Making the
- * supplied account be the wallet removes the step entirely, because a person
- * already funded it at the portal.
- *
- * So the harness holds the account id — to read a public balance — and passes
- * the key through to the evaluator without ever using it. No SDK, no
+ * Deliberately not a signer: the harness creates no accounts, transfers nothing
+ * and sweeps nothing. It holds the account id to read a public balance, and
+ * passes the key to the evaluator without ever using it — so no SDK, no
  * provisioning, and the key never enters the harness's own logic.
  */
-import { read } from "./checks.js";
-
 /** Below this the account cannot pay for much, and a run is not worth starting. */
 const ENOUGH_TINYBARS = 5 * 100_000_000;
 
@@ -66,6 +57,32 @@ export async function funding(mirrorNode: string, id: string): Promise<Funding> 
 
   const hbar = tinybars / 100_000_000;
   return tinybars >= ENOUGH_TINYBARS ? { state: "ok", hbar } : { state: "low", hbar };
+}
+
+/**
+ * Reads `field` out of the mirror node's answer for `path`. The one harness-side
+ * chain read that survives the move to judge-side verification: this is
+ * preflight — "can the account pay for a run" — asked of a public API before
+ * anything starts, not evidence about what an agent did.
+ */
+async function read(
+  mirrorNode: string,
+  path: string,
+  field: string,
+): Promise<{ value: unknown } | { error: string }> {
+  const url = `${mirrorNode.replace(/\/$/, "")}/api/v1/${path.replace(/^\//, "")}`;
+  const response = await fetch(url).catch((error: Error) => error);
+  if (response instanceof Error) return { error: `${url} could not be reached: ${response.message}` };
+  if (!response.ok) return { error: `${url} answered ${response.status}` };
+
+  const body = (await response.json().catch(() => null)) as unknown;
+  if (body === null) return { error: `${url} did not answer with JSON` };
+
+  const value = field.split(".").reduce<unknown>(
+    (into, key) => (into !== null && typeof into === "object" ? (into as Record<string, unknown>)[key] : undefined),
+    body,
+  );
+  return value === undefined ? { error: `${url} has no ${field}` } : { value };
 }
 
 /**

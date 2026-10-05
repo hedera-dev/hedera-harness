@@ -9,8 +9,8 @@
 import type { Command } from "./commands.js";
 import type { AttemptFailure } from "./failure.js";
 
-/** The four stages of the loop. Named `Phase` to leave `Stage` to the commands. */
-export type Phase = "doctor" | "generate" | "test" | "evaluate";
+/** The stages of a run. Named `Phase` to leave `Stage` to the commands. */
+export type Phase = "doctor" | "derive" | "generate" | "test" | "evaluate";
 
 /** Wall-clock per stage across a whole run. */
 export interface Timings {
@@ -23,7 +23,7 @@ export type HarnessEvent =
   /** Once, first. What this run was pointed at. */
   | {
       type: "run:started";
-      command: "run" | "init";
+      command: "run";
       stamp: string;
       repo: string;
       /** Absolute path, when the command is `run`. */
@@ -65,23 +65,31 @@ export type HarnessEvent =
       attempt: number;
       verdict: "pass" | "fail" | "none";
       findings: number;
+      /** What MAX_TURNS is derived from. Recorded so the rate can be measured, not assumed. */
+      turns?: number | undefined;
       /** Same caveat as generation's: a list-price equivalent, not money. */
       costUsd?: number | undefined;
       durationMs: number;
     }
   | { type: "committed"; attempt: number; sha: string | null }
-  /** One claim the harness settled itself. `errored` is a warning, never a failure. */
+  /**
+   * The judge's accounting of one checklist item: what it read, and whether
+   * the claim held. The harness records these; it does not decide them.
+   */
   | {
-      type: "check:settled";
+      type: "check:verified";
       id: string;
-      source: "declared" | "derived";
-      state: "held" | "failed" | "errored";
-      detail: string;
+      holds: boolean;
+      /** What a chain item answered before the judge touched the app. */
+      before?: string | undefined;
+      /** What it answered after — or what the element shows, for a page item. */
+      after: string;
+      /** Why a not-held item did not fail the run, when the judge passed it anyway. */
+      note?: string | undefined;
       /**
-       * The spec line a derived check was read from. A derived failure appears
-       * only in the report, so the quote has to travel with the event — it is
-       * how a reader tells "my app is wrong" from "my spec said something I
-       * did not mean".
+       * The spec line the item was read from. A not-held item is where a
+       * reader tells "my app is wrong" from "my spec said something I did not
+       * mean", so the quote has to travel with the event.
        */
       because?: string | undefined;
       attempt: number;
@@ -98,12 +106,25 @@ export type HarnessEvent =
       failures: AttemptFailure[];
     }
   | { type: "branch"; branch: string }
-  /** What DOCTOR read out of the spec, before the app existed. */
-  | { type: "derived"; checks: Array<{ id: string; because?: string | undefined }> }
-  /** DOCTOR's proposed commands, before the operator confirms them. */
+  /** What DERIVE read out of the spec, before the app existed. */
+  /** What DERIVE read out of the spec. Emitted at zero too: none is an answer, and
+   * the only thing that distinguishes it from a derivation that failed. */
+  | {
+      type: "derived";
+      checks: Array<{ id: string; because?: string | undefined }>;
+      /** Proposals discarded as unusable — a wrong shape, or two claims in one. */
+      dropped: number;
+    }
+  /** The wizard's proposed commands, before the operator confirms them. */
   | {
       type: "proposal";
       commands: Array<{ name: string; command: Command | null; note?: string | undefined }>;
+    }
+  /** Setup wrote the config a run reads. Not `proposal`: these were not proposed, they were answered. */
+  | {
+      type: "config:written";
+      file: string;
+      commands: Array<{ name: string; command: Command | null }>;
     }
   /** Anything worth saying that is not one of the above. `warn` is for the unexpected-but-survivable. */
   | { type: "note"; level: "info" | "warn"; text: string; attempt?: number | undefined }
@@ -117,7 +138,7 @@ export type HarnessEvent =
       /** The run directory, so a renderer can point at the artifacts. */
       dir: string;
     }
-  /** `init` wrote a spec skeleton. */
+  /** The wizard wrote a spec draft. */
   | { type: "spec:written"; path: string; tailored: boolean };
 
 export type Listener = (event: HarnessEvent) => void;

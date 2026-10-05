@@ -91,3 +91,51 @@ export async function writeConfig(
 function flatten(command: Command): string | Command {
   return command.cwd === undefined ? command.run : command;
 }
+
+/** The four commands, named, in the order a person expects to be asked about them. */
+export function entries(config: HarnessConfig): Array<[string, Command | null]> {
+  return [
+    ["install", config.install],
+    ["build", config.build],
+    ["test", config.test],
+    ["serve", config.serve],
+  ];
+}
+
+/**
+ * Checks a `yarn x` / `npm run x` command names a script that exists, before
+ * anything is run. Returns null when correct, or when the command is arbitrary
+ * shell we cannot check statically.
+ */
+export async function commandProblem(command: Command, repoRoot: string): Promise<string | null> {
+  const script = scriptName(command.run);
+  if (script === null) return null;
+
+  const manifest = join(repoRoot, command.cwd ?? ".", "package.json");
+  const source = await readFile(manifest, "utf8").catch(() => null);
+  if (source === null) return `refers to ${command.cwd ?? "."}, which has no package.json`;
+
+  let scripts: Record<string, unknown> = {};
+  try {
+    scripts = (JSON.parse(source) as { scripts?: Record<string, unknown> }).scripts ?? {};
+  } catch {
+    return null;
+  }
+
+  return script in scripts
+    ? null
+    : `"${command.run}" names a script that does not exist in ${command.cwd ?? "."}/package.json`;
+}
+
+function scriptName(run: string): string | null {
+  const words = run.trim().split(/\s+/);
+  const [manager, second, third] = words;
+  if (manager === "npm" || manager === "pnpm") {
+    if (second === "run" && third !== undefined && words.length === 3) return third;
+    return null;
+  }
+  if (manager === "yarn" && second !== undefined && words.length === 2) {
+    return second === "install" ? null : second;
+  }
+  return null;
+}
