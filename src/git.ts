@@ -129,7 +129,15 @@ export async function commitWork(
   await git(["add", "--", ...safe], cwd);
   if ((await git(["diff", "--cached", "--name-only"], cwd)) === "") return null;
 
-  await git(["commit", "--message", message], cwd);
+  // `--no-verify` because the project's own gate is the TEST stage, which the
+  // harness runs deliberately and feeds into the repair loop. A pre-commit hook
+  // running it a second time cannot improve the outcome and can prevent it: a
+  // hook that rejects code which does not typecheck makes the one commit the
+  // harness most needs — the failing attempt, so it can be read and repaired —
+  // the one commit it cannot make. These land on a throwaway harness branch,
+  // never on yours, and the secret-file filter above is enforced here, not by
+  // the hook.
+  await git(["commit", "--no-verify", "--message", message], cwd);
   return headCommit(cwd);
 }
 
