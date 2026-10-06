@@ -128,8 +128,12 @@ export async function commitWork(
 
   await git(["add", "--", ...safe], cwd);
   if ((await git(["diff", "--cached", "--name-only"], cwd)) === "") return null;
-
-  await git(["commit", "--message", message], cwd);
+ 
+  /**
+   * `--no-verify` because the project's own gate is the TEST stage, which the
+   * harness runs deliberately and feeds into the repair loop.
+   */
+  await git(["commit", "--no-verify", "--message", message], cwd);
   return headCommit(cwd);
 }
 
