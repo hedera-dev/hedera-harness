@@ -1,29 +1,6 @@
 # hedera-harness
 
-Give it a spec and a Hedera dApp repo. It loops a coding agent until the spec is met, and decides for itself whether it was.
-
-> The harness adjudicates. The agent does the work.
-
-An agent that reports its own success is worth nothing, so nothing here takes the agent's word for it. Tests are run by the harness. The app is judged by a second agent that is never allowed to see the source. Evidence for any claimed failure has to exist on disk before the verdict is accepted.
-
-## Install
-
-Not on npm — the name belongs to v2. Install from source:
-
-```bash
-git clone https://github.com/web3buidlerz/hedera-harness.git
-cd hedera-harness
-npm install
-npm run build
-npm link                          # puts `harness` on your PATH
-npx playwright install chromium   # EVALUATE drives a real browser
-```
-
-Without `npm link`, call the built entry point by path from inside your project — the harness reads the repo you run it in, so it has to be your project's directory either way:
-
-```bash
-node /path/to/hedera-harness/dist/cli.js run --spec specs/payment-flow.md
-```
+Give it a spec and a Hedera dApp boilerplate. It loops a coding agent until the spec is met, and decides for itself whether it was.
 
 ## Quick start
 
@@ -32,21 +9,13 @@ From inside the project you want to build in. **Set it up once** — whichever o
 ```bash
 harness init                   # four questions, defaults read from your package.json
 ```
-```bash
-harness wizard payment-flow    # an agent reads the project, then interviews you
-```
-
-Both write `harness.yaml` and commit it. `init` is the fast path when you already have a spec; `wizard` also drafts one at `specs/payment-flow.md`.
-
-**Then run it, as often as you like:**
 
 ```bash
-$EDITOR specs/payment-flow.md  # your spec, in your words
-harness run --spec specs/payment-flow.md
+harness wizard payment-flow    # an agent reads the project, then interviews to generate a spec
 ```
 
-A run needs `harness.yaml`, so one of the two setup commands comes first. After that, setup is done.
-
+Both write `harness.yaml` and commit it. `init` is the fast path when you already have a spec; `wizard` also drafts one at `specs/payment-flow.md`.  
+  
 The wizard interviews you one question at a time, following your answers rather than working through a list — it has read the project, so it can ask about what you have not said:
 
 ```
@@ -59,6 +28,13 @@ wallet is currently connected to, or a fixed network regardless?
 
 An empty answer ends the interview and it writes with what it has.
 
+**Then run it, as often as you like:**
+
+```bash
+$EDITOR specs/payment-flow.md  # your spec, in your words
+harness run --spec specs/payment-flow.md
+```
+
 ## What it does
 
 ```
@@ -67,15 +43,17 @@ DOCTOR → DERIVE → GENERATE → TEST → EVALUATE → done
                       └─────────┴────────┘   repair, up to --max-attempts (default 3)
 ```
 
-| Stage | What happens |
-|---|---|
-| **DOCTOR** | Deterministic, no agent. Checks git, a clean tree, your browser and wallet, and that `harness.yaml` names commands that exist — then runs install, build and test on the untouched repo, so a project that was already broken fails here rather than being blamed on the agent. |
-| **DERIVE** | An agent reads your spec — only the spec, never the code — and writes down what a judge could settle by reading a value. Runs before anything is built, so nothing about the app can shape it. |
-| **GENERATE** | An agent implements the spec. It decides which files to touch and whether to write tests. |
-| **TEST** | Install, build, test — stopping at the first failure. No agent involved. |
-| **EVALUATE** | A second agent judges the running app against the spec, driving a real browser and reading chain state from the public mirror node. It cannot see your code. |
 
-Each attempt is committed to a `harness/<timestamp>` branch. When the run ends you are back on the branch you started from, with the work waiting on that branch.
+| Stage        | What happens                                                                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DOCTOR**   | Deterministic, no agent. Checks git, a clean tree, your browser and wallet, and that `harness.yaml` names commands that exist — then runs install, build and test on the untouched repo, so a project that was already broken fails here rather than being blamed on the agent. |
+| **DERIVE**   | An agent reads your spec — only the spec, never the code — and writes down what a judge could settle by reading a value. Runs before anything is built, so nothing about the app can shape it.                                                                                  |
+| **GENERATE** | An agent implements the spec. It decides which files to touch and whether to write tests.                                                                                                                                                                                       |
+| **TEST**     | Install, build, test — stopping at the first failure. No agent involved.                                                                                                                                                                                                        |
+| **EVALUATE** | A second agent judges the running app against the spec, driving a real browser and reading chain state from the public mirror node. It cannot see your code.                                                                                                                    |
+
+
+Each attempt is committed to a `harness/<timestamp>` branch. When the run ends you are back on the branch you started from.
 
 ## Writing a spec
 
@@ -98,7 +76,7 @@ The page at `/status` shows which Hedera network the app is pointed at.
 - read-only; no transaction, no operator key
 ```
 
-"The hook polls every 10 seconds" is not checkable from outside. "The number updates without a page reload, roughly every 10 seconds" is. `harness init` drafts a skeleton with this framing, tailored to your project.
+"The hook polls every 10 seconds" is not checkable from outside. "The number updates without a page reload, roughly every 10 seconds" is.
 
 ## harness.yaml
 
@@ -108,8 +86,7 @@ Written by `harness init` or `harness wizard`, and committed, because it describ
 # Root next:build delegates to `next build` in @sh/nextjs, the only production
 # build in the repo (hardhat has only compile).
 build: yarn next:build
-# next:dev runs `next dev` and keeps running; note next:start also runs
-# `next dev` while next:serve runs the production `next start`.
+# next:dev runs `next dev` and keeps running;
 serve: yarn next:dev
 ```
 
@@ -167,12 +144,6 @@ ATTEMPT 2  failed
   evidence  attempt-2/evidence/  16 files, 3 screenshots
 ```
 
-`1 open` is the number to read: a failure that survived an attempt is marked
-`(still open)`, which separates an agent converging from one trading one bug for
-another. The warning line is there because the live output slides past it — on
-the first real run the evaluator ended a turn without answering and was asked
-again, and a summary reading `PASSED after 1 attempt` never mentioned it.
-
 `--full` adds both agents' tool feeds, so you can read exactly what the
 evaluator checked rather than taking its word.
 
@@ -207,8 +178,6 @@ If a run stops before it finishes — you interrupt it, or it runs out of budget
 
 ## How it decides
 
-Each rule guards a specific way this could lie to you.
-
 **The evaluator cannot see your code.** It runs in a directory containing only the spec, with the repo denied at the sandbox. Judging the code instead of the app is the failure that makes a passing run worthless.
 
 **A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict. A finding it cannot see is not a finding.
@@ -220,11 +189,9 @@ Each rule guards a specific way this could lie to you.
     http:/status:status:equals=200  — "The page at `/status` must return HTTP 200."
 ```
 
-Each one quotes the phrase it came from, so you can see whether it read you the way you meant. `--review` stops for confirmation if you would rather approve them.
+**The judge does the checking; the harness keeps the books.** The evaluator verifies each item itself — chain state from the public mirror node, read before it touches the app and again after, because a change is only visible against a value written down beforehand. A verdict is not accepted until every item is accounted for: both readings, whether the claim held, and the URL or screenshot that shows it.
 
-**The judge does the checking; the harness keeps the books.** The evaluator verifies each item itself — chain state from the public mirror node, read before it touches the app and again after, because a change is only visible against a value written down beforehand; page state from the browser it is already driving. A verdict is not accepted until every item is accounted for: both readings, whether the claim held, and the URL or screenshot that shows it. An item that did not hold fails the run unless the judge says how the item misread the spec — out loud, in the report. Measured across four real specs, about one reading in ten is wrong that way, so the call is the judge's; the harness's job is that it is never made silently.
-
-**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, evidence that is not there, or a checklist left unaccounted for — earns a second look, once.
+**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, evidence that is not there, or a checklist left unaccounted for — earns a second look.
 
 **Secrets never reach git history.** `.env` files are refused during generation and, more importantly, can never be staged — the enforceable half, since the harness owns the commit.
 
@@ -236,40 +203,27 @@ Each one quotes the phrase it came from, so you can see whether it read you the 
 - Claude Code credentials — a subscription login or `ANTHROPIC_API_KEY`
 - Chromium for EVALUATE — `npx playwright install chromium`. DOCTOR checks for it and says this if it is missing.
 
+
+
 ## Configuration
 
 Machine-level settings are environment variables, deliberately kept out of `harness.yaml`:
 
-| | |
-|---|---|
-| `HARNESS_MODEL` | Default agent model. Same as `--model`. |
-| `HARNESS_JUDGE_MODEL` | Default model for EVALUATE. Same as `--judge-model`. |
-| `HEDERA_SKILLS_DIR` | Extra skill plugins, for a project that ships none of its own. Unset by default — a scaffolded project carries its skills in `.claude/skills/` and they load automatically. |
-| `HEDERA_NETWORK` | `testnet` (default), `previewnet`, `mainnet`. |
-| `HEDERA_MIRROR_NODE` | Overrides the mirror node URL derived from the network. |
-| `HEDERA_OPERATOR_ID` | A funded testnet account the app can sign with. DOCTOR checks it exists and has a balance. |
-| `HEDERA_OPERATOR_KEY` | Its private key. Passed to the evaluator to import into the app, and scrubbed from every artifact. The harness never signs with it. |
-| `NO_COLOR` | Turns off colour. Already off when stdout is not a terminal, so piping or redirecting needs nothing. |
+
+|                       |                                                                                                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HARNESS_MODEL`       | Default agent model. Same as `--model`.                                                                                                                                     |
+| `HARNESS_JUDGE_MODEL` | Default model for EVALUATE. Same as `--judge-model`.                                                                                                                        |
+| `HEDERA_SKILLS_DIR`   | Extra skill plugins, for a project that ships none of its own. Unset by default — a scaffolded project carries its skills in `.claude/skills/` and they load automatically. |
+| `HEDERA_NETWORK`      | `testnet` (default), `previewnet`, `mainnet`.                                                                                                                               |
+| `HEDERA_MIRROR_NODE`  | Overrides the mirror node URL derived from the network.                                                                                                                     |
+| `HEDERA_OPERATOR_ID`  | A funded testnet account the app can sign with. DOCTOR checks it exists and has a balance.                                                                                  |
+| `HEDERA_OPERATOR_KEY` | Its private key. Passed to the evaluator to import into the app, and scrubbed from every artifact. The harness never signs with it.                                         |
+| `NO_COLOR`            | Turns off colour. Already off when stdout is not a terminal, so piping or redirecting needs nothing.                                                                        |
+
 
 Every stage is bounded by a clock — generation, evaluation, each command, and the dev server becoming ready. A breach ends that stage with a reason rather than hanging the run. The numbers live beside the code they bound, in `src/`, each with what measurement set it.
 
 A run stops starting new attempts after four hours; each stage is bounded on its own as well.
 
 There is deliberately **no spend limit by default**. What a run is worth is yours to decide, and a figure we picked would only ever be wrong for somebody. Pass `--max-spend` if you want one.
-
-What that leaves, stated plainly rather than reassuringly. Measured runs cost **$0.57–5.89** and take 6–36 minutes; the heaviest so far — writing a contract, deploying it to testnet and verifying it through the UI — was $3.64 over 27 minutes. The bounds would permit a pathological one to reach roughly **seven hours and $63** before anything stopped it — three attempts each exhausting a generation, an evaluation and a nudge. Nothing has come close: the busiest generation used 54 of its 300 turns. But that is the exposure, and `--max-attempts` or `--max-spend` is how you cap it.
-
-## What it does not do yet
-
-- **Transactions need a wallet you supply, and an app that accepts one.** Export `HEDERA_OPERATOR_ID` and `HEDERA_OPERATOR_KEY` for a funded testnet account, and the evaluator imports it into the app — most often through a burner wallet's browser storage. Where an app only supports a browser extension there is no way in, because a headless browser has no extension, and the evaluator reports that rather than working around it. The harness creates no accounts and transfers nothing.
-- **One spec at a time,** and nothing re-checks an earlier one. A second run inherits the first run's code but not its checks, so a feature built last week can regress without the run that broke it noticing. Carrying proven checks forward as a floor is planned and unbuilt.
-- **Claude only.** No provider abstraction.
-- **It does not scaffold projects.** Use `create-scaffold-hbar`; the harness works on a repo that already exists.
-
-## Development
-
-```bash
-npm test          # builds, then runs the suite
-npm run typecheck
-```
-
