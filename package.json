@@ -1,17 +1,32 @@
 {
   "name": "hedera-harness",
   "version": "3.0.0",
-  "private": true,
   "description": "Takes a PRD and an existing Hedera dApp repo, and loops an agent until the PRD is implemented or the budget is spent.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/web3buidlerz/hedera-harness.git"
+    "url": "git+https://github.com/hedera-dev/hedera-harness.git"
   },
+  "homepage": "https://github.com/hedera-dev/hedera-harness#readme",
+  "keywords": [
+    "hedera",
+    "agent",
+    "harness",
+    "verification",
+    "dapp",
+    "testing"
+  ],
   "type": "module",
   "bin": {
-    "harness": "./dist/cli.js"
+    "harness": "./dist/cli.js",
+    "hedera-harness": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "!dist/tests",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20"
   },
