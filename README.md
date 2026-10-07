@@ -1,22 +1,27 @@
 # hedera-harness
 
-Give it a spec and a Hedera dApp boilerplate. It loops a coding agent until the spec is met, and decides for itself whether it was.
+Give it a spec and a Hedera dApp repo. It loops a coding agent until the spec is met, and decides for itself whether it was.
 
-## Quick start
-
-From inside the project you want to build in. **Set it up once** — whichever of these fits:
+**The harness decides whether a run passed, not the agent.** It runs the tests itself. The app is judged by a second agent that is never allowed to see the source. Evidence for any claimed failure has to exist on disk before the verdict is accepted.
 
 ```bash
-harness init                   # four questions, defaults read from your package.json
+npm install -g hedera-harness
+
+cd your-project
+harness init                              # four questions → harness.yaml
+$EDITOR specs/feature.md                  # your spec, in your words
+harness run --spec specs/feature.md
 ```
 
-```bash
-harness wizard payment-flow    # an agent reads the project, then interviews to generate a spec
-```
+## Two ways to set up
 
-Both write `harness.yaml` and commit it. `init` is the fast path when you already have a spec; `wizard` also drafts one at `specs/payment-flow.md`.  
-  
-The wizard interviews you one question at a time, following your answers rather than working through a list — it has read the project, so it can ask about what you have not said:
+`harness init` asks four questions, with defaults read from your `package.json`. Use it when you already have a spec.
+
+`harness wizard payment-flow` has an agent read the project and work the answers out, then interview you and draft `specs/payment-flow.md`. Use it when you do not.
+
+Both write `harness.yaml` and commit it, because it describes the project rather than a run.
+
+The interview asks one question at a time and follows your answers — it has read the project, so it asks about what you have not said:
 
 ```
 ── question 2 of 8
@@ -26,14 +31,7 @@ wallet is currently connected to, or a fixed network regardless?
 › a fixed network. The page is read-only and must work with nothing connected.
 ```
 
-An empty answer ends the interview and it writes with what it has.
-
-**Then run it, as often as you like:**
-
-```bash
-$EDITOR specs/payment-flow.md  # your spec, in your words
-harness run --spec specs/payment-flow.md
-```
+An empty answer ends it and the spec is written with what it has.
 
 ## What it does
 
@@ -178,22 +176,22 @@ If a run stops before it finishes — you interrupt it, or it runs out of budget
 
 ## How it decides
 
-**The evaluator cannot see your code.** It runs in a directory containing only the spec, with the repo denied at the sandbox. Judging the code instead of the app is the failure that makes a passing run worthless.
+**The evaluator cannot see your code.** It runs in a directory holding only the spec, with the repo denied at the sandbox. Judging the code instead of the app is what makes a passing run worthless.
 
-**A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict. A finding it cannot see is not a finding.
+**A verdict must show its work.** Every failure cites evidence, and the harness confirms those files exist before accepting the verdict.
 
-**Some of it is read from the spec before anything is built.** DERIVE reads your spec — and only your spec, never the code — and states what a judge can verify by reading a value rather than forming an opinion. That checklist exists before the app does, so nothing about the app can shape it, and it is shown rather than asked about:
+**The checklist is read before anything is built.** DERIVE reads your spec — only the spec, never the code — and writes down what a judge could settle by reading a value. Nothing about the app can shape it, because the app does not exist yet:
 
 ```
   I will also verify, from this spec:
     http:/status:status:equals=200  — "The page at `/status` must return HTTP 200."
 ```
 
-**The judge does the checking; the harness keeps the books.** The evaluator verifies each item itself — chain state from the public mirror node, read before it touches the app and again after, because a change is only visible against a value written down beforehand. A verdict is not accepted until every item is accounted for: both readings, whether the claim held, and the URL or screenshot that shows it.
+**The judge checks; the harness keeps the books.** The evaluator verifies each item itself, reading chain state before it touches the app and again after — a change is only visible against a value written down beforehand. The verdict is not accepted until every item is accounted for: both readings, whether it held, and the evidence that shows it.
 
-**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of an answer — no verdict, a malformed one, evidence that is not there, or a checklist left unaccounted for — earns a second look.
+**A verdict is never re-rolled.** If the evaluator answers, that answer stands. Only the *absence* of one earns a second look.
 
-**Secrets never reach git history.** `.env` files are refused during generation and, more importantly, can never be staged — the enforceable half, since the harness owns the commit.
+**Secrets never reach git history.** `.env` files can never be staged — the enforceable half, since the harness owns the commit.
 
 ## Requirements
 
