@@ -257,7 +257,7 @@ A run stops starting new attempts after four hours; each stage is bounded on its
 
 There is deliberately **no spend limit by default**. What a run is worth is yours to decide, and a figure we picked would only ever be wrong for somebody. Pass `--max-spend` if you want one.
 
-What that leaves, stated plainly rather than reassuringly. Measured runs cost **$0.57–5.89** and take 6–36 minutes. The bounds would permit a pathological one to reach roughly **seven hours and $63** before anything stopped it — three attempts each exhausting a generation, an evaluation and a nudge. Nothing has come close: the busiest generation used 54 of its 300 turns. But that is the exposure, and `--max-attempts` or `--max-spend` is how you cap it.
+What that leaves, stated plainly rather than reassuringly. Measured runs cost **$0.57–5.89** and take 6–36 minutes; the heaviest so far — writing a contract, deploying it to testnet and verifying it through the UI — was $3.64 over 27 minutes. The bounds would permit a pathological one to reach roughly **seven hours and $63** before anything stopped it — three attempts each exhausting a generation, an evaluation and a nudge. Nothing has come close: the busiest generation used 54 of its 300 turns. But that is the exposure, and `--max-attempts` or `--max-spend` is how you cap it.
 
 ## What it does not do yet
 
