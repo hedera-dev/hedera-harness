@@ -14,23 +14,6 @@ import type { Run } from "./run.js";
 /** How long one evaluation pass may take. */
 const WALL_CLOCK_MS = 45 * 60_000;
 
-/**
- * Measured across four evaluations, and it is not one number — a turn takes
- * longer the harder the spec, because more of it is spent waiting:
- *
- *     read-only page      44 turns    3.9 min     5.4 s
- *     HBAR transfer       62 turns    7.5 min     7.3 s
- *     deploy + contract   85 turns   15.5 min    11.0 s
- *
- * The slowest is the one to use. Set from a fast spec, turns become
- * unreachable for a slow one: at 6.7 a contract evaluation needed 74 minutes to
- * exhaust them, well past the clock, so only the clock could fire and turns
- * stopped being a bound at all.
- *
- * That 6.7 came from the single run which hit `error_max_turns` — the least
- * representative sample there is, since a run thrashing through cheap turns is
- * the shape this is meant to catch rather than the shape to calibrate on.
- */
 const SECONDS_PER_TURN = 11;
 
 /**
