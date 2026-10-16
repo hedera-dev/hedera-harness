@@ -58,3 +58,20 @@ function located(evidence: string, artifacts: string): string {
     ? evidence
     : join(artifacts, "evidence", name);
 }
+
+/**
+ * For a continuation of a run that stopped before any attempt was judged. The
+ * bare spec reads as a fresh build, and a fresh build of a half-built spec is
+ * a rewrite.
+ */
+export function carryOnPrompt(spec: string): string {
+  return [
+    "A previous run of the spec below stopped before any attempt was judged. Whatever it wrote is committed on this branch.",
+    "",
+    "Read what is there before writing anything: `git log` for what it committed, and the files those commits name. Then carry that work on — extend it, fix what is wrong with it, finish what is missing. Do not start again from scratch, and do not add a second version of something that is already there under another name.",
+    "",
+    "The spec, in full, because whatever is unbuilt still has to be built:",
+    "",
+    spec,
+  ].join("\n");
+}

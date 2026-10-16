@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { afterEach } from "node:test";
-import type { Agents } from "../loop.js";
+import type { Agents, LoopOptions } from "../loop.js";
 import type { Outcome } from "../evaluate.js";
 import { type HarnessEvent, collect, reset } from "../events.js";
 import { runCommand } from "../commands.js";
@@ -60,7 +60,12 @@ interface Driven {
 }
 
 /** `dies` is the attempt whose generation writes its work and then dies. */
-async function drive(verdicts: Outcome[], maxAttempts = 3, dies?: number): Promise<Driven> {
+async function drive(
+  verdicts: Outcome[],
+  maxAttempts = 3,
+  dies?: number,
+  continuing?: LoopOptions["continuing"],
+): Promise<Driven> {
   const repo = await mkdtemp(join(tmpdir(), "harness-loop-"));
   await runCommand(
     { run: "git init -q -b main && git config user.email t@t && git config user.name t" },
@@ -114,6 +119,7 @@ async function drive(verdicts: Outcome[], maxAttempts = 3, dies?: number): Promi
       judgeModel: "stub-judge",
       checks: [],
       agents,
+      continuing,
     });
   } catch (error) {
     thrown = error as Error;
@@ -301,4 +307,19 @@ test("a generation that dies commits what it wrote", async () => {
   const log = await runCommand({ run: "git log --format=%s -1" }, driven.repo, 10_000);
   assert.match(log.output, /harness: interrupted \(the agent did not finish within 60 minutes\)/);
   assert.deepEqual(await dirtyPaths(driven.repo), [], "a dirty tree makes the next run refuse to start");
+});
+
+test("continuing a run that was never judged says its work is on the branch", async () => {
+  const driven = await drive([PASSES], 1, undefined, { failures: [], artifacts: "x", attempt: 0 });
+  const opening = driven.generations[0]?.prompt ?? "";
+
+  assert.match(opening, /stopped before any attempt was judged/);
+  assert.match(opening, /Do not start again from scratch/);
+  assert.match(opening, /# Spec/, "the spec still has to be carried, for whatever is unbuilt");
+});
+
+test("a fresh run, or one continuing a pass, is asked for the spec alone", async () => {
+  assert.equal((await drive([PASSES], 1)).generations[0]?.prompt, "# Spec");
+  const afterPass = await drive([PASSES], 1, undefined, { failures: [], artifacts: "x", attempt: 2 });
+  assert.equal(afterPass.generations[0]?.prompt, "# Spec");
 });
