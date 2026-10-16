@@ -7,6 +7,7 @@ import type { Agents } from "../loop.js";
 import type { Outcome } from "../evaluate.js";
 import { type HarnessEvent, collect, reset } from "../events.js";
 import { runCommand } from "../commands.js";
+import { dirtyPaths } from "../git.js";
 import { runLoop } from "../loop.js";
 import { Run } from "../run.js";
 
@@ -53,9 +54,13 @@ interface Driven {
   /** One entry per generation: whether it was asked to resume, and what it was told. */
   generations: Array<{ resumed: boolean; prompt: string }>;
   dir: string;
+  repo: string;
+  /** What the loop threw, when `dies` made a generation die rather than return. */
+  thrown: Error | null;
 }
 
-async function drive(verdicts: Outcome[], maxAttempts = 3): Promise<Driven> {
+/** `dies` is the attempt whose generation writes its work and then dies. */
+async function drive(verdicts: Outcome[], maxAttempts = 3, dies?: number): Promise<Driven> {
   const repo = await mkdtemp(join(tmpdir(), "harness-loop-"));
   await runCommand(
     { run: "git init -q -b main && git config user.email t@t && git config user.name t" },
@@ -74,6 +79,7 @@ async function drive(verdicts: Outcome[], maxAttempts = 3): Promise<Driven> {
     generate: (async (options) => {
       generations.push({ resumed: options.resume !== undefined, prompt: options.prompt });
       await writeFile(join(repo, `attempt-${options.attempt}.txt`), "work\n");
+      if (options.attempt === dies) throw new Error("the agent did not finish within 60 minutes");
       return {
         sessionId: "session-1",
         skills: ["demo"],
@@ -88,26 +94,33 @@ async function drive(verdicts: Outcome[], maxAttempts = 3): Promise<Driven> {
 
   const port = freePort();
   const { events } = collect();
-  const result = await runLoop({
-    config: {
-      install: { run: "true" },
-      build: { run: "true" },
-      test: { run: "true" },
-      serve: { run: `echo "http://127.0.0.1:${port}" && python3 -m http.server ${port}` },
-    },
-    repoRoot: repo,
-    run,
-    specPath: join(repo, "spec.md"),
-    spec: "# Spec",
-    branch: "harness/stamp",
-    maxAttempts,
-    model: "stub",
-    judgeModel: "stub-judge",
-    checks: [],
-    agents,
-  });
+  let thrown: Error | null = null;
+  let result: Awaited<ReturnType<typeof runLoop>> | null = null;
+  try {
+    result = await runLoop({
+      config: {
+        install: { run: "true" },
+        build: { run: "true" },
+        test: { run: "true" },
+        serve: { run: `echo "http://127.0.0.1:${port}" && python3 -m http.server ${port}` },
+      },
+      repoRoot: repo,
+      run,
+      specPath: join(repo, "spec.md"),
+      spec: "# Spec",
+      branch: "harness/stamp",
+      maxAttempts,
+      model: "stub",
+      judgeModel: "stub-judge",
+      checks: [],
+      agents,
+    });
+  } catch (error) {
+    thrown = error as Error;
+  }
 
-  return { events, passed: result.passed, attempts: result.attempts, generations, dir: run.dir };
+  const outcome = { passed: result?.passed ?? false, attempts: result?.attempts ?? 0 };
+  return { events, ...outcome, generations, dir: run.dir, repo, thrown };
 }
 
 function tallies(events: HarnessEvent[]): Array<[number, number, number]> {
@@ -281,3 +294,11 @@ test("a pass with nothing before it has nothing to have fixed", async () => {
   assert.deepEqual(tallies(driven.events), [[0, 0, 0]]);
 });
 
+test("a generation that dies commits what it wrote", async () => {
+  const driven = await drive([], 1, 1);
+
+  assert.match(String(driven.thrown), /did not finish within 60 minutes/, "the death propagates");
+  const log = await runCommand({ run: "git log --format=%s -1" }, driven.repo, 10_000);
+  assert.match(log.output, /harness: interrupted \(the agent did not finish within 60 minutes\)/);
+  assert.deepEqual(await dirtyPaths(driven.repo), [], "a dirty tree makes the next run refuse to start");
+});
