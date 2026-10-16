@@ -44,8 +44,8 @@ Run from inside the target repository.
   --yes               take the defaults without asking (init, wizard)
   --json              one JSON object per line instead of the watchable output
   --review            stop to confirm the checks read from the spec
-  --continue          carry on from the last run: its branch, and what it
-                      ended up failing on
+  --continue          carry on from the last run started from, or made on,
+                      this branch: its work, and what it ended up failing on
   --full              report: include both agents' full tool feeds`;
 
 class UsageError extends Error {}
@@ -312,7 +312,7 @@ async function main(argv: string[]): Promise<number> {
   // Continuing branches from the previous run's work rather than from your
   // branch, so a run that stopped at its last attempt is not started over.
   // `startedOn` was recorded before this, so the run still returns you home.
-  const resuming = options.continue ? await lastRun(root, stamp) : null;
+  const resuming = options.continue ? await lastRun(root, stamp, startedOn) : null;
   if (resuming !== null) {
     await switchBranch(resuming.branch, root);
     emit({
