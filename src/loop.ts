@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import type { HarnessConfig } from "./config.js";
 import type { Check } from "./checks.js";
 import { type Outcome, evaluate } from "./evaluate.js";
-import { type Feedback, repairPrompt } from "./prompts/repair.js";
+import { type Feedback, carryOnPrompt, repairPrompt } from "./prompts/repair.js";
 import { generate } from "./generate.js";
 import { commitWork } from "./git.js";
 import { type Timings, emit } from "./events.js";
@@ -38,11 +38,11 @@ export interface LoopOptions {
   /** Read from the spec at DOCTOR, pinned for the run, verified by the judge every attempt. */
   checks: Check[];
   /**
-   * Failures a previous run ended on. The first attempt starts as a repair of
-   * those rather than as a fresh reading of the spec — the code is already on
-   * the branch, so asking for it again would be asking for work that exists.
+   * The run being continued: the failures it ended on, and its last judged
+   * attempt (0 when none was). The first attempt starts from those rather than
+   * as a fresh reading of the spec — the code is already on the branch.
    */
-  continuing?: { failures: AttemptFailure[]; artifacts: string } | undefined;
+  continuing?: { failures: AttemptFailure[]; artifacts: string; attempt: number } | undefined;
   /** Repo-relative spec path, when it lives in the repo. Never committed as work. */
   specInRepo?: string | undefined;
   /**
@@ -115,10 +115,7 @@ async function attempts(options: LoopOptions): Promise<LoopResult> {
   // Recorded once: what the agent could reach. A run that behaves differently
   // from another is usually a different skill set, and this is the record of it.
   let skills: string[] = [];
-  let prompt =
-    options.continuing !== undefined && options.continuing.failures.length > 0
-      ? repairPrompt({ ok: false, failures: options.continuing.failures }, options.continuing.artifacts)
-      : options.spec;
+  let prompt = opening(options);
   let session: string | undefined;
   let previous: Set<string> = new Set();
   // Kept for `result.json`: which failures each attempt produced, so a finished
@@ -188,6 +185,20 @@ async function attempts(options: LoopOptions): Promise<LoopResult> {
 
   await writeResult(run, { passed: false, attempts: history.length, branch: options.branch, timings, skills, history });
   return { passed: false, attempts: history.length, branch: options.branch, timings };
+}
+
+/**
+ * What the first attempt is asked for. A continuation after a pass gets the
+ * spec alone, like any run on an existing app; one that stopped before any
+ * attempt was judged is told its half-built work is on the branch.
+ */
+function opening(options: LoopOptions): string {
+  const { continuing, spec } = options;
+  if (continuing === undefined) return spec;
+  if (continuing.failures.length > 0) {
+    return repairPrompt({ ok: false, failures: continuing.failures }, continuing.artifacts);
+  }
+  return continuing.attempt === 0 ? carryOnPrompt(spec) : spec;
 }
 
 /**
