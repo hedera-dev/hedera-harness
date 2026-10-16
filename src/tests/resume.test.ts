@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ResumeError, lastRun } from "../resume.js";
+import { ResumeError, assertContinuable, lastRun } from "../resume.js";
+import { runCommand } from "../commands.js";
 
 /** Builds a run directory of the shape a real run leaves behind. */
 async function ranAs(
@@ -173,4 +174,39 @@ test("with nothing of yours to continue, it names whose run is newest instead of
       error.message.includes("templates/audit") &&
       error.message.includes("harness/audit-run"),
   );
+});
+
+async function sh(repo: string, command: string): Promise<string> {
+  const { output } = await runCommand({ run: command }, repo, 10_000);
+  return output.trim();
+}
+
+/** A repo with one commit on `main`, and `harness/run` branched from it. */
+async function repoWithRun(): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), "harness-continuable-"));
+  await sh(
+    repo,
+    "git init -q -b main && git config user.email t@t && git config user.name t" +
+      " && git commit -q --allow-empty -m base && git branch harness/run",
+  );
+  return repo;
+}
+
+test("a run's branch behind yours is refused, counting what it would drop", async () => {
+  const repo = await repoWithRun();
+  await sh(repo, "git commit -q --allow-empty -m 'feat: first iteration'");
+
+  await assert.rejects(
+    assertContinuable("harness/run", "main", repo),
+    (error: Error) => error instanceof ResumeError && /behind main by 1 commit/.test(error.message),
+  );
+});
+
+test("a run's branch at or ahead of yours continues", async () => {
+  const repo = await repoWithRun();
+  await assertContinuable("harness/run", "main", repo);
+
+  await sh(repo, "git switch -q harness/run && git commit -q --allow-empty -m 'harness: attempt 1'");
+  await sh(repo, "git switch -q main");
+  await assertContinuable("harness/run", "main", repo);
 });
