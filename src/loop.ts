@@ -87,8 +87,26 @@ export class AbortRun extends Error {
 /**
  * GENERATE → TEST → EVALUATE, repairing until the spec is met or the budget
  * is spent. The agent decides how to fix things; this decides whether it did.
+ *
+ * A throw — a generation that dies, a stage that crashes — skips the attempt's
+ * commit, so whatever the agent wrote is committed here before it propagates:
+ * a dirty tree is what makes the next run refuse to start.
  */
 export async function runLoop(options: LoopOptions): Promise<LoopResult> {
+  try {
+    return await attempts(options);
+  } catch (error) {
+    const reason = (error instanceof Error ? error.message : String(error)).split("\n")[0];
+    await commitWork(
+      `harness: interrupted (${reason})`,
+      options.repoRoot,
+      options.specInRepo === undefined ? [] : [options.specInRepo],
+    ).catch(() => null);
+    throw error;
+  }
+}
+
+async function attempts(options: LoopOptions): Promise<LoopResult> {
   const { repoRoot, run, maxAttempts } = options;
   const build = options.agents?.generate ?? generate;
 
