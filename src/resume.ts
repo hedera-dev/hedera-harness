@@ -37,8 +37,12 @@ export interface Resumable {
  * The most recent run, whether or not it finished. A run that passed is as
  * resumable as one that died — continuing after a pass is how a second spec
  * builds on the first.
+ *
+ * Only a run that started from `onBranch`, or produced it, is a candidate:
+ * `.harness/runs/` sits outside git and is shared by every branch, so in a repo
+ * holding more than one app the newest run is often another app's.
  */
-export async function lastRun(repoRoot: string, excluding: string): Promise<Resumable> {
+export async function lastRun(repoRoot: string, excluding: string, onBranch: string): Promise<Resumable> {
   const runs = join(repoRoot, ARTIFACT_DIR, "runs");
   // The run asking the question already has a directory — it is created before
   // this is resolved, so without excluding it the most recent run is always
@@ -52,10 +56,15 @@ export async function lastRun(repoRoot: string, excluding: string): Promise<Resu
   // leaves a directory and nothing else, and there is usually one of those
   // lying around — treating the newest as the only candidate would mean a
   // single abandoned run blocked continuing until somebody tidied up.
+  let newestElsewhere: { stamp: string; from: string | null; branch: string } | null = null;
   for (const stamp of entries.reverse()) {
     const dir = join(runs, stamp);
-    const branch = await branchOf(dir);
+    const { from, branch } = await branchesOf(dir);
     if (branch === null) continue;
+    if (from !== onBranch && branch !== onBranch) {
+      newestElsewhere ??= { stamp, from, branch };
+      continue;
+    }
 
     const reported = await lastReported(dir);
     return {
@@ -66,20 +75,31 @@ export async function lastRun(repoRoot: string, excluding: string): Promise<Resu
       artifacts: join(ARTIFACT_DIR, "runs", stamp, `attempt-${reported?.attempt ?? 1}`),
     };
   }
+  if (newestElsewhere !== null) {
+    const { stamp, from, branch } = newestElsewhere;
+    throw new ResumeError(
+      `no run started from or produced ${onBranch}, so there is nothing of yours to continue. ` +
+        `The newest run, ${stamp}, went from ${from ?? "an unrecorded branch"} to ${branch}: ` +
+        `switch to ${from ?? branch} to continue it, or drop --continue to build on ${onBranch}.`,
+    );
+  }
   throw new ResumeError(
     `no run in ${runs} got as far as a branch, so there is no work to continue from`,
   );
 }
 
-async function branchOf(dir: string): Promise<string | null> {
+/** Where a run started (`run:started.from`) and the branch it made (`branch`). */
+async function branchesOf(dir: string): Promise<{ from: string | null; branch: string | null }> {
+  const found: { from: string | null; branch: string | null } = { from: null, branch: null };
   const source = await readFile(join(dir, "events.jsonl"), "utf8").catch(() => null);
-  if (source === null) return null;
+  if (source === null) return found;
   for (const line of source.split("\n")) {
     if (line.trim() === "") continue;
-    const event = JSON.parse(line) as { type?: string; branch?: string };
-    if (event.type === "branch" && typeof event.branch === "string") return event.branch;
+    const event = JSON.parse(line) as { type?: string; branch?: string; from?: string };
+    if (event.type === "run:started" && typeof event.from === "string") found.from = event.from;
+    if (event.type === "branch" && typeof event.branch === "string") found.branch = event.branch;
   }
-  return null;
+  return found;
 }
 
 /**

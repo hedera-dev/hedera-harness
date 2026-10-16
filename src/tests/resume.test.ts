@@ -53,7 +53,7 @@ test("a run that died mid-attempt resumes from the last one that reported", asyn
     },
   });
 
-  const resumable = await lastRun(repo, "");
+  const resumable = await lastRun(repo, "", "harness/2026-09-22T14-05-36-835Z");
   assert.equal(resumable.branch, "harness/2026-09-22T14-05-36-835Z");
   assert.equal(resumable.attempt, 2, "attempt 3 exists as a directory and reported nothing");
   assert.equal(resumable.failures.length, 2);
@@ -66,24 +66,9 @@ test("a run that passed carries its branch and nothing to repair", async () => {
     attempts: { 1: { ok: false, failures: [broke("/a")] }, 2: { ok: true, failures: [] } },
   });
 
-  const resumable = await lastRun(repo, "");
+  const resumable = await lastRun(repo, "", "harness/passed");
   assert.equal(resumable.branch, "harness/passed");
   assert.deepEqual(resumable.failures, [], "a pass has nothing to start from — that is the point");
-});
-
-test("the newest run is the one continued", async () => {
-  const repo = await ranAs("2026-09-01T00-00-00-000Z", {
-    branch: "harness/old",
-    attempts: { 1: { ok: false, failures: [broke("/a")] } },
-  });
-  const newer = join(repo, ".harness", "runs", "2026-09-30T00-00-00-000Z");
-  await mkdir(newer, { recursive: true });
-  await writeFile(
-    join(newer, "events.jsonl"),
-    JSON.stringify({ type: "branch", branch: "harness/new" }),
-  );
-
-  assert.equal((await lastRun(repo, "")).branch, "harness/new");
 });
 
 /**
@@ -103,19 +88,19 @@ test("runs that never reached a branch are stepped over", async () => {
     await writeFile(join(dir, "events.jsonl"), JSON.stringify({ type: "run:started" }));
   }
 
-  const resumable = await lastRun(repo, "");
+  const resumable = await lastRun(repo, "", "harness/real");
   assert.equal(resumable.branch, "harness/real");
   assert.equal(resumable.failures.length, 1);
 });
 
 test("nothing anywhere reached a branch, and it says so", async () => {
   const repo = await ranAs("2026-09-23T00-00-00-000Z", { attempts: {} });
-  await assert.rejects(() => lastRun(repo, ""), ResumeError);
+  await assert.rejects(() => lastRun(repo, "", "main"), ResumeError);
 });
 
 test("no runs at all says so, rather than failing obscurely later", async () => {
   const repo = await mkdtemp(join(tmpdir(), "harness-resume-"));
-  await assert.rejects(() => lastRun(repo, ""), /no previous run/);
+  await assert.rejects(() => lastRun(repo, "", "main"), /no previous run/);
 });
 
 /**
@@ -133,6 +118,59 @@ test("a run does not continue itself", async () => {
   await mkdir(mine, { recursive: true });
   await writeFile(join(mine, "events.jsonl"), JSON.stringify({ type: "run:started" }));
 
-  const resumable = await lastRun(repo, "2026-09-30T00-00-00-000Z");
+  const resumable = await lastRun(repo, "2026-09-30T00-00-00-000Z", "harness/real");
   assert.equal(resumable.branch, "harness/real");
+});
+
+/** Adds a run that started on `from` and made `branch`, to an existing repo. */
+async function alsoRan(repo: string, stamp: string, from: string, branch: string): Promise<void> {
+  const dir = join(repo, ".harness", "runs", stamp);
+  await mkdir(join(dir, "attempt-1"), { recursive: true });
+  const events = [
+    { type: "run:started", stamp, from },
+    { type: "branch", branch },
+  ];
+  await writeFile(join(dir, "events.jsonl"), events.map((e) => JSON.stringify(e)).join("\n"));
+  await writeFile(join(dir, "attempt-1", "feedback.json"), JSON.stringify({ ok: true, failures: [] }));
+}
+
+/** `.harness/runs/` is shared by every branch, so the newest run is often another app's. */
+test("continuing takes the newest run of your branch, not the newest run", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "harness-resume-"));
+  await alsoRan(repo, "2026-10-13T08-00-00-000Z", "templates/dvp", "harness/dvp-run");
+  await alsoRan(repo, "2026-10-14T04-00-00-000Z", "templates/audit", "harness/audit-run");
+
+  assert.equal((await lastRun(repo, "", "templates/dvp")).branch, "harness/dvp-run");
+  assert.equal((await lastRun(repo, "", "templates/audit")).branch, "harness/audit-run");
+});
+
+test("standing on the branch a run made continues that run", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "harness-resume-"));
+  await alsoRan(repo, "2026-10-13T08-00-00-000Z", "templates/dvp", "harness/dvp-run");
+  await alsoRan(repo, "2026-10-14T04-00-00-000Z", "templates/audit", "harness/audit-run");
+
+  assert.equal((await lastRun(repo, "", "harness/dvp-run")).branch, "harness/dvp-run");
+});
+
+/** A second spec built on a passed run starts from that run's branch, and continuing from there finds it. */
+test("a run stacked on a harness branch is found from that branch", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "harness-resume-"));
+  await alsoRan(repo, "2026-10-13T08-00-00-000Z", "templates/dvp", "harness/dvp-run");
+  await alsoRan(repo, "2026-10-14T09-00-00-000Z", "harness/dvp-run", "harness/dvp-second");
+
+  assert.equal((await lastRun(repo, "", "harness/dvp-run")).branch, "harness/dvp-second");
+});
+
+test("with nothing of yours to continue, it names whose run is newest instead of taking it", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "harness-resume-"));
+  await alsoRan(repo, "2026-10-14T04-00-00-000Z", "templates/audit", "harness/audit-run");
+
+  await assert.rejects(
+    () => lastRun(repo, "", "templates/bond"),
+    (error: Error) =>
+      error instanceof ResumeError &&
+      error.message.includes("templates/bond") &&
+      error.message.includes("templates/audit") &&
+      error.message.includes("harness/audit-run"),
+  );
 });
