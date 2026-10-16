@@ -10,7 +10,7 @@ import { initialise } from "./init.js";
 import { runLoop } from "./loop.js";
 import { killTrackedChildren } from "./commands.js";
 import { commitWork, createBranch, currentBranch, headCommit, repoRoot, switchBranch } from "./git.js";
-import { lastRun } from "./resume.js";
+import { assertContinuable, lastRun } from "./resume.js";
 import { Run, ensureExcluded, timestamp } from "./run.js";
 import { type Timings, emit, subscribe } from "./events.js";
 import { renderToFile, renderToJson } from "./render/json.js";
@@ -297,6 +297,10 @@ async function main(argv: string[]): Promise<number> {
   const specInRepo = specInRepoPath;
   context.specInRepo = specInRepo;
 
+  // Resolved before DOCTOR and DERIVE, so a refusal costs nothing.
+  const resuming = options.continue ? await lastRun(root, stamp, startedOn) : null;
+  if (resuming !== null) await assertContinuable(resuming.branch, startedOn, root);
+
   await doctor({ repoRoot: root, run, specPath: specInRepo });
 
   // Its own phase, between DOCTOR and GENERATE. The spec is read before
@@ -312,7 +316,6 @@ async function main(argv: string[]): Promise<number> {
   // Continuing branches from the previous run's work rather than from your
   // branch, so a run that stopped at its last attempt is not started over.
   // `startedOn` was recorded before this, so the run still returns you home.
-  const resuming = options.continue ? await lastRun(root, stamp, startedOn) : null;
   if (resuming !== null) {
     await switchBranch(resuming.branch, root);
     emit({

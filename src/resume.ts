@@ -12,6 +12,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { AttemptFailure } from "./failure.js";
+import { commitsAhead } from "./git.js";
 import { ARTIFACT_DIR } from "./run.js";
 
 export class ResumeError extends Error {
@@ -86,6 +87,21 @@ export async function lastRun(repoRoot: string, excluding: string, onBranch: str
   throw new ResumeError(
     `no run in ${runs} got as far as a branch, so there is no work to continue from`,
   );
+}
+
+/**
+ * Refuses to switch to a run's branch that lacks commits from yours: the
+ * switch takes them out of the tree, and the agent writes them again.
+ */
+export async function assertContinuable(branch: string, onBranch: string, repoRoot: string): Promise<void> {
+  const dropped = await commitsAhead(branch, onBranch, repoRoot);
+  if (dropped > 0) {
+    throw new ResumeError(
+      `${branch} is behind ${onBranch} by ${dropped} commit(s), so continuing it would build ` +
+        `without them and ask the agent for work you already have. Merge ${onBranch} into ` +
+        `${branch} first, or drop --continue to build on ${onBranch} as it is.`,
+    );
+  }
 }
 
 /** Where a run started (`run:started.from`) and the branch it made (`branch`). */
