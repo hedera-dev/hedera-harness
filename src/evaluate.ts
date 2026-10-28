@@ -398,11 +398,12 @@ function asVerified(entry: unknown): Verified | null {
   const { id, before, after, holds, evidence, note } = entry as Record<string, unknown>;
   if (typeof id !== "string" || id === "") return null;
   if (typeof holds !== "boolean") return null;
-  if (typeof after !== "string" || after === "") return null;
+  const reading = typeof after === "string" && after !== "" ? after : typeof note === "string" ? note : "";
+  if (reading === "") return null;
   return {
     id,
     ...(typeof before === "string" && before !== "" ? { before } : {}),
-    after,
+    after: reading,
     holds,
     evidence: evidenceOf(evidence),
     ...(typeof note === "string" && note !== "" ? { note } : {}),
